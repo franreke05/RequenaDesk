@@ -1,0 +1,27 @@
+package com.requena.supportdesk.core.model
+
+data class Ticket(
+    val id: String,
+    val clientId: String,
+    val ticketNumber: String = "",
+    val subject: String,
+    val description: String,
+    val category: TicketCategory = TicketCategory.QUESTION,
+    val affectedApp: String = "",
+    val platform: SupportPlatform = SupportPlatform.DESKTOP,
+    val appVersion: String? = null,
+    val stepsToReproduce: String? = null,
+    val clientReference: String? = null,
+    val status: TicketStatus,
+    val priority: TicketPriority,
+    val waitingOn: WaitingOn = WaitingOn.ADMIN,
+    val resolutionSummary: String? = null,
+    val requester: User,
+    val assignee: User? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val attachments: List<Attachment> = emptyList(),
+    val messages: List<TicketMessage> = emptyList(),
+    val internalComments: List<InternalComment> = emptyList(),
+    val events: List<TicketEvent> = emptyList(),
+)
