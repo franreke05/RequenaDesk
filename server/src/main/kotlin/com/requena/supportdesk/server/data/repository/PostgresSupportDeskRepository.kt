@@ -32,7 +32,9 @@ import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import java.sql.Connection
+import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.Timestamp
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -79,7 +81,7 @@ class PostgresSupportDeskRepository(
             ).use { statement ->
                 statement.setString(1, userId)
                 statement.setString(2, refreshToken)
-                statement.setObject(3, expiresAt)
+                statement.bindInstant(3, expiresAt)
                 statement.executeUpdate()
             }
         }
@@ -138,7 +140,7 @@ class PostgresSupportDeskRepository(
             ).use { statement ->
                 statement.setString(1, identity.userId)
                 statement.setString(2, replacementRefreshToken)
-                statement.setObject(3, expiresAt)
+                statement.bindInstant(3, expiresAt)
                 statement.executeUpdate()
             }
 
@@ -344,7 +346,7 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    override fun getClients(): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
+    override fun getClients(ownerAdminId: String?): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -367,17 +369,27 @@ class PostgresSupportDeskRepository(
                     FROM tasks ts
                     WHERE ts.client_id = c.id
                       AND ts.completed = FALSE
+                      AND (? IS NULL OR ts.owner_admin_id::text = ?)
                 ) AS open_tasks_count,
                 (
                     SELECT COALESCE(SUM(tl.minutes), 0)::integer
                     FROM time_logs tl
+                    JOIN tasks ts ON ts.id = tl.task_id
                     WHERE tl.client_id = c.id
+                      AND (? IS NULL OR ts.owner_admin_id::text = ?)
                       AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
                 ) AS monthly_logged_minutes
             FROM clients c
+            WHERE (? IS NULL OR c.owner_admin_id::text = ?)
             ORDER BY c.company_name ASC
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
+            statement.setString(4, ownerAdminId)
+            statement.setString(5, ownerAdminId)
+            statement.setString(6, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -402,23 +414,24 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createClient(request: CreateClientRequest): ServerClientSnapshot = dataSource.withConnection { connection ->
+    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             INSERT INTO clients (
-                company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+                owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
             RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, request.companyName)
-            statement.setString(2, request.productName)
-            statement.setString(3, request.contactName)
-            statement.setString(4, request.email)
-            statement.setString(5, request.accountStatus)
-            statement.setString(6, request.serviceTier)
-            statement.setString(7, request.preferredContactChannel)
+            statement.setString(1, ownerAdminId ?: DEFAULT_ADMIN_OWNER_ID)
+            statement.setString(2, request.companyName)
+            statement.setString(3, request.productName)
+            statement.setString(4, request.contactName)
+            statement.setString(5, request.email)
+            statement.setString(6, request.accountStatus)
+            statement.setString(7, request.serviceTier)
+            statement.setString(8, request.preferredContactChannel)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 ServerClientSnapshot(
@@ -438,7 +451,12 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun updateClient(clientId: String, request: UpdateClientRequest): ServerClientSnapshot = dataSource.withConnection { connection ->
+    override fun updateClient(
+        clientId: String,
+        request: UpdateClientRequest,
+        ownerAdminId: String?,
+    ): ServerClientSnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
         connection.prepareStatement(
             """
             UPDATE clients
@@ -450,6 +468,7 @@ class PostgresSupportDeskRepository(
                 service_tier = COALESCE(NULLIF(?, ''), service_tier),
                 preferred_contact_channel = COALESCE(NULLIF(?, ''), preferred_contact_channel)
             WHERE id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
             RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
             """.trimIndent(),
         ).use { statement ->
@@ -461,6 +480,8 @@ class PostgresSupportDeskRepository(
             statement.setString(6, request.serviceTier)
             statement.setString(7, request.preferredContactChannel)
             statement.setString(8, clientId)
+            statement.setString(9, ownerAdminId)
+            statement.setString(10, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Client not found")
@@ -475,38 +496,58 @@ class PostgresSupportDeskRepository(
                     serviceTier = resultSet.getString("service_tier"),
                     preferredContactChannel = resultSet.getString("preferred_contact_channel"),
                     activeTicketCount = getActiveTicketCount(connection, clientId),
-                    openTasksCount = getOpenTasksCount(connection, clientId),
-                    monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId),
+                    openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
+                    monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
                 )
             }
         }
     }
 
-    override fun deleteClient(clientId: String) {
+    override fun deleteClient(clientId: String, ownerAdminId: String?) {
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId)
+            requireClientExists(connection, clientId, ownerAdminId)
             if (hasLinkedTickets(connection, clientId)) {
                 throw ServerConflictException("Client has related tickets and cannot be deleted")
             }
             connection.prepareStatement(
-                "DELETE FROM clients WHERE id::text = ?",
+                """
+                UPDATE tasks
+                SET client_id = NULL
+                WHERE client_id::text = ?
+                  AND (? IS NULL OR owner_admin_id::text = ?)
+                """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
                 statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "DELETE FROM clients WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
+                if (statement.executeUpdate() == 0) {
+                    throw ServerNotFoundException("Client not found")
+                }
             }
         }
     }
 
-    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
+    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT tl.id::text AS id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
             FROM task_labels tl
             LEFT JOIN tasks t ON t.label_id = tl.id
+                AND (? IS NULL OR t.owner_admin_id::text = ?)
             GROUP BY tl.id, tl.name, tl.color_hex
             ORDER BY tl.name ASC
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -567,7 +608,7 @@ class PostgresSupportDeskRepository(
                     id = resultSet.getString("id"),
                     name = resultSet.getString("name"),
                     colorHex = resultSet.getString("color_hex"),
-                    tasksCount = getTasks(labelId = labelId).size,
+                    tasksCount = getTasks(labelId = labelId, ownerAdminId = null).size,
                 )
             }
         }
@@ -588,7 +629,7 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTasks(clientId: String?, labelId: String?): List<ServerTaskSnapshot> = dataSource.withConnection { connection ->
+    override fun getTasks(clientId: String?, labelId: String?, ownerAdminId: String?): List<ServerTaskSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -600,8 +641,10 @@ class PostgresSupportDeskRepository(
                 tl.id::text AS label_id,
                 tl.name AS label_name,
                 tl.color_hex,
+                t.due_date::text AS due_date,
                 t.completed,
                 t.logged_minutes,
+                t.logged_seconds,
                 t.created_at,
                 t.updated_at
             FROM tasks t
@@ -609,13 +652,16 @@ class PostgresSupportDeskRepository(
             LEFT JOIN clients c ON c.id = t.client_id
             WHERE (? IS NULL OR t.client_id::text = ?)
               AND (? IS NULL OR t.label_id::text = ?)
-            ORDER BY t.updated_at DESC, t.created_at DESC
+              AND (? IS NULL OR t.owner_admin_id::text = ?)
+            ORDER BY t.completed ASC, t.due_date ASC NULLS LAST, t.updated_at DESC, t.created_at DESC
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
             statement.setString(2, clientId)
             statement.setString(3, labelId)
             statement.setString(4, labelId)
+            statement.setString(5, ownerAdminId)
+            statement.setString(6, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -626,28 +672,33 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createTask(request: CreateTaskRequest): ServerTaskSnapshot = dataSource.withConnection { connection ->
+    override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
         requireLabelExists(connection, request.labelId)
-        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it) }
+        val resolvedOwnerAdminId = ownerAdminId ?: DEFAULT_ADMIN_OWNER_ID
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, ownerAdminId) }
         connection.prepareStatement(
             """
-            INSERT INTO tasks (title, description, client_id, label_id, completed, logged_minutes)
-            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), FALSE, 0)
+            INSERT INTO tasks (title, description, client_id, owner_admin_id, label_id, due_date, completed, logged_minutes, logged_seconds)
+            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
             RETURNING
                 id::text AS id,
                 title,
                 description,
                 client_id::text AS client_id,
+                due_date::text AS due_date,
                 created_at,
                 updated_at,
                 completed,
-                logged_minutes
+                logged_minutes,
+                logged_seconds
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.title.trim())
             statement.setString(2, request.description.trim())
             statement.setString(3, request.clientId?.takeIf { it.isNotBlank() })
-            statement.setString(4, request.labelId)
+            statement.setString(4, resolvedOwnerAdminId)
+            statement.setString(5, request.labelId)
+            statement.setString(6, request.dueDate?.trim()?.takeIf { it.isNotBlank() })
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 hydrateTaskSnapshot(connection, resultSet)
@@ -655,10 +706,10 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun updateTask(taskId: String, request: UpdateTaskRequest): ServerTaskSnapshot = dataSource.withConnection { connection ->
-        requireTaskExists(connection, taskId)
+    override fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
+        requireTaskExists(connection, taskId, ownerAdminId)
         request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it) }
-        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it) }
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, ownerAdminId) }
         connection.prepareStatement(
             """
             UPDATE tasks
@@ -670,17 +721,26 @@ class PostgresSupportDeskRepository(
                     ELSE CAST(? AS uuid)
                 END,
                 label_id = COALESCE(CAST(NULLIF(?, '') AS uuid), label_id),
+                due_date = CASE
+                    WHEN ? = '__CLEAR__' THEN NULL
+                    WHEN ? IS NULL THEN due_date
+                    WHEN ? = '' THEN NULL
+                    ELSE CAST(? AS date)
+                END,
                 completed = COALESCE(?, completed)
             WHERE id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
             RETURNING
                 id::text AS id,
                 title,
                 description,
                 client_id::text AS client_id,
+                due_date::text AS due_date,
                 created_at,
                 updated_at,
                 completed,
-                logged_minutes
+                logged_minutes,
+                logged_seconds
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.title)
@@ -691,12 +751,20 @@ class PostgresSupportDeskRepository(
             statement.setString(5, clientValue)
             statement.setString(6, clientValue)
             statement.setString(7, request.labelId)
+            val dueDateValue = request.dueDate
+            val dueDateMarker = if (request.dueDate == null) null else if (request.dueDate.isBlank()) "__CLEAR__" else request.dueDate
+            statement.setString(8, dueDateMarker)
+            statement.setString(9, dueDateValue)
+            statement.setString(10, dueDateValue)
+            statement.setString(11, dueDateValue)
             if (request.completed == null) {
-                statement.setNull(8, java.sql.Types.BOOLEAN)
+                statement.setNull(12, java.sql.Types.BOOLEAN)
             } else {
-                statement.setBoolean(8, request.completed)
+                statement.setBoolean(12, request.completed)
             }
-            statement.setString(9, taskId)
+            statement.setString(13, taskId)
+            statement.setString(14, ownerAdminId)
+            statement.setString(15, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Task not found")
@@ -706,12 +774,15 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun deleteTask(taskId: String) {
+    override fun deleteTask(taskId: String, ownerAdminId: String?) {
         dataSource.withConnection { connection ->
+            requireTaskExists(connection, taskId, ownerAdminId)
             connection.prepareStatement(
-                "DELETE FROM tasks WHERE id::text = ?",
+                "DELETE FROM tasks WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
             ).use { statement ->
                 statement.setString(1, taskId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
                 if (statement.executeUpdate() == 0) {
                     throw ServerNotFoundException("Task not found")
                 }
@@ -719,7 +790,7 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTimeLogs(clientId: String?, taskId: String?): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
+    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -729,14 +800,17 @@ class PostgresSupportDeskRepository(
                 tl.author_id::text AS author_id,
                 u.name AS author_name,
                 tl.minutes,
+                tl.seconds,
                 tl.work_date::text AS work_date,
                 tl.note,
                 tl.billable,
                 tl.created_at
             FROM time_logs tl
+            JOIN tasks t ON t.id = tl.task_id
             JOIN users u ON u.id = tl.author_id
             WHERE (? IS NULL OR tl.client_id::text = ?)
               AND (? IS NULL OR tl.task_id::text = ?)
+              AND (? IS NULL OR t.owner_admin_id::text = ?)
             ORDER BY tl.work_date DESC, tl.created_at DESC
             """.trimIndent(),
         ).use { statement ->
@@ -744,6 +818,8 @@ class PostgresSupportDeskRepository(
             statement.setString(2, clientId)
             statement.setString(3, taskId)
             statement.setString(4, taskId)
+            statement.setString(5, ownerAdminId)
+            statement.setString(6, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -754,13 +830,23 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createTimeLog(request: CreateTimeLogRequest): ServerTimeLogSnapshot = dataSource.withConnection { connection ->
+    override fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String?): ServerTimeLogSnapshot = dataSource.withConnection { connection ->
         connection.autoCommit = false
         try {
+            val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
+            val resolvedMinutes = resolvedSeconds / 60
             val taskClientId = connection.prepareStatement(
-                "SELECT client_id::text AS client_id FROM tasks WHERE id::text = ? LIMIT 1",
+                """
+                SELECT client_id::text AS client_id
+                FROM tasks
+                WHERE id::text = ?
+                  AND (? IS NULL OR owner_admin_id::text = ?)
+                LIMIT 1
+                """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, request.taskId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) {
                         resultSet.getString("client_id")
@@ -772,19 +858,20 @@ class PostgresSupportDeskRepository(
 
             val created = connection.prepareStatement(
                 """
-                INSERT INTO time_logs (task_id, client_id, author_id, minutes, work_date, note, billable)
-                VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, CAST(? AS date), ?, ?)
+                INSERT INTO time_logs (task_id, client_id, author_id, minutes, seconds, work_date, note, billable)
+                VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, ?, CAST(? AS date), ?, ?)
                 RETURNING id::text AS id, task_id::text AS task_id, client_id::text AS client_id,
-                          author_id::text AS author_id, minutes, work_date::text AS work_date, note, billable, created_at
+                          author_id::text AS author_id, minutes, seconds, work_date::text AS work_date, note, billable, created_at
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, request.taskId)
                 statement.setString(2, taskClientId)
                 statement.setString(3, request.authorId)
-                statement.setInt(4, request.minutes)
-                statement.setString(5, request.workDate)
-                statement.setString(6, request.note)
-                statement.setBoolean(7, request.billable)
+                statement.setInt(4, resolvedMinutes)
+                statement.setInt(5, resolvedSeconds)
+                statement.setString(6, request.workDate)
+                statement.setString(7, request.note)
+                statement.setBoolean(8, request.billable)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     val authorName = resolveAuthorName(connection, request.authorId)
@@ -795,6 +882,7 @@ class PostgresSupportDeskRepository(
                         authorId = resultSet.getString("author_id"),
                         authorName = authorName,
                         minutes = resultSet.getInt("minutes"),
+                        seconds = resultSet.getInt("seconds"),
                         workDate = resultSet.getString("work_date"),
                         note = resultSet.getString("note"),
                         billable = resultSet.getBoolean("billable"),
@@ -806,12 +894,17 @@ class PostgresSupportDeskRepository(
             connection.prepareStatement(
                 """
                 UPDATE tasks
-                SET logged_minutes = logged_minutes + ?
+                SET logged_minutes = (logged_seconds + ?) / 60,
+                    logged_seconds = logged_seconds + ?
                 WHERE id::text = ?
+                  AND (? IS NULL OR owner_admin_id::text = ?)
                 """.trimIndent(),
             ).use { statement ->
-                statement.setInt(1, request.minutes)
-                statement.setString(2, request.taskId)
+                statement.setInt(1, resolvedSeconds)
+                statement.setInt(2, resolvedSeconds)
+                statement.setString(3, request.taskId)
+                statement.setString(4, ownerAdminId)
+                statement.setString(5, ownerAdminId)
                 statement.executeUpdate()
             }
             connection.commit()
@@ -824,21 +917,20 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getDashboard(clientId: String?, labelId: String?): ServerDashboardSnapshot = dataSource.withConnection { connection ->
-        val summary = connection.prepareStatement(
+    override fun getDashboard(clientId: String?, labelId: String?, ownerAdminId: String?): ServerDashboardSnapshot = dataSource.withConnection { connection ->
+        val activeClients = connection.prepareStatement(
             """
-            SELECT open_tickets, pending_client_tickets, resolved_today, active_clients
-            FROM admin_dashboard_summary
+            SELECT COUNT(*)::integer AS active_clients
+            FROM clients
+            WHERE account_status = 'ACTIVE'
+              AND (? IS NULL OR owner_admin_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
-                listOf(
-                    resultSet.getInt("open_tickets"),
-                    resultSet.getInt("pending_client_tickets"),
-                    resultSet.getInt("resolved_today"),
-                    resultSet.getInt("active_clients"),
-                )
+                resultSet.getInt("active_clients")
             }
         }
         val totals = connection.prepareStatement(
@@ -847,10 +939,14 @@ class PostgresSupportDeskRepository(
                 COALESCE(SUM(minutes), 0)::integer AS total_minutes,
                 COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes,
                 TO_CHAR(CURRENT_DATE, 'TMMonth YYYY') AS month_label
-            FROM time_logs
+            FROM time_logs tl
+            JOIN tasks t ON t.id = tl.task_id
             WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+              AND (? IS NULL OR t.owner_admin_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 Triple(
@@ -868,12 +964,16 @@ class PostgresSupportDeskRepository(
                 SELECT
                     COALESCE(SUM(minutes), 0)::integer AS total_minutes,
                     COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes
-                FROM time_logs
+                FROM time_logs tl
+                JOIN tasks t ON t.id = tl.task_id
                 WHERE client_id::text = ?
+                  AND (? IS NULL OR t.owner_admin_id::text = ?)
                   AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.getInt("total_minutes") to resultSet.getInt("billable_minutes")
@@ -883,15 +983,19 @@ class PostgresSupportDeskRepository(
         val dailyMinutes = connection.prepareStatement(
             """
             SELECT work_date::text AS work_date, COALESCE(SUM(minutes), 0)::integer AS minutes
-            FROM time_logs
+            FROM time_logs tl
+            JOIN tasks t ON t.id = tl.task_id
             WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
               AND (? IS NULL OR client_id::text = ?)
+              AND (? IS NULL OR t.owner_admin_id::text = ?)
             GROUP BY work_date
             ORDER BY work_date ASC
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
             statement.setString(2, clientId)
+            statement.setString(3, ownerAdminId)
+            statement.setString(4, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -906,10 +1010,10 @@ class PostgresSupportDeskRepository(
             }
         }
         ServerDashboardSnapshot(
-            openTickets = summary[0],
-            pendingClientTickets = summary[1],
-            resolvedToday = summary[2],
-            activeClients = summary[3],
+            openTickets = 0,
+            pendingClientTickets = 0,
+            resolvedToday = 0,
+            activeClients = activeClients,
             monthLabel = totals.third,
             totalMinutes = totals.first,
             billableMinutes = totals.second,
@@ -917,7 +1021,7 @@ class PostgresSupportDeskRepository(
             selectedClientMinutes = selectedClientTotals.first,
             selectedClientBillableMinutes = selectedClientTotals.second,
             dailyMinutes = dailyMinutes,
-            availableTasks = getTasks(clientId, labelId),
+            availableTasks = getTasks(clientId, labelId, ownerAdminId),
         )
     }
 
@@ -1051,8 +1155,10 @@ class PostgresSupportDeskRepository(
         labelId = resultSet.getString("label_id"),
         labelName = resultSet.getString("label_name"),
         labelColorHex = resultSet.getString("color_hex"),
+        dueDate = resultSet.getString("due_date"),
         completed = resultSet.getBoolean("completed"),
         loggedMinutes = resultSet.getInt("logged_minutes"),
+        loggedSeconds = resultSet.getInt("logged_seconds"),
         createdAt = formatTimestamp(resultSet.getObject("created_at")),
         updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
     )
@@ -1070,8 +1176,10 @@ class PostgresSupportDeskRepository(
                 tl.id::text AS label_id,
                 tl.name AS label_name,
                 tl.color_hex,
+                t.due_date::text AS due_date,
                 t.completed,
                 t.logged_minutes,
+                t.logged_seconds,
                 t.created_at,
                 t.updated_at
             FROM tasks t
@@ -1096,6 +1204,7 @@ class PostgresSupportDeskRepository(
         authorId = resultSet.getString("author_id"),
         authorName = resultSet.getString("author_name"),
         minutes = resultSet.getInt("minutes"),
+        seconds = resultSet.getInt("seconds"),
         workDate = resultSet.getString("work_date"),
         note = resultSet.getString("note") ?: "",
         billable = resultSet.getBoolean("billable"),
@@ -1112,11 +1221,19 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    private fun getOpenTasksCount(connection: Connection, clientId: String): Int =
+    private fun getOpenTasksCount(connection: Connection, clientId: String, ownerAdminId: String? = null): Int =
         connection.prepareStatement(
-            "SELECT COUNT(*)::integer AS open_tasks_count FROM tasks WHERE client_id::text = ? AND completed = FALSE",
+            """
+            SELECT COUNT(*)::integer AS open_tasks_count
+            FROM tasks
+            WHERE client_id::text = ?
+              AND completed = FALSE
+              AND (? IS NULL OR owner_admin_id::text = ?)
+            """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("open_tasks_count")
@@ -1134,24 +1251,28 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    private fun getClientMonthlyMinutes(connection: Connection, clientId: String): Int =
+    private fun getClientMonthlyMinutes(connection: Connection, clientId: String, ownerAdminId: String? = null): Int =
         connection.prepareStatement(
             """
             SELECT COALESCE(SUM(minutes), 0)::integer AS monthly_minutes
-            FROM time_logs
+            FROM time_logs tl
+            JOIN tasks t ON t.id = tl.task_id
             WHERE client_id::text = ?
+              AND (? IS NULL OR t.owner_admin_id::text = ?)
               AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("monthly_minutes")
             }
         }
 
-    private fun requireClientExists(connection: Connection, clientId: String) {
-        if (!recordExists(connection, "clients", clientId)) {
+    private fun requireClientExists(connection: Connection, clientId: String, ownerAdminId: String? = null) {
+        if (!recordExists(connection, "clients", clientId, ownerAdminId)) {
             throw ServerNotFoundException("Client not found")
         }
     }
@@ -1162,17 +1283,25 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    private fun requireTaskExists(connection: Connection, taskId: String) {
-        if (!recordExists(connection, "tasks", taskId)) {
+    private fun requireTaskExists(connection: Connection, taskId: String, ownerAdminId: String? = null) {
+        if (!recordExists(connection, "tasks", taskId, ownerAdminId)) {
             throw ServerNotFoundException("Task not found")
         }
     }
 
-    private fun recordExists(connection: Connection, tableName: String, id: String): Boolean =
+    private fun recordExists(connection: Connection, tableName: String, id: String, ownerAdminId: String? = null): Boolean =
         connection.prepareStatement(
-            "SELECT 1 FROM $tableName WHERE id::text = ? LIMIT 1",
+            """
+            SELECT 1
+            FROM $tableName
+            WHERE id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
+            LIMIT 1
+            """.trimIndent(),
         ).use { statement ->
             statement.setString(1, id)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
@@ -1197,6 +1326,10 @@ class PostgresSupportDeskRepository(
         return "#${trimmed.take(6).padEnd(6, '0')}"
     }
 
+    private fun PreparedStatement.bindInstant(index: Int, value: Instant) {
+        setTimestamp(index, Timestamp.from(value))
+    }
+
     private fun formatTimestamp(value: Any?): String {
         val instant = when (value) {
             is Instant -> value
@@ -1206,5 +1339,9 @@ class PostgresSupportDeskRepository(
             else -> return ""
         }
         return DateTimeFormatter.ISO_INSTANT.format(instant)
+    }
+
+    private companion object {
+        const val DEFAULT_ADMIN_OWNER_ID = "22222222-2222-2222-2222-222222222222"
     }
 }

@@ -3,7 +3,10 @@ package com.requena.supportdesk.core.common
 import com.requena.supportdesk.core.network.configuredSupportDeskHttpClient
 import com.requena.supportdesk.features.auth.data.datasource.RemoteAuthDataSource
 import com.requena.supportdesk.features.auth.data.repository.AuthRepositoryImpl
+import com.requena.supportdesk.features.auth.data.session.AuthSessionStore
+import com.requena.supportdesk.features.auth.domain.usecase.ClearSessionUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
+import com.requena.supportdesk.features.auth.domain.usecase.RestoreSessionUseCase
 import com.requena.supportdesk.features.auth.presentation.viewmodel.AuthViewModel
 import com.requena.supportdesk.features.clients.data.datasource.RemoteClientsDataSource
 import com.requena.supportdesk.features.clients.data.repository.ClientsRepositoryImpl
@@ -45,7 +48,10 @@ import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsVi
 
 object SupportDeskSharedModule {
     private val httpClient = configuredSupportDeskHttpClient()
-    private val authRepository = AuthRepositoryImpl(RemoteAuthDataSource(httpClient))
+    private val authRepository = AuthRepositoryImpl(
+        dataSource = RemoteAuthDataSource(httpClient),
+        sessionStore = AuthSessionStore(),
+    )
     private val ticketsRepository = TicketsRepositoryImpl(RemoteTicketsDataSource(httpClient))
     private val clientsRepository = ClientsRepositoryImpl(RemoteClientsDataSource(httpClient))
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
@@ -53,6 +59,8 @@ object SupportDeskSharedModule {
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
 
     private val loginUseCase = LoginUseCase(authRepository)
+    private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
+    private val clearSessionUseCase = ClearSessionUseCase(authRepository)
     private val getTicketsUseCase = GetTicketsUseCase(ticketsRepository)
     private val getTicketUseCase = GetTicketUseCase(ticketsRepository)
     private val createTicketUseCase = CreateTicketUseCase(ticketsRepository)
@@ -76,7 +84,11 @@ object SupportDeskSharedModule {
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
 
-    fun createAuthViewModel(): AuthViewModel = AuthViewModel(loginUseCase)
+    fun createAuthViewModel(): AuthViewModel = AuthViewModel(
+        loginUseCase = loginUseCase,
+        restoreSessionUseCase = restoreSessionUseCase,
+        clearSessionUseCase = clearSessionUseCase,
+    )
 
     fun createTicketsViewModel(): TicketsViewModel = TicketsViewModel(
         getTicketsUseCase = getTicketsUseCase,

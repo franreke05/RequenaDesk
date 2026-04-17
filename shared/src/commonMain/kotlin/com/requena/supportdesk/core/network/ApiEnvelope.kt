@@ -1,5 +1,7 @@
 package com.requena.supportdesk.core.network
 
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
@@ -46,3 +48,9 @@ suspend fun HttpResponse.requireSuccess() {
         error(message)
     }
 }
+
+inline fun <reified T> jsonRequestBody(value: T): TextContent =
+    TextContent(
+        text = supportDeskNetworkJson.encodeToString(value),
+        contentType = ContentType.Application.Json,
+    )

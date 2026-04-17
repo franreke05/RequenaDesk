@@ -1,10 +1,9 @@
 package com.requena.supportdesk.features.dashboard.data.datasource
 
-import com.requena.supportdesk.core.network.ApiEnvelope
+import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
 import com.requena.supportdesk.features.dashboard.data.dto.DashboardSummaryDto
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.request.get
 
 interface DashboardDataSource {
@@ -15,5 +14,5 @@ class RemoteDashboardDataSource(
     private val httpClient: HttpClient,
 ) : DashboardDataSource {
     override suspend fun getSummary(): DashboardSummaryDto =
-        httpClient.get("${supportDeskBaseUrl()}/admin/dashboard").body<ApiEnvelope<DashboardSummaryDto>>().data
+        httpClient.get("${supportDeskBaseUrl()}/admin/dashboard").requireApiData()
 }

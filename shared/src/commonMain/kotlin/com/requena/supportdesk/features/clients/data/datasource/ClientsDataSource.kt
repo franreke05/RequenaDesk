@@ -1,5 +1,6 @@
 package com.requena.supportdesk.features.clients.data.datasource
 
+import com.requena.supportdesk.core.network.jsonRequestBody
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
@@ -12,8 +13,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 
 interface ClientsDataSource {
     suspend fun getClients(): List<ClientDto>
@@ -30,14 +29,12 @@ class RemoteClientsDataSource(
 
     override suspend fun createClient(request: CreateClientRequestDto): ClientDto =
         httpClient.post("${supportDeskBaseUrl()}/admin/clients") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun updateClient(clientId: String, request: UpdateClientRequestDto): ClientDto =
         httpClient.patch("${supportDeskBaseUrl()}/admin/clients/$clientId") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun deleteClient(clientId: String) {

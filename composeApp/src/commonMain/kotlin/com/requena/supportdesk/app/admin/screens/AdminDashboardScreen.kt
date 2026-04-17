@@ -52,7 +52,9 @@ import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlin.math.max
@@ -66,18 +68,20 @@ fun AdminDashboardScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = clients.firstOrNull { it.id == tasksState.selectedDashboardClientId }
-    val globalMinutes = tasksState.logs.sumOf { it.minutes }
-    val globalBillableMinutes = tasksState.logs.filter { it.billable }.sumOf { it.minutes }
+    val globalSeconds = tasksState.logs.sumOf { it.seconds }
+    val globalBillableSeconds = tasksState.logs.filter { it.billable }.sumOf { it.seconds }
     val clientLogs = tasksState.logs.filter { log ->
         tasksState.selectedDashboardClientId == null || log.clientId == tasksState.selectedDashboardClientId
     }
-    val clientMinutes = clientLogs.sumOf { it.minutes }
-    val clientBillableMinutes = clientLogs.filter { it.billable }.sumOf { it.minutes }
+    val clientSeconds = clientLogs.sumOf { it.seconds }
+    val clientBillableSeconds = clientLogs.filter { it.billable }.sumOf { it.seconds }
+    val selectedPlanningDay = tasksState.selectedDay.takeIf { tasksState.selectedDayIsFuture }
     val dashboardTasks = tasksState.tasks.filter { task ->
         (tasksState.selectedDashboardClientId == null || task.clientId == tasksState.selectedDashboardClientId) &&
-            (tasksState.selectedCategoryId == null || task.categoryId == tasksState.selectedCategoryId)
+            (tasksState.selectedCategoryId == null || task.categoryId == tasksState.selectedCategoryId) &&
+            (selectedPlanningDay == null || task.dueDate == selectedPlanningDay)
     }
-    val selectedTask = tasksState.selectedTask
+    val selectedTask = tasksState.selectedTask?.takeIf { candidate -> dashboardTasks.any { it.id == candidate.id } } ?: dashboardTasks.firstOrNull()
 
     Column(
         modifier = modifier
@@ -106,8 +110,12 @@ fun AdminDashboardScreen(
             )
             MetricCard(
                 label = "Horas del mes",
-                value = formatSupportDeskDuration(globalMinutes),
-                supportingText = "${dashboardTasks.count()} tareas visibles tras los filtros.",
+                value = formatSupportDeskPreciseDuration(globalSeconds),
+                supportingText = if (selectedPlanningDay == null) {
+                    "${dashboardTasks.count()} tareas visibles tras los filtros."
+                } else {
+                    "${dashboardTasks.count()} tareas programadas para $selectedPlanningDay."
+                },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -117,11 +125,11 @@ fun AdminDashboardScreen(
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
                     WheelSummaryRow(
-                        globalMinutes = globalMinutes,
-                        globalBillableMinutes = globalBillableMinutes,
+                        globalSeconds = globalSeconds,
+                        globalBillableSeconds = globalBillableSeconds,
                         clientName = selectedClient?.companyName ?: "Cliente",
-                        clientMinutes = clientMinutes,
-                        clientBillableMinutes = clientBillableMinutes,
+                        clientSeconds = clientSeconds,
+                        clientBillableSeconds = clientBillableSeconds,
                     )
                     CompactCalendarCard(
                         tasksState = tasksState,
@@ -134,11 +142,11 @@ fun AdminDashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(spacing.lg),
                 ) {
                     WheelSummaryRow(
-                        globalMinutes = globalMinutes,
-                        globalBillableMinutes = globalBillableMinutes,
+                        globalSeconds = globalSeconds,
+                        globalBillableSeconds = globalBillableSeconds,
                         clientName = selectedClient?.companyName ?: "Cliente",
-                        clientMinutes = clientMinutes,
-                        clientBillableMinutes = clientBillableMinutes,
+                        clientSeconds = clientSeconds,
+                        clientBillableSeconds = clientBillableSeconds,
                         modifier = Modifier.weight(0.52f),
                     )
                     CompactCalendarCard(
@@ -161,7 +169,7 @@ private fun CounterHeroCard(
     tasksState: TasksUiState,
     onTasksEvent: (TasksUiEvent) -> Unit,
 ) {
-    val selectedTask = tasksState.selectedTask
+    val selectedTask = tasksState.selectedTask?.takeIf { candidate -> tasks.any { it.id == candidate.id } } ?: tasks.firstOrNull()
 
     SectionCard(
         title = "Tiempo y foco",
@@ -200,8 +208,16 @@ private fun CounterHeroCard(
 
             if (tasks.isEmpty()) {
                 EmptyState(
-                    title = "Sin tareas para este contexto",
-                    message = "",
+                    title = if (tasksState.selectedDayIsFuture) {
+                        "Sin tareas programadas para ${tasksState.selectedDay}"
+                    } else {
+                        "Sin tareas para este contexto"
+                    },
+                    message = if (tasksState.selectedDayIsFuture) {
+                        "Programa nuevas tareas desde la pantalla de Tareas usando el dia seleccionado."
+                    } else {
+                        ""
+                    },
                 )
             } else {
                 LazyColumn(
@@ -226,9 +242,28 @@ private fun CounterHeroCard(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        text = formatTimer(tasksState.activeTaskSeconds),
+                        text = formatSupportDeskClockDuration(tasksState.selectedTaskTrackedSeconds),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (selectedTask == null) {
+                            if (tasksState.selectedDayIsFuture) {
+                                "Dia futuro: puedes revisar y planificar tareas, pero no imputar tiempo."
+                            } else {
+                                "Tiempo total de la tarea seleccionada"
+                            }
+                        } else if (tasksState.selectedDayIsFuture) {
+                            "Planificada para ${selectedTask.dueDate ?: "sin fecha"}"
+                        } else if (tasksState.selectedDayIsPast) {
+                            "Los dias anteriores estan bloqueados para registrar horas."
+                        } else if (tasksState.activeTaskId == selectedTask.id && tasksState.activeTaskSeconds > 0) {
+                            "Sesion actual: ${formatSupportDeskClockDuration(tasksState.activeTaskSeconds)}"
+                        } else {
+                            "Total acumulado de esta tarea"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -239,7 +274,7 @@ private fun CounterHeroCard(
                             onClick = {
                                 selectedTask?.id?.let { onTasksEvent(TasksUiEvent.StartTimer(it)) }
                             },
-                            enabled = selectedTask != null && !tasksState.isTimerRunning,
+                            enabled = selectedTask != null && !tasksState.isTimerRunning && tasksState.canTrackSelectedDay,
                             modifier = Modifier.weight(1f),
                         )
                         SecondaryButton(
@@ -260,6 +295,17 @@ private fun CounterHeroCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!tasksState.canTrackSelectedDay) {
+                        Text(
+                            text = if (tasksState.selectedDayIsFuture) {
+                                "Solo hoy permite registrar horas. El futuro queda para planificacion."
+                            } else {
+                                "Los dias anteriores no admiten cambios ni imputaciones."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -300,7 +346,7 @@ private fun DashboardTaskRow(
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "${formatSupportDeskDuration(task.loggedMinutes)} registradas",
+                text = task.dueDate?.let { "Planificada: $it" } ?: "${formatSupportDeskClockDuration(task.loggedSeconds)} registradas",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -317,11 +363,11 @@ private fun DashboardTaskRow(
 
 @Composable
 private fun WheelSummaryRow(
-    globalMinutes: Int,
-    globalBillableMinutes: Int,
+    globalSeconds: Int,
+    globalBillableSeconds: Int,
     clientName: String,
-    clientMinutes: Int,
-    clientBillableMinutes: Int,
+    clientSeconds: Int,
+    clientBillableSeconds: Int,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -330,14 +376,14 @@ private fun WheelSummaryRow(
     ) {
         WheelCard(
             title = "Global",
-            totalMinutes = globalMinutes,
-            billableMinutes = globalBillableMinutes,
+            totalSeconds = globalSeconds,
+            billableSeconds = globalBillableSeconds,
             modifier = Modifier.weight(1f),
         )
         WheelCard(
             title = clientName,
-            totalMinutes = clientMinutes,
-            billableMinutes = clientBillableMinutes,
+            totalSeconds = clientSeconds,
+            billableSeconds = clientBillableSeconds,
             modifier = Modifier.weight(1f),
         )
     }
@@ -346,13 +392,13 @@ private fun WheelSummaryRow(
 @Composable
 private fun WheelCard(
     title: String,
-    totalMinutes: Int,
-    billableMinutes: Int,
+    totalSeconds: Int,
+    billableSeconds: Int,
     modifier: Modifier = Modifier,
 ) {
-    val nonBillableMinutes = max(0, totalMinutes - billableMinutes)
-    val safeTotal = max(1, totalMinutes)
-    val sweepTarget = (billableMinutes.toFloat() / safeTotal.toFloat()) * 360f
+    val nonBillableSeconds = max(0, totalSeconds - billableSeconds)
+    val safeTotal = max(1, totalSeconds)
+    val sweepTarget = (billableSeconds.toFloat() / safeTotal.toFloat()) * 360f
     val billableSweep by animateFloatAsState(targetValue = sweepTarget)
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -394,7 +440,7 @@ private fun WheelCard(
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = formatSupportDeskDuration(totalMinutes),
+                        text = formatSupportDeskClockDuration(totalSeconds),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -411,13 +457,13 @@ private fun WheelCard(
             ) {
                 LegendChip(
                     label = "Facturable",
-                    value = formatSupportDeskDuration(billableMinutes),
+                    value = formatSupportDeskPreciseDuration(billableSeconds),
                     color = primaryColor,
                     modifier = Modifier.weight(1f),
                 )
                 LegendChip(
                     label = "Interno",
-                    value = formatSupportDeskDuration(nonBillableMinutes),
+                    value = formatSupportDeskPreciseDuration(nonBillableSeconds),
                     color = secondaryColor,
                     modifier = Modifier.weight(1f),
                 )
@@ -433,14 +479,14 @@ private fun CompactCalendarCard(
     modifier: Modifier = Modifier,
 ) {
     val initialMonth = remember(tasksState.selectedDay) {
-        tasksState.selectedDay?.let(::parseCalendarMonth) ?: CalendarMonth(2026, 4)
+        tasksState.selectedDay?.let(::parseCalendarMonth) ?: parseCalendarMonth(tasksState.todayIsoDate)
     }
     var visibleYear by rememberSaveable(initialMonth.year) { mutableIntStateOf(initialMonth.year) }
     var visibleMonth by rememberSaveable(initialMonth.month) { mutableIntStateOf(initialMonth.month) }
     val month = remember(visibleYear, visibleMonth) { CalendarMonth(visibleYear, visibleMonth) }
     val maxMinutes = max(1, tasksState.logs.maxOfOrNull { it.minutes } ?: 0)
-    val cells = remember(tasksState.logs, tasksState.selectedDay, month) {
-        buildCalendarCells(month, tasksState.logs, tasksState.selectedDay)
+    val cells = remember(tasksState.logs, tasksState.tasks, tasksState.selectedDay, tasksState.todayIsoDate, month) {
+        buildCalendarCells(month, tasksState.logs, tasksState.tasks, tasksState.selectedDay, tasksState.todayIsoDate)
     }
 
     SectionCard(
@@ -525,15 +571,19 @@ private fun CompactCalendarDayCell(
     val alpha = if (day.minutes == 0) 0.06f else 0.14f + (day.minutes.toFloat() / maxMinutes.toFloat()) * 0.28f
     val borderColor = when {
         day.selected -> MaterialTheme.colorScheme.primary
+        day.isPast -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
         day.inCurrentMonth -> Color.Transparent
         else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     }
     val backgroundColor = when {
         day.selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        day.isPast -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
         day.inCurrentMonth -> MaterialTheme.colorScheme.primary.copy(alpha = alpha)
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
     }
-    val contentColor = if (day.inCurrentMonth) {
+    val contentColor = if (day.isPast) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    } else if (day.inCurrentMonth) {
         MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -544,7 +594,7 @@ private fun CompactCalendarDayCell(
             .aspectRatio(1.1f)
             .border(1.dp, borderColor, RoundedCornerShape(14.dp))
             .background(backgroundColor, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = !day.isPast, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 5.dp),
     ) {
         Text(
@@ -559,6 +609,18 @@ private fun CompactCalendarDayCell(
                 style = MaterialTheme.typography.labelSmall,
                 color = contentColor,
                 modifier = Modifier.align(Alignment.BottomStart),
+            )
+        }
+        if (day.scheduledTasks > 0) {
+            Text(
+                text = "${day.scheduledTasks}t",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (day.isPast) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                },
+                modifier = Modifier.align(Alignment.BottomEnd),
             )
         }
     }
@@ -594,8 +656,10 @@ private data class CalendarDay(
     val month: Int,
     val dayNumber: String,
     val minutes: Int,
+    val scheduledTasks: Int,
     val inCurrentMonth: Boolean,
     val selected: Boolean,
+    val isPast: Boolean,
 )
 
 private data class CalendarMonth(
@@ -613,7 +677,9 @@ private data class CalendarMonth(
 private fun buildCalendarCells(
     month: CalendarMonth,
     logs: List<TaskLog>,
+    tasks: List<WorkTask>,
     selectedDay: String?,
+    todayIsoDate: String,
 ): List<CalendarDay> {
     val firstDayOffset = dayOfWeekMondayIndex(month.year, month.month, 1)
     val currentMonthDays = daysInMonth(month.year, month.month)
@@ -624,13 +690,13 @@ private fun buildCalendarCells(
     val nextMonth = month.next()
 
     val leading = (previousMonthDays - firstDayOffset + 1..previousMonthDays).map { day ->
-        buildCalendarDay(previousMonth.year, previousMonth.month, day, logs, selectedDay, false)
+        buildCalendarDay(previousMonth.year, previousMonth.month, day, logs, tasks, selectedDay, todayIsoDate, false)
     }
     val current = (1..currentMonthDays).map { day ->
-        buildCalendarDay(month.year, month.month, day, logs, selectedDay, true)
+        buildCalendarDay(month.year, month.month, day, logs, tasks, selectedDay, todayIsoDate, true)
     }
     val trailing = (1..trailingDays).map { day ->
-        buildCalendarDay(nextMonth.year, nextMonth.month, day, logs, selectedDay, false)
+        buildCalendarDay(nextMonth.year, nextMonth.month, day, logs, tasks, selectedDay, todayIsoDate, false)
     }
     return leading + current + trailing
 }
@@ -640,19 +706,24 @@ private fun buildCalendarDay(
     month: Int,
     day: Int,
     logs: List<TaskLog>,
+    tasks: List<WorkTask>,
     selectedDay: String?,
+    todayIsoDate: String,
     inCurrentMonth: Boolean,
 ): CalendarDay {
     val isoDate = isoDate(year, month, day)
     val minutes = logs.filter { it.workDate == isoDate }.sumOf { it.minutes }
+    val scheduledTasks = tasks.count { it.dueDate == isoDate }
     return CalendarDay(
         isoDate = isoDate,
         year = year,
         month = month,
         dayNumber = day.toString(),
         minutes = minutes,
+        scheduledTasks = scheduledTasks,
         inCurrentMonth = inCurrentMonth,
         selected = selectedDay == isoDate,
+        isPast = isoDate < todayIsoDate,
     )
 }
 
@@ -709,11 +780,4 @@ private fun parseColor(hex: String): Color = runCatching {
     Color(red = red, green = green, blue = blue, alpha = 1f)
 }.getOrElse {
     Color(0xFF6B7A5B)
-}
-
-private fun formatTimer(totalSeconds: Int): String {
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return "${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
 }

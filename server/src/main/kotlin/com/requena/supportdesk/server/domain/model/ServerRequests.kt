@@ -89,6 +89,7 @@ data class CreateTaskRequest(
     val description: String = "",
     val clientId: String? = null,
     val labelId: String = "",
+    val dueDate: String? = null,
 )
 
 @Serializable
@@ -97,6 +98,7 @@ data class UpdateTaskRequest(
     val description: String? = null,
     val clientId: String? = null,
     val labelId: String? = null,
+    val dueDate: String? = null,
     val completed: Boolean? = null,
 )
 
@@ -106,6 +108,7 @@ data class CreateTimeLogRequest(
     val authorId: String = "",
     val workDate: String = "",
     val minutes: Int = 0,
+    val seconds: Int = minutes * 60,
     val note: String = "",
     val billable: Boolean = false,
 )

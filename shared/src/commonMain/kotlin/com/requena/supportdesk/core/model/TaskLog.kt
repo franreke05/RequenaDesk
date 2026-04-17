@@ -7,6 +7,7 @@ data class TaskLog(
     val authorId: String,
     val authorName: String,
     val minutes: Int,
+    val seconds: Int = minutes * 60,
     val workDate: String,
     val note: String,
     val billable: Boolean,

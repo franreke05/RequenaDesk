@@ -9,6 +9,7 @@ import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
@@ -18,6 +19,7 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import java.time.Instant
+import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -87,15 +89,16 @@ class SupportDeskService(
 
     fun attachment(id: String) = repository.getAttachment(id)
 
-    fun clients() = repository.getClients()
+    fun clients(ownerAdminId: String? = null) = repository.getClients(ownerAdminId)
 
-    fun createdClient(request: CreateClientRequest) = repository.createClient(request)
+    fun createdClient(request: CreateClientRequest, ownerAdminId: String? = null) = repository.createClient(request, ownerAdminId)
 
-    fun updatedClient(clientId: String, request: UpdateClientRequest) = repository.updateClient(clientId, request)
+    fun updatedClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null) =
+        repository.updateClient(clientId, request, ownerAdminId)
 
-    fun deletedClient(clientId: String) = repository.deleteClient(clientId)
+    fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
 
-    fun taskLabels() = repository.getTaskLabels()
+    fun taskLabels(ownerAdminId: String? = null) = repository.getTaskLabels(ownerAdminId)
 
     fun createdTaskLabel(request: CreateTaskLabelRequest) = repository.createTaskLabel(request)
 
@@ -103,19 +106,47 @@ class SupportDeskService(
 
     fun deletedTaskLabel(labelId: String) = repository.deleteTaskLabel(labelId)
 
-    fun tasks(clientId: String? = null, labelId: String? = null) = repository.getTasks(clientId, labelId)
+    fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
+        repository.getTasks(clientId, labelId, ownerAdminId)
 
-    fun createdTask(request: CreateTaskRequest) = repository.createTask(request)
+    fun createdTask(request: CreateTaskRequest, ownerAdminId: String? = null): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
+        validateTaskDueDate(request.dueDate)
+        return repository.createTask(request, ownerAdminId)
+    }
 
-    fun updatedTask(taskId: String, request: UpdateTaskRequest) = repository.updateTask(taskId, request)
+    fun updatedTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null) =
+        repository.updateTask(taskId, request, ownerAdminId)
 
-    fun deletedTask(taskId: String) = repository.deleteTask(taskId)
+    fun deletedTask(taskId: String, ownerAdminId: String? = null) = repository.deleteTask(taskId, ownerAdminId)
 
-    fun timeLogs(clientId: String? = null, taskId: String? = null) = repository.getTimeLogs(clientId, taskId)
+    fun timeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null) =
+        repository.getTimeLogs(clientId, taskId, ownerAdminId)
 
-    fun createdTimeLog(request: CreateTimeLogRequest) = repository.createTimeLog(request)
+    fun createdTimeLog(request: CreateTimeLogRequest, ownerAdminId: String? = null): com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot {
+        validateWorkDate(request.workDate)
+        return repository.createTimeLog(request, ownerAdminId)
+    }
 
-    fun dashboard(clientId: String? = null, labelId: String? = null) = repository.getDashboard(clientId, labelId)
+    fun dashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
+        repository.getDashboard(clientId, labelId, ownerAdminId)
 
     fun registerDevice(request: RegisterDeviceRequest) = repository.registerDevice(request)
+
+    private fun validateTaskDueDate(dueDate: String?) {
+        val normalized = dueDate?.trim().orEmpty()
+        if (normalized.isBlank()) return
+        val parsedDate = runCatching { LocalDate.parse(normalized) }
+            .getOrElse { throw ServerValidationException("Task due date must use YYYY-MM-DD format") }
+        if (parsedDate.isBefore(LocalDate.now())) {
+            throw ServerValidationException("You cannot schedule tasks on previous days")
+        }
+    }
+
+    private fun validateWorkDate(workDate: String) {
+        val parsedDate = runCatching { LocalDate.parse(workDate.trim()) }
+            .getOrElse { throw ServerValidationException("Work date must use YYYY-MM-DD format") }
+        if (parsedDate != LocalDate.now()) {
+            throw ServerValidationException("Time can only be logged on the current day")
+        }
+    }
 }

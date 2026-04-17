@@ -13,6 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
+import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -172,6 +173,55 @@ class ApplicationTest {
 
         val clientsResponse = client.get("/admin/clients")
         assertTrue(!clientsResponse.bodyAsText().contains(clientId))
+    }
+
+    @Test
+    fun testCreateTaskStoresFutureDueDate() = testApplication {
+        application { testModule() }
+        val futureDate = LocalDate.now().plusDays(2).toString()
+
+        val response = client.post("/admin/tasks") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "title":"Future planning task",
+                  "description":"Programada desde calendario",
+                  "labelId":"label-1",
+                  "dueDate":"$futureDate"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, response.status)
+        assertTrue(response.bodyAsText().contains("\"dueDate\":\"$futureDate\""))
+    }
+
+    @Test
+    fun testTimeLogsRejectPastDays() = testApplication {
+        application { testModule() }
+        val pastDate = LocalDate.now().minusDays(1).toString()
+
+        val response = client.post("/admin/time-logs") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "taskId":"task-1",
+                  "authorId":"user-admin",
+                  "workDate":"$pastDate",
+                  "minutes":15,
+                  "seconds":900,
+                  "note":"Intento invalido",
+                  "billable":true
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertTrue(response.bodyAsText().contains("current day"))
     }
 
     @Test

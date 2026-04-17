@@ -10,10 +10,33 @@ import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondText
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+@PublishedApi
+internal val responseJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    explicitNulls = false
+}
+
+suspend fun ApplicationCall.respondJson(
+    status: HttpStatusCode = HttpStatusCode.OK,
+    body: JsonElement,
+) {
+    respondText(
+        text = responseJson.encodeToString(JsonElement.serializer(), body),
+        contentType = ContentType.Application.Json,
+        status = status,
+    )
+}
 
 fun successResponse(path: String, data: JsonElement) = buildJsonObject {
     put("status", "ok")
@@ -117,8 +140,10 @@ fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("labelId", task.labelId)
     put("labelName", task.labelName)
     put("labelColorHex", task.labelColorHex)
+    put("dueDate", task.dueDate)
     put("completed", task.completed)
     put("loggedMinutes", task.loggedMinutes)
+    put("loggedSeconds", task.loggedSeconds)
     put("createdAt", task.createdAt)
     put("updatedAt", task.updatedAt)
 }
@@ -134,6 +159,7 @@ fun timeLogJson(log: ServerTimeLogSnapshot) = buildJsonObject {
     put("authorId", log.authorId)
     put("authorName", log.authorName)
     put("minutes", log.minutes)
+    put("seconds", log.seconds)
     put("workDate", log.workDate)
     put("note", log.note)
     put("billable", log.billable)

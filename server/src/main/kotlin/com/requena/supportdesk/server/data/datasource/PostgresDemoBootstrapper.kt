@@ -157,7 +157,7 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO tasks (
-                id, client_id, label_id, title, description, completed, logged_minutes
+                id, client_id, label_id, title, description, due_date, completed, logged_minutes, logged_seconds
             )
             VALUES (
                 CAST('66666666-6666-6666-6666-666666666666' AS uuid),
@@ -165,8 +165,10 @@ class PostgresDemoBootstrapper(
                 CAST('55555555-5555-5555-5555-555555555555' AS uuid),
                 'Demo task',
                 'Operational task to validate dashboard, timer and client linkage.',
+                CURRENT_DATE + INTERVAL '1 day',
                 FALSE,
-                45
+                45,
+                2700
             )
             ON CONFLICT (id) DO NOTHING
             """.trimIndent(),
@@ -177,7 +179,7 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO time_logs (
-                id, task_id, client_id, author_id, minutes, work_date, note, billable
+                id, task_id, client_id, author_id, minutes, seconds, work_date, note, billable
             )
             VALUES (
                 CAST('77777777-7777-7777-7777-777777777777' AS uuid),
@@ -185,6 +187,7 @@ class PostgresDemoBootstrapper(
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
                 CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 45,
+                2700,
                 CURRENT_DATE,
                 'Demo time log for admin dashboard',
                 TRUE

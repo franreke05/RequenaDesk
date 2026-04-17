@@ -5,6 +5,7 @@ import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.utils.deviceJson
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.receiveOrDefault
+import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
@@ -17,9 +18,9 @@ fun Route.deviceRoutes(service: SupportDeskService) {
         post("/register") {
             val request = call.receiveOrDefault(RegisterDeviceRequest())
             if (request.userId.isBlank() || request.token.isBlank() || request.platform !in allowedDevicePlatforms) {
-                return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid device platform"))
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid device platform"))
             }
-            call.respond(HttpStatusCode.Created, successResponse("/devices/register", deviceJson(service.registerDevice(request))))
+            call.respondJson(HttpStatusCode.Created, successResponse("/devices/register", deviceJson(service.registerDevice(request))))
         }
     }
 }

@@ -79,8 +79,10 @@ data class ServerTaskSnapshot(
     val labelId: String,
     val labelName: String,
     val labelColorHex: String,
+    val dueDate: String? = null,
     val completed: Boolean,
     val loggedMinutes: Int,
+    val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -92,6 +94,7 @@ data class ServerTimeLogSnapshot(
     val authorId: String,
     val authorName: String,
     val minutes: Int,
+    val seconds: Int = minutes * 60,
     val workDate: String,
     val note: String,
     val billable: Boolean,

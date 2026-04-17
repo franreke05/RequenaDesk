@@ -2,7 +2,9 @@ package com.requena.supportdesk.features.auth.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.features.auth.domain.usecase.ClearSessionUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
+import com.requena.supportdesk.features.auth.domain.usecase.RestoreSessionUseCase
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.update
 
 class AuthViewModel(
     private val loginUseCase: LoginUseCase,
+    private val restoreSessionUseCase: RestoreSessionUseCase,
+    private val clearSessionUseCase: ClearSessionUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(AuthUiState())
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
@@ -23,11 +27,16 @@ class AuthViewModel(
     private val _effects = MutableSharedFlow<AuthUiEffect>(extraBufferCapacity = 4)
     val effects: SharedFlow<AuthUiEffect> = _effects.asSharedFlow()
 
+    init {
+        restoreSession()
+    }
+
     fun onEvent(event: AuthUiEvent) {
         when (event) {
             is AuthUiEvent.EmailChanged -> _state.update { it.copy(email = event.value, errorMessage = null) }
             is AuthUiEvent.PasswordChanged -> _state.update { it.copy(password = event.value, errorMessage = null) }
             AuthUiEvent.Logout -> {
+                clearSessionUseCase()
                 _state.update {
                     it.copy(
                         authenticatedUser = null,
@@ -37,6 +46,17 @@ class AuthViewModel(
                 }
             }
             AuthUiEvent.Submit -> submit()
+        }
+    }
+
+    private fun restoreSession() {
+        val restoredUser = restoreSessionUseCase() ?: return
+        _state.update {
+            it.copy(
+                authenticatedUser = restoredUser,
+                isLoading = false,
+                errorMessage = null,
+            )
         }
     }
 

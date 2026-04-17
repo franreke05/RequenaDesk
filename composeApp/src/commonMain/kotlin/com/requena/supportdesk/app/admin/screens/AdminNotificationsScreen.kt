@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
@@ -125,7 +129,6 @@ private fun LabelCreateCard(
 ) {
     var categoryName by rememberSaveable { mutableStateOf("") }
     var selectedColor by rememberSaveable { mutableStateOf("#6B7A5B") }
-    val presetColors = remember { listOf("#6B7A5B", "#A67C52", "#7D4E57", "#355C5B", "#8C6A43") }
 
     SectionCard(
         modifier = modifier,
@@ -140,17 +143,9 @@ private fun LabelCreateCard(
                 label = { Text("Nombre de la etiqueta") },
                 singleLine = true,
             )
-            OutlinedTextField(
-                value = selectedColor,
-                onValueChange = { selectedColor = normalizeHex(it) },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Color HEX") },
-                singleLine = true,
-            )
-            ColorPaletteRow(
-                presetColors = presetColors,
+            ColorPickerField(
                 selectedColor = selectedColor,
-                onSelect = { selectedColor = it },
+                onSelect = { selectedColor = normalizeHex(it) },
             )
             PrimaryButton(
                 text = "Crear etiqueta",
@@ -268,7 +263,6 @@ private fun LabelEditorPane(
     var confirmDelete by rememberSaveable(category.id) { mutableStateOf(false) }
     var name by remember(category.id) { mutableStateOf(category.name) }
     var colorHex by remember(category.id) { mutableStateOf(category.colorHex) }
-    val presetColors = remember { listOf("#6B7A5B", "#A67C52", "#7D4E57", "#355C5B", "#8C6A43") }
 
     SectionCard(
         modifier = modifier.fillMaxSize(),
@@ -288,17 +282,9 @@ private fun LabelEditorPane(
                 label = { Text("Nombre") },
                 singleLine = true,
             )
-            OutlinedTextField(
-                value = colorHex,
-                onValueChange = { colorHex = normalizeHex(it) },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Color HEX") },
-                singleLine = true,
-            )
-            ColorPaletteRow(
-                presetColors = presetColors,
+            ColorPickerField(
                 selectedColor = colorHex,
-                onSelect = { colorHex = it },
+                onSelect = { colorHex = normalizeHex(it) },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -361,7 +347,124 @@ private fun LabelEditorPane(
 }
 
 @Composable
-private fun ColorPaletteRow(
+private fun ColorPickerField(
+    selectedColor: String,
+    onSelect: (String) -> Unit,
+) {
+    var dialogVisible by rememberSaveable { mutableStateOf(false) }
+    val spacing = SupportDeskThemeTokens.spacing
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(parseCategoryColor(selectedColor), MaterialTheme.shapes.small)
+                    .padding(horizontal = 22.dp, vertical = 18.dp),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Color",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = selectedColor,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            SecondaryButton(
+                text = "Elegir color",
+                onClick = { dialogVisible = true },
+            )
+        }
+    }
+
+    if (dialogVisible) {
+        ColorPickerDialog(
+            initialColor = selectedColor,
+            onDismiss = { dialogVisible = false },
+            onConfirm = {
+                onSelect(it)
+                dialogVisible = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun ColorPickerDialog(
+    initialColor: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var workingColor by rememberSaveable(initialColor) { mutableStateOf(initialColor) }
+    val spacing = SupportDeskThemeTokens.spacing
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            modifier = Modifier.widthIn(min = 420.dp, max = 560.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(spacing.md),
+            ) {
+                Text(
+                    text = "Selector de color",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Elige el color con vista previa grande y confirma cuando te encaje.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(88.dp)
+                        .background(parseCategoryColor(workingColor), MaterialTheme.shapes.medium),
+                )
+                OutlinedTextField(
+                    value = workingColor,
+                    onValueChange = { workingColor = normalizeHex(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Color HEX") },
+                    singleLine = true,
+                )
+                ColorPaletteGrid(
+                    presetColors = LABEL_PRESET_COLORS,
+                    selectedColor = workingColor,
+                    onSelect = { workingColor = it },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    SecondaryButton(
+                        text = "Cancelar",
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    PrimaryButton(
+                        text = "Usar color",
+                        onClick = { onConfirm(normalizeHex(workingColor)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorPaletteGrid(
     presetColors: List<String>,
     selectedColor: String,
     onSelect: (String) -> Unit,
@@ -369,13 +472,14 @@ private fun ColorPaletteRow(
     val spacing = SupportDeskThemeTokens.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         Text(
-            text = "Color",
+            text = "Paleta",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             presetColors.forEach { colorHex ->
                 ColorOption(
@@ -417,7 +521,7 @@ private fun SecondaryColorCard(
         Box(
             modifier = Modifier
                 .background(color, MaterialTheme.shapes.small)
-                .padding(14.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         )
     }
 }
@@ -437,3 +541,18 @@ private fun normalizeHex(raw: String): String {
     val normalized = trimmed.take(6).padStart(6, '0').uppercase()
     return "#$normalized"
 }
+
+private val LABEL_PRESET_COLORS = listOf(
+    "#6B7A5B",
+    "#A67C52",
+    "#7D4E57",
+    "#355C5B",
+    "#8C6A43",
+    "#556B2F",
+    "#B56576",
+    "#6D597A",
+    "#457B9D",
+    "#2A9D8F",
+    "#E07A5F",
+    "#8D6E63",
+)

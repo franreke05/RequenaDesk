@@ -39,6 +39,8 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
+import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -48,8 +50,17 @@ fun AdminWorkspaceApp() {
     var statusMessage by remember { mutableStateOf("Workspace admin listo.") }
 
     val authState by module.authViewModel.state.collectAsState()
-    val clientsState by module.clientsViewModel.state.collectAsState()
-    val tasksState by module.tasksViewModel.state.collectAsState()
+    val currentUser = authState.authenticatedUser
+    val clientsState = if (currentUser != null) {
+        module.clientsViewModel.state.collectAsState().value
+    } else {
+        ClientsUiState()
+    }
+    val tasksState = if (currentUser != null) {
+        module.tasksViewModel.state.collectAsState().value
+    } else {
+        TasksUiState()
+    }
 
     DisposableEffect(module) {
         onDispose { module.clear() }
@@ -67,7 +78,10 @@ fun AdminWorkspaceApp() {
                 }
             }
         }
-        launch {
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser != null) {
             module.clientsViewModel.effects.collect { effect ->
                 when (effect) {
                     is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
@@ -94,7 +108,6 @@ fun AdminWorkspaceApp() {
             maxWidth < 1180.dp -> AdminLayoutMode.MEDIUM
             else -> AdminLayoutMode.EXPANDED
         }
-        val currentUser = authState.authenticatedUser
         if (currentUser == null) {
             AdminLoginScreen(
                 state = authState,

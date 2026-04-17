@@ -20,8 +20,10 @@ data class TaskDto(
     val labelId: String,
     val labelName: String,
     val labelColorHex: String,
+    val dueDate: String? = null,
     val completed: Boolean,
     val loggedMinutes: Int,
+    val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -34,6 +36,7 @@ data class TaskLogDto(
     val authorId: String,
     val authorName: String,
     val minutes: Int,
+    val seconds: Int = minutes * 60,
     val workDate: String,
     val note: String = "",
     val billable: Boolean,
@@ -46,6 +49,7 @@ data class CreateTaskRequestDto(
     val description: String,
     val clientId: String? = null,
     val labelId: String,
+    val dueDate: String? = null,
 )
 
 @Serializable
@@ -54,6 +58,7 @@ data class UpdateTaskRequestDto(
     val description: String? = null,
     val clientId: String? = null,
     val labelId: String? = null,
+    val dueDate: String? = null,
     val completed: Boolean? = null,
 )
 
@@ -75,6 +80,7 @@ data class CreateTimeLogRequestDto(
     val authorId: String,
     val workDate: String,
     val minutes: Int,
+    val seconds: Int = minutes * 60,
     val note: String,
     val billable: Boolean,
 )

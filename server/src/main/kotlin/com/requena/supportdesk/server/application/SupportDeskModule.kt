@@ -17,9 +17,9 @@ import com.requena.supportdesk.server.routes.labelRoutes
 import com.requena.supportdesk.server.routes.taskRoutes
 import com.requena.supportdesk.server.routes.ticketRoutes
 import com.requena.supportdesk.server.routes.timeLogRoutes
+import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.server.application.Application
-import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
@@ -36,8 +36,8 @@ fun Application.configureSupportDeskModule(
 
     routing {
         get("/") {
-            call.respond(
-                successResponse(
+            call.respondJson(
+                body = successResponse(
                     path = "/",
                     data = buildJsonObject {
                         put("service", "requenadesk-server")

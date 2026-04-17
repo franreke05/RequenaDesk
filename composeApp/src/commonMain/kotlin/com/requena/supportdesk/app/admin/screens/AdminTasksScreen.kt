@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -136,8 +137,10 @@ fun AdminTasksScreen(
                         task = selectedTask,
                         clients = clients,
                         categories = tasksState.categories,
-                        onUpdateTask = { taskId, title, description, categoryId ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId))
+                        selectedPlanningDay = tasksState.selectedDay,
+                        todayIsoDate = tasksState.todayIsoDate,
+                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
+                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
                         },
                         onUpdateTaskClient = { taskId, clientId ->
                             onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
@@ -166,8 +169,10 @@ fun AdminTasksScreen(
                         task = selectedTask,
                         clients = clients,
                         categories = tasksState.categories,
-                        onUpdateTask = { taskId, title, description, categoryId ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId))
+                        selectedPlanningDay = tasksState.selectedDay,
+                        todayIsoDate = tasksState.todayIsoDate,
+                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
+                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
                         },
                         onUpdateTaskClient = { taskId, clientId ->
                             onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
@@ -185,14 +190,17 @@ fun AdminTasksScreen(
         visible = showCreateDialog,
         clients = clients,
         categories = tasksState.categories,
+        selectedPlanningDay = tasksState.selectedDay,
+        todayIsoDate = tasksState.todayIsoDate,
         onDismiss = { showCreateDialog = false },
-        onCreate = { title, description, clientId, categoryId ->
+        onCreate = { title, description, clientId, categoryId, dueDate ->
             onTasksEvent(
                 TasksUiEvent.CreateTask(
                     title = title,
                     description = description,
                     clientId = clientId,
                     categoryId = categoryId,
+                    dueDate = dueDate,
                 ),
             )
             showCreateDialog = false
@@ -205,8 +213,10 @@ private fun TaskCreateDialog(
     visible: Boolean,
     clients: List<Client>,
     categories: List<TaskCategory>,
+    selectedPlanningDay: String?,
+    todayIsoDate: String,
     onDismiss: () -> Unit,
-    onCreate: (String, String, String?, String) -> Unit,
+    onCreate: (String, String, String?, String, String?) -> Unit,
 ) {
     if (!visible) return
 
@@ -214,6 +224,9 @@ private fun TaskCreateDialog(
     var description by rememberSaveable { mutableStateOf("") }
     var selectedClientId by rememberSaveable { mutableStateOf("none") }
     var selectedCategoryId by remember(categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
+    var dueDate by rememberSaveable(visible, selectedPlanningDay) {
+        mutableStateOf(selectedPlanningDay.takeIf { it != null && it >= todayIsoDate }.orEmpty())
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -252,6 +265,12 @@ private fun TaskCreateDialog(
                     selected = selectedClientId,
                     onSelected = { selectedClientId = it ?: "none" },
                 )
+                TaskScheduleEditor(
+                    selectedDate = dueDate,
+                    onSelectedDateChange = { dueDate = it },
+                    selectedPlanningDay = selectedPlanningDay,
+                    todayIsoDate = todayIsoDate,
+                )
             }
         },
         confirmButton = {
@@ -264,10 +283,12 @@ private fun TaskCreateDialog(
                         description.trim(),
                         selectedClientId.takeUnless { it == "none" },
                         selectedCategoryId,
+                        dueDate.takeIf { it.isNotBlank() },
                     )
                     title = ""
                     description = ""
                     selectedClientId = "none"
+                    dueDate = selectedPlanningDay.takeIf { it != null && it >= todayIsoDate }.orEmpty()
                 },
             )
         },
@@ -387,6 +408,11 @@ private fun TaskRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Text(
+            text = task.dueDate?.let { "Programada para $it" } ?: "Sin fecha programada",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -409,7 +435,9 @@ private fun TaskEditorPane(
     task: WorkTask?,
     clients: List<Client>,
     categories: List<TaskCategory>,
-    onUpdateTask: (String, String, String, String) -> Unit,
+    selectedPlanningDay: String?,
+    todayIsoDate: String,
+    onUpdateTask: (String, String, String, String, String?) -> Unit,
     onUpdateTaskClient: (String, String?) -> Unit,
     onToggleCompleted: (String) -> Unit,
     onDeleteTask: (String) -> Unit,
@@ -435,6 +463,7 @@ private fun TaskEditorPane(
     var description by remember(task.id) { mutableStateOf(task.description) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
     var selectedClientId by remember(task.id) { mutableStateOf(task.clientId ?: "none") }
+    var dueDate by remember(task.id) { mutableStateOf(task.dueDate.orEmpty()) }
     val linkedClient = clients.firstOrNull { it.id == task.clientId }
 
     SectionCard(
@@ -474,6 +503,12 @@ private fun TaskEditorPane(
                 selected = selectedClientId,
                 onSelected = { selectedClientId = it ?: "none" },
             )
+            TaskScheduleEditor(
+                selectedDate = dueDate,
+                onSelectedDateChange = { dueDate = it },
+                selectedPlanningDay = selectedPlanningDay,
+                todayIsoDate = todayIsoDate,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -481,7 +516,7 @@ private fun TaskEditorPane(
                 PrimaryButton(
                     text = "Guardar",
                     onClick = {
-                        onUpdateTask(task.id, title, description, selectedCategoryId)
+                        onUpdateTask(task.id, title, description, selectedCategoryId, dueDate.takeIf { it.isNotBlank() })
                         onUpdateTaskClient(task.id, selectedClientId.takeUnless { it == "none" })
                     },
                     enabled = title.isNotBlank() && selectedCategoryId.isNotBlank(),
@@ -519,6 +554,9 @@ private fun TaskEditorPane(
                         }
                         InfoRow(label = "Contacto", value = linkedClient.contactName, supportingText = linkedClient.email)
                         InfoRow(label = "Producto", value = linkedClient.productName)
+                        task.dueDate?.let { scheduledDate ->
+                            InfoRow(label = "Programada", value = scheduledDate)
+                        }
                     }
                 }
             }
@@ -537,6 +575,58 @@ private fun TaskEditorPane(
         },
         onDismiss = { confirmDelete = false },
     )
+}
+
+@Composable
+private fun TaskScheduleEditor(
+    selectedDate: String,
+    onSelectedDateChange: (String) -> Unit,
+    selectedPlanningDay: String?,
+    todayIsoDate: String,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val selectablePlanningDay = selectedPlanningDay?.takeIf { it >= todayIsoDate }
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        Text(
+            text = "Programacion",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = selectedDate.ifBlank { "Sin fecha programada" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            SecondaryButton(
+                text = "Sin fecha",
+                onClick = { onSelectedDateChange("") },
+            )
+            SecondaryButton(
+                text = "Hoy",
+                onClick = { onSelectedDateChange(todayIsoDate) },
+            )
+            if (selectablePlanningDay != null && selectablePlanningDay != todayIsoDate) {
+                SecondaryButton(
+                    text = "Dia seleccionado",
+                    onClick = { onSelectedDateChange(selectablePlanningDay) },
+                )
+            }
+        }
+        Text(
+            text = if (selectablePlanningDay != null && selectablePlanningDay != todayIsoDate) {
+                "El dia activo del calendario se puede usar para programar esta tarea."
+            } else {
+                "Solo puedes programar tareas para hoy o dias futuros."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 private fun parseColor(hex: String): Color = runCatching {

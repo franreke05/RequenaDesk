@@ -2,10 +2,13 @@ package com.requena.supportdesk.features.tasks.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.common.SupportDeskSeed
+import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.core.time.currentIsoDate
+import com.requena.supportdesk.core.time.isPastIsoDate
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskTimeLogDraft
@@ -57,7 +60,7 @@ class TasksViewModel(
     fun onEvent(event: TasksUiEvent) {
         when (event) {
             TasksUiEvent.Load -> loadWorkspace()
-            is TasksUiEvent.SelectDay -> publish(selectedDay = event.dayIsoDate)
+            is TasksUiEvent.SelectDay -> selectDay(event.dayIsoDate)
             is TasksUiEvent.SelectTask -> publish(selectedTaskId = event.taskId)
             is TasksUiEvent.SelectCategory -> publish(selectedCategoryId = event.categoryId)
             is TasksUiEvent.SelectClientFilter -> publish(selectedClientFilterId = event.clientId)
@@ -171,6 +174,12 @@ class TasksViewModel(
     private fun createTask(event: TasksUiEvent.CreateTask) {
         val title = event.title.trim()
         if (title.isBlank() || event.categoryId.isBlank()) return
+        val dueDate = event.dueDate?.trim()?.takeIf { it.isNotBlank() }?.also { plannedDate ->
+            if (isPastIsoDate(plannedDate)) {
+                handleWorkspaceError("No puedes programar tareas para dias anteriores.")
+                return
+            }
+        }
         launch {
             when (
                 val result = createTaskUseCase(
@@ -179,6 +188,7 @@ class TasksViewModel(
                         description = event.description.trim(),
                         clientId = event.clientId?.takeIf { it.isNotBlank() },
                         categoryId = event.categoryId,
+                        dueDate = dueDate,
                     ),
                 )
             ) {
@@ -203,6 +213,7 @@ class TasksViewModel(
                 description = current.description,
                 clientId = clientId?.takeIf { it.isNotBlank() },
                 categoryId = current.categoryId,
+                dueDate = current.dueDate,
                 completed = current.completed,
             ),
             successMessage = "Cliente asociado actualizado",
@@ -213,6 +224,12 @@ class TasksViewModel(
         val current = tasks.firstOrNull { it.id == event.taskId } ?: return
         val cleanTitle = event.title.trim()
         if (cleanTitle.isBlank() || event.categoryId.isBlank()) return
+        val dueDate = event.dueDate?.trim()?.takeIf { it.isNotBlank() }?.also { plannedDate ->
+            if (plannedDate != current.dueDate && isPastIsoDate(plannedDate)) {
+                handleWorkspaceError("No puedes programar tareas para dias anteriores.")
+                return
+            }
+        }
         executeTaskUpdate(
             taskId = event.taskId,
             input = TaskUpdateInput(
@@ -220,6 +237,7 @@ class TasksViewModel(
                 description = event.description.trim(),
                 clientId = current.clientId,
                 categoryId = event.categoryId,
+                dueDate = dueDate,
                 completed = current.completed,
             ),
             successMessage = "Tarea actualizada",
@@ -248,6 +266,7 @@ class TasksViewModel(
                 description = current.description,
                 clientId = current.clientId,
                 categoryId = current.categoryId,
+                dueDate = current.dueDate,
                 completed = !current.completed,
             ),
             successMessage = "Estado de tarea actualizado",
@@ -275,6 +294,10 @@ class TasksViewModel(
 
     private fun startTimer(taskId: String) {
         val current = state.value
+        if (!current.canTrackSelectedDay) {
+            publish(statusMessage = "Solo puedes registrar horas en el dia actual.")
+            return
+        }
         if (current.isTimerRunning && current.activeTaskId == taskId) return
         if (current.isTimerRunning && current.activeTaskId != taskId) {
             pauseTimer()
@@ -316,16 +339,24 @@ class TasksViewModel(
     private fun stopTimer() {
         val current = state.value
         val taskId = current.activeTaskId ?: return
+        if (!current.canTrackSelectedDay) {
+            timerJob?.cancel()
+            timerJob = null
+            publish(
+                activeTaskId = null,
+                activeTaskSeconds = 0,
+                isTimerRunning = false,
+                statusMessage = "Solo puedes registrar horas en el dia actual.",
+            )
+            return
+        }
         timerJob?.cancel()
         timerJob = null
 
-        val minutesToAdd = when {
-            current.activeTaskSeconds <= 0 -> 0
-            current.activeTaskSeconds < 60 -> 1
-            else -> current.activeTaskSeconds / 60
-        }
+        val secondsToAdd = current.activeTaskSeconds
+        val minutesToAdd = secondsToAdd / 60
 
-        if (minutesToAdd <= 0) {
+        if (secondsToAdd <= 0) {
             publish(
                 activeTaskId = null,
                 activeTaskSeconds = 0,
@@ -335,15 +366,16 @@ class TasksViewModel(
             return
         }
 
-        val workDate = current.selectedDay ?: DEFAULT_DAY
+        val workDate = current.selectedDay ?: currentIsoDate()
         launch {
             when (
                 val result = createTimeLogUseCase(
                     TaskTimeLogDraft(
                         taskId = taskId,
-                        authorId = SupportDeskSeed.adminUser.id,
+                        authorId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id,
                         workDate = workDate,
                         minutes = minutesToAdd,
+                        seconds = secondsToAdd,
                         note = "Registro desde contador",
                         billable = tasks.firstOrNull { it.id == taskId }?.clientId != null,
                     ),
@@ -383,7 +415,8 @@ class TasksViewModel(
         errorMessage: String? = state.value.errorMessage,
         statusMessage: String? = state.value.statusMessage,
     ) {
-        val resolvedDay = selectedDay ?: logs.maxByOrNull { it.workDate }?.workDate ?: DEFAULT_DAY
+        val todayIsoDate = currentIsoDate()
+        val resolvedDay = selectedDay ?: todayIsoDate
         val resolvedSelectedTaskId = when {
             selectedTaskId == null && tasks.isNotEmpty() -> tasks.first().id
             selectedTaskId != null && tasks.any { it.id == selectedTaskId } -> selectedTaskId
@@ -433,6 +466,25 @@ class TasksViewModel(
         return currentTasks.getOrNull(index + 1)?.id ?: currentTasks.getOrNull(index - 1)?.id
     }
 
+    private fun selectDay(dayIsoDate: String) {
+        if (isPastIsoDate(dayIsoDate)) {
+            publish(statusMessage = "Los dias anteriores estan bloqueados.")
+            return
+        }
+        if (state.value.isTimerRunning && dayIsoDate != currentIsoDate()) {
+            publish(statusMessage = "Deten el contador antes de cambiar a una fecha futura.")
+            return
+        }
+        publish(
+            selectedDay = dayIsoDate,
+            statusMessage = if (dayIsoDate == currentIsoDate()) {
+                "Registro abierto para hoy."
+            } else {
+                "Planificando tareas para $dayIsoDate."
+            },
+        )
+    }
+
     override fun clear() {
         timerJob?.cancel()
         super.clear()
@@ -444,7 +496,4 @@ class TasksViewModel(
         return "#$normalized"
     }
 
-    private companion object {
-        const val DEFAULT_DAY = "2026-04-16"
-    }
 }

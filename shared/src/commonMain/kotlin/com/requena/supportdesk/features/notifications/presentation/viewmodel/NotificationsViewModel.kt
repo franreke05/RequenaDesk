@@ -2,6 +2,7 @@ package com.requena.supportdesk.features.notifications.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.common.SupportDeskSeed
+import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.notifications.domain.usecase.RegisterDeviceUseCase
 import com.requena.supportdesk.features.notifications.presentation.effect.NotificationsUiEffect
@@ -33,12 +34,13 @@ class NotificationsViewModel(
     private fun registerDefaultDevice() {
         launch {
             _state.update { it.copy(isRegistering = true, statusMessage = "Registrando dispositivo...") }
-            when (val result = registerDeviceUseCase(SupportDeskSeed.defaultDevice())) {
+            val userId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+            when (val result = registerDeviceUseCase(SupportDeskSeed.defaultDevice(userId = userId))) {
                 is AppResult.Error -> {
                     _state.update {
                         it.copy(
                             isRegistering = false,
-                            device = SupportDeskSeed.defaultDevice(),
+                            device = SupportDeskSeed.defaultDevice(userId = userId),
                             statusMessage = "Registro local del dispositivo listo mientras el servidor no esta disponible.",
                         )
                     }
