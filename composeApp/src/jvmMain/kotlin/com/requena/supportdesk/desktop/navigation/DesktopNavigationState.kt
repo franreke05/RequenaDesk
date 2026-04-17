@@ -4,8 +4,8 @@ import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.navigation.AppDestination
 
 data class DesktopNavigationState(
-    val role: UserRole? = null,
-    val destination: AppDestination = AppDestination.Login,
+    val role: UserRole? = UserRole.ADMIN,
+    val destination: AppDestination = AppDestination.Dashboard,
 )
 
 fun desktopHomeFor(role: UserRole): AppDestination = when (role) {

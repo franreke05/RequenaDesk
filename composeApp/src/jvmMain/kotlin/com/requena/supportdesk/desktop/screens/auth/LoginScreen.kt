@@ -104,21 +104,11 @@ fun LoginScreen(
                         onClick = { onEvent(AuthUiEvent.Submit) },
                         fullWidth = true,
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    ) {
-                        SecondaryButton(
-                            text = "Demo admin",
-                            onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton(
-                            text = "Demo client",
-                            onClick = { onEvent(AuthUiEvent.LoginAsClientDemo) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                    SecondaryButton(
+                        text = "Demo admin",
+                        onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
+                        fullWidth = true,
+                    )
                     Text(
                         text = "The first pass keeps the entry flow intentionally short so tickets stay front and center.",
                         style = MaterialTheme.typography.bodySmall,

@@ -9,6 +9,6 @@ object NotificationsMapper {
         userId = dto.userId,
         platform = dto.platform,
         token = dto.token,
-        lastSeenAt = "2026-03-19T10:00:00Z",
+        lastSeenAt = dto.lastSeenAt,
     )
 }

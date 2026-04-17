@@ -32,6 +32,7 @@ object SupportDeskMapper {
         id = entity.id,
         companyName = entity.companyName,
         productName = entity.productName,
+        contactName = entity.companyName,
         email = entity.email,
         accountStatus = entity.accountStatus,
         serviceTier = entity.serviceTier,

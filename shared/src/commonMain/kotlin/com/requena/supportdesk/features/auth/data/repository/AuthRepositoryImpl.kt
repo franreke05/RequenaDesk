@@ -6,7 +6,7 @@ import com.requena.supportdesk.features.auth.data.datasource.AuthDataSource
 import com.requena.supportdesk.features.auth.data.mapper.AuthMapper
 import com.requena.supportdesk.features.auth.domain.repository.AuthRepository
 
-class FakeAuthRepository(
+class AuthRepositoryImpl(
     private val dataSource: AuthDataSource,
 ) : AuthRepository {
     override suspend fun login(email: String, password: String): AppResult<User> {

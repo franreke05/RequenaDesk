@@ -11,6 +11,14 @@ sealed interface AppDestination {
         override val route: String = "dashboard"
     }
 
+    object Tasks : AppDestination {
+        override val route: String = "tasks"
+    }
+
+    object Labels : AppDestination {
+        override val route: String = "labels"
+    }
+
     object Tickets : AppDestination {
         override val route: String = "tickets"
     }

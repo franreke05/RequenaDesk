@@ -5,5 +5,5 @@ sealed interface AuthUiEvent {
     data class PasswordChanged(val value: String) : AuthUiEvent
     object Submit : AuthUiEvent
     object LoginAsAdminDemo : AuthUiEvent
-    object LoginAsClientDemo : AuthUiEvent
+    object Logout : AuthUiEvent
 }

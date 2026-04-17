@@ -1,0 +1,1210 @@
+package com.requena.supportdesk.server.data.repository
+
+import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
+import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
+import com.requena.supportdesk.server.domain.model.CreateTaskRequest
+import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
+import com.requena.supportdesk.server.domain.model.CreateTicketRequest
+import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
+import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
+import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
+import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
+import com.requena.supportdesk.server.domain.model.ServerConflictException
+import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
+import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
+import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
+import com.requena.supportdesk.server.domain.model.ServerNotFoundException
+import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
+import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
+import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
+import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
+import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
+import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
+import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
+import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
+import com.requena.supportdesk.server.security.PasswordHasher
+import java.sql.Connection
+import java.sql.ResultSet
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+class PostgresSupportDeskRepository(
+    private val dataSource: PostgresSupportDeskDataSource,
+) : SupportDeskRepository {
+
+    override fun authenticate(email: String, password: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id
+            FROM users
+            WHERE email = ? AND password_hash = ? AND is_active = TRUE
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, email)
+            statement.setString(2, PasswordHasher.hash(password))
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) {
+                    updateLastLogin(connection, resultSet.getString("user_id"))
+                    ServerAuthIdentity(
+                        userId = resultSet.getString("user_id"),
+                        name = resultSet.getString("name"),
+                        email = resultSet.getString("email"),
+                        role = resultSet.getString("role"),
+                        clientId = resultSet.getString("client_id"),
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+                VALUES (CAST(? AS uuid), ?, ?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, userId)
+                statement.setString(2, refreshToken)
+                statement.setObject(3, expiresAt)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override fun rotateRefreshToken(
+        refreshToken: String,
+        replacementRefreshToken: String,
+        expiresAt: Instant,
+    ): ServerAuthIdentity? = dataSource.withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val identity = connection.prepareStatement(
+                """
+                SELECT u.id::text AS user_id, u.name, u.email::text AS email, u.role, u.client_id::text AS client_id
+                FROM refresh_tokens rt
+                JOIN users u ON u.id = rt.user_id
+                WHERE rt.token_hash = ?
+                  AND rt.revoked_at IS NULL
+                  AND rt.expires_at > NOW()
+                  AND u.is_active = TRUE
+                LIMIT 1
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, refreshToken)
+                statement.executeQuery().use { resultSet ->
+                    if (resultSet.next()) {
+                        ServerAuthIdentity(
+                            userId = resultSet.getString("user_id"),
+                            name = resultSet.getString("name"),
+                            email = resultSet.getString("email"),
+                            role = resultSet.getString("role"),
+                            clientId = resultSet.getString("client_id"),
+                        )
+                    } else {
+                        null
+                    }
+                }
+            } ?: run {
+                connection.rollback()
+                return@withConnection null
+            }
+
+            connection.prepareStatement(
+                "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
+            ).use { statement ->
+                statement.setString(1, refreshToken)
+                statement.executeUpdate()
+            }
+
+            connection.prepareStatement(
+                """
+                INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+                VALUES (CAST(? AS uuid), ?, ?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, identity.userId)
+                statement.setString(2, replacementRefreshToken)
+                statement.setObject(3, expiresAt)
+                statement.executeUpdate()
+            }
+
+            connection.commit()
+            identity
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun revokeRefreshToken(refreshToken: String): Boolean = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
+        ).use { statement ->
+            statement.setString(1, refreshToken)
+            statement.executeUpdate() > 0
+        }
+    }
+
+    override fun getTickets(): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
+                   app_version, client_reference, status, priority, waiting_on, resolution_summary
+            FROM tickets
+            ORDER BY updated_at DESC, created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(ticketSnapshot(resultSet))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
+                   app_version, client_reference, status, priority, waiting_on, resolution_summary
+            FROM tickets
+            WHERE id::text = ? OR ticket_number = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.setString(2, id)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) ticketSnapshot(resultSet) else null
+            }
+        }
+    }
+
+    override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = dataSource.withConnection { connection ->
+        val requesterId = request.requesterId ?: findRequesterId(connection, request.clientId)
+        val affectedApp = request.affectedApp.ifBlank { findAffectedApp(connection, request.clientId) }
+
+        connection.prepareStatement(
+            """
+            INSERT INTO tickets (
+                client_id, requester_id, subject, description, category, affected_app,
+                platform, app_version, steps_to_reproduce, client_reference, status, priority, waiting_on
+            )
+            VALUES (
+                CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'ADMIN'
+            )
+            RETURNING id::text, ticket_number, subject, description, category, affected_app, platform,
+                      app_version, client_reference, status, priority, waiting_on, resolution_summary
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.clientId)
+            statement.setString(2, requesterId)
+            statement.setString(3, request.subject)
+            statement.setString(4, request.description)
+            statement.setString(5, request.category)
+            statement.setString(6, affectedApp)
+            statement.setString(7, request.platform)
+            statement.setString(8, request.appVersion)
+            statement.setString(9, request.stepsToReproduce)
+            statement.setString(10, request.clientReference)
+            statement.setString(11, request.priority)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                val ticket = ticketSnapshot(resultSet)
+                insertEvent(connection, ticket.id, requesterId, "TICKET_CREATED", "Ticket created")
+                ticket
+            }
+        }
+    }
+
+    override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated =
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO ticket_messages (ticket_id, author_id, body)
+                VALUES (CAST(? AS uuid), CAST(? AS uuid), ?)
+                RETURNING id::text
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, ticketId)
+                statement.setString(2, request.authorId)
+                statement.setString(3, request.body)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    insertEvent(connection, ticketId, request.authorId, "MESSAGE_ADDED", "Reply added to ticket")
+                    ServerTicketMessageCreated(ticketId = ticketId, messageId = resultSet.getString("id"))
+                }
+            }
+        }
+
+    override fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate =
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                UPDATE tickets
+                SET status = ?,
+                    waiting_on = CASE WHEN ? = 'PENDING_CLIENT' THEN 'CLIENT' ELSE 'ADMIN' END,
+                    resolved_at = CASE
+                        WHEN ? = 'RESOLVED' THEN COALESCE(resolved_at, NOW())
+                        WHEN ? <> 'RESOLVED' THEN NULL
+                        ELSE resolved_at
+                    END,
+                    closed_at = CASE
+                        WHEN ? = 'CLOSED' THEN COALESCE(closed_at, NOW())
+                        WHEN ? <> 'CLOSED' THEN NULL
+                        ELSE closed_at
+                    END
+                WHERE id::text = ?
+                RETURNING id::text, status
+                """.trimIndent(),
+            ).use { statement ->
+                repeat(5) { statement.setString(it + 1, request.status) }
+                statement.setString(6, ticketId)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    ServerTicketFieldUpdate(
+                        ticketId = resultSet.getString("id"),
+                        value = resultSet.getString("status"),
+                    )
+                }
+            }
+        }
+
+    override fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate =
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                UPDATE tickets
+                SET priority = ?
+                WHERE id::text = ?
+                RETURNING id::text, priority
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.priority)
+                statement.setString(2, ticketId)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    ServerTicketFieldUpdate(
+                        ticketId = resultSet.getString("id"),
+                        value = resultSet.getString("priority"),
+                    )
+                }
+            }
+        }
+
+    override fun createAttachment(ticketId: String, request: UploadAttachmentRequest): ServerAttachmentCreated =
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO attachments (
+                    ticket_id, message_id, file_name, content_type, storage_key, size_bytes, uploaded_by
+                )
+                VALUES (
+                    CASE WHEN ? IS NULL OR ? = '' THEN CAST(? AS uuid) ELSE NULL END,
+                    CASE WHEN ? IS NULL OR ? = '' THEN NULL ELSE CAST(? AS uuid) END,
+                    ?, ?, ?, ?, CAST(? AS uuid)
+                )
+                RETURNING id::text
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.messageId)
+                statement.setString(2, request.messageId)
+                statement.setString(3, ticketId)
+                statement.setString(4, request.messageId)
+                statement.setString(5, request.messageId)
+                statement.setString(6, request.messageId)
+                statement.setString(7, request.fileName)
+                statement.setString(8, request.contentType)
+                statement.setString(9, request.storageKey)
+                statement.setLong(10, request.sizeBytes)
+                statement.setString(11, request.uploadedBy)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    insertEvent(connection, ticketId, request.uploadedBy, "ATTACHMENT_ADDED", "Attachment metadata stored")
+                    ServerAttachmentCreated(ticketId = ticketId, attachmentId = resultSet.getString("id"))
+                }
+            }
+        }
+
+    override fun getClients(): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT
+                c.id::text AS id,
+                c.company_name,
+                c.product_name,
+                c.contact_name,
+                c.email::text AS email,
+                c.account_status,
+                c.service_tier,
+                c.preferred_contact_channel,
+                (
+                    SELECT COUNT(*)::integer
+                    FROM tickets t
+                    WHERE t.client_id = c.id
+                      AND t.status NOT IN ('RESOLVED', 'CLOSED')
+                ) AS active_ticket_count,
+                (
+                    SELECT COUNT(*)::integer
+                    FROM tasks ts
+                    WHERE ts.client_id = c.id
+                      AND ts.completed = FALSE
+                ) AS open_tasks_count,
+                (
+                    SELECT COALESCE(SUM(tl.minutes), 0)::integer
+                    FROM time_logs tl
+                    WHERE tl.client_id = c.id
+                      AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
+                ) AS monthly_logged_minutes
+            FROM clients c
+            ORDER BY c.company_name ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerClientSnapshot(
+                                id = resultSet.getString("id"),
+                                companyName = resultSet.getString("company_name"),
+                                productName = resultSet.getString("product_name"),
+                                contactName = resultSet.getString("contact_name"),
+                                email = resultSet.getString("email"),
+                                accountStatus = resultSet.getString("account_status"),
+                                serviceTier = resultSet.getString("service_tier"),
+                                preferredContactChannel = resultSet.getString("preferred_contact_channel"),
+                                activeTicketCount = resultSet.getInt("active_ticket_count"),
+                                openTasksCount = resultSet.getInt("open_tasks_count"),
+                                monthlyLoggedMinutes = resultSet.getInt("monthly_logged_minutes"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun createClient(request: CreateClientRequest): ServerClientSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            INSERT INTO clients (
+                company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.companyName)
+            statement.setString(2, request.productName)
+            statement.setString(3, request.contactName)
+            statement.setString(4, request.email)
+            statement.setString(5, request.accountStatus)
+            statement.setString(6, request.serviceTier)
+            statement.setString(7, request.preferredContactChannel)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                ServerClientSnapshot(
+                    id = resultSet.getString("id"),
+                    companyName = resultSet.getString("company_name"),
+                    productName = resultSet.getString("product_name"),
+                    contactName = resultSet.getString("contact_name"),
+                    email = resultSet.getString("email"),
+                    accountStatus = resultSet.getString("account_status"),
+                    serviceTier = resultSet.getString("service_tier"),
+                    preferredContactChannel = resultSet.getString("preferred_contact_channel"),
+                    activeTicketCount = 0,
+                    openTasksCount = 0,
+                    monthlyLoggedMinutes = 0,
+                )
+            }
+        }
+    }
+
+    override fun updateClient(clientId: String, request: UpdateClientRequest): ServerClientSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE clients
+            SET company_name = COALESCE(NULLIF(?, ''), company_name),
+                product_name = COALESCE(NULLIF(?, ''), product_name),
+                contact_name = COALESCE(NULLIF(?, ''), contact_name),
+                email = COALESCE(NULLIF(?, ''), email),
+                account_status = COALESCE(NULLIF(?, ''), account_status),
+                service_tier = COALESCE(NULLIF(?, ''), service_tier),
+                preferred_contact_channel = COALESCE(NULLIF(?, ''), preferred_contact_channel)
+            WHERE id::text = ?
+            RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.companyName)
+            statement.setString(2, request.productName)
+            statement.setString(3, request.contactName)
+            statement.setString(4, request.email)
+            statement.setString(5, request.accountStatus)
+            statement.setString(6, request.serviceTier)
+            statement.setString(7, request.preferredContactChannel)
+            statement.setString(8, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    throw ServerNotFoundException("Client not found")
+                }
+                ServerClientSnapshot(
+                    id = resultSet.getString("id"),
+                    companyName = resultSet.getString("company_name"),
+                    productName = resultSet.getString("product_name"),
+                    contactName = resultSet.getString("contact_name"),
+                    email = resultSet.getString("email"),
+                    accountStatus = resultSet.getString("account_status"),
+                    serviceTier = resultSet.getString("service_tier"),
+                    preferredContactChannel = resultSet.getString("preferred_contact_channel"),
+                    activeTicketCount = getActiveTicketCount(connection, clientId),
+                    openTasksCount = getOpenTasksCount(connection, clientId),
+                    monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId),
+                )
+            }
+        }
+    }
+
+    override fun deleteClient(clientId: String) {
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId)
+            if (hasLinkedTickets(connection, clientId)) {
+                throw ServerConflictException("Client has related tickets and cannot be deleted")
+            }
+            connection.prepareStatement(
+                "DELETE FROM clients WHERE id::text = ?",
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT tl.id::text AS id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
+            FROM task_labels tl
+            LEFT JOIN tasks t ON t.label_id = tl.id
+            GROUP BY tl.id, tl.name, tl.color_hex
+            ORDER BY tl.name ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerTaskLabelSnapshot(
+                                id = resultSet.getString("id"),
+                                name = resultSet.getString("name"),
+                                colorHex = resultSet.getString("color_hex"),
+                                tasksCount = resultSet.getInt("tasks_count"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            INSERT INTO task_labels (name, color_hex)
+            VALUES (?, ?)
+            RETURNING id::text, name, color_hex
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.name.trim())
+            statement.setString(2, normalizeHex(request.colorHex))
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                ServerTaskLabelSnapshot(
+                    id = resultSet.getString("id"),
+                    name = resultSet.getString("name"),
+                    colorHex = resultSet.getString("color_hex"),
+                    tasksCount = 0,
+                )
+            }
+        }
+    }
+
+    override fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE task_labels
+            SET name = COALESCE(NULLIF(?, ''), name),
+                color_hex = COALESCE(NULLIF(?, ''), color_hex)
+            WHERE id::text = ?
+            RETURNING id::text, name, color_hex
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.name)
+            statement.setString(2, request.colorHex?.let(::normalizeHex))
+            statement.setString(3, labelId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    throw ServerNotFoundException("Label not found")
+                }
+                ServerTaskLabelSnapshot(
+                    id = resultSet.getString("id"),
+                    name = resultSet.getString("name"),
+                    colorHex = resultSet.getString("color_hex"),
+                    tasksCount = getTasks(labelId = labelId).size,
+                )
+            }
+        }
+    }
+
+    override fun deleteTaskLabel(labelId: String) {
+        dataSource.withConnection { connection ->
+            requireLabelExists(connection, labelId)
+            if (hasTasksForLabel(connection, labelId)) {
+                throw ServerConflictException("Label is in use by tasks and cannot be deleted")
+            }
+            connection.prepareStatement(
+                "DELETE FROM task_labels WHERE id::text = ?",
+            ).use { statement ->
+                statement.setString(1, labelId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override fun getTasks(clientId: String?, labelId: String?): List<ServerTaskSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT
+                t.id::text AS id,
+                t.title,
+                t.description,
+                t.client_id::text AS client_id,
+                c.company_name,
+                tl.id::text AS label_id,
+                tl.name AS label_name,
+                tl.color_hex,
+                t.completed,
+                t.logged_minutes,
+                t.created_at,
+                t.updated_at
+            FROM tasks t
+            JOIN task_labels tl ON tl.id = t.label_id
+            LEFT JOIN clients c ON c.id = t.client_id
+            WHERE (? IS NULL OR t.client_id::text = ?)
+              AND (? IS NULL OR t.label_id::text = ?)
+            ORDER BY t.updated_at DESC, t.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, clientId)
+            statement.setString(3, labelId)
+            statement.setString(4, labelId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(taskSnapshot(resultSet))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun createTask(request: CreateTaskRequest): ServerTaskSnapshot = dataSource.withConnection { connection ->
+        requireLabelExists(connection, request.labelId)
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it) }
+        connection.prepareStatement(
+            """
+            INSERT INTO tasks (title, description, client_id, label_id, completed, logged_minutes)
+            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), FALSE, 0)
+            RETURNING
+                id::text AS id,
+                title,
+                description,
+                client_id::text AS client_id,
+                created_at,
+                updated_at,
+                completed,
+                logged_minutes
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.title.trim())
+            statement.setString(2, request.description.trim())
+            statement.setString(3, request.clientId?.takeIf { it.isNotBlank() })
+            statement.setString(4, request.labelId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                hydrateTaskSnapshot(connection, resultSet)
+            }
+        }
+    }
+
+    override fun updateTask(taskId: String, request: UpdateTaskRequest): ServerTaskSnapshot = dataSource.withConnection { connection ->
+        requireTaskExists(connection, taskId)
+        request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it) }
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it) }
+        connection.prepareStatement(
+            """
+            UPDATE tasks
+            SET title = COALESCE(NULLIF(?, ''), title),
+                description = COALESCE(?, description),
+                client_id = CASE
+                    WHEN ? = '__CLEAR__' THEN NULL
+                    WHEN ? IS NULL OR ? = '' THEN client_id
+                    ELSE CAST(? AS uuid)
+                END,
+                label_id = COALESCE(CAST(NULLIF(?, '') AS uuid), label_id),
+                completed = COALESCE(?, completed)
+            WHERE id::text = ?
+            RETURNING
+                id::text AS id,
+                title,
+                description,
+                client_id::text AS client_id,
+                created_at,
+                updated_at,
+                completed,
+                logged_minutes
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.title)
+            statement.setString(2, request.description)
+            val clientValue = request.clientId ?: ""
+            statement.setString(3, if (request.clientId == null) "" else if (request.clientId.isBlank()) "__CLEAR__" else request.clientId)
+            statement.setString(4, clientValue)
+            statement.setString(5, clientValue)
+            statement.setString(6, clientValue)
+            statement.setString(7, request.labelId)
+            if (request.completed == null) {
+                statement.setNull(8, java.sql.Types.BOOLEAN)
+            } else {
+                statement.setBoolean(8, request.completed)
+            }
+            statement.setString(9, taskId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    throw ServerNotFoundException("Task not found")
+                }
+                hydrateTaskSnapshot(connection, resultSet)
+            }
+        }
+    }
+
+    override fun deleteTask(taskId: String) {
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                "DELETE FROM tasks WHERE id::text = ?",
+            ).use { statement ->
+                statement.setString(1, taskId)
+                if (statement.executeUpdate() == 0) {
+                    throw ServerNotFoundException("Task not found")
+                }
+            }
+        }
+    }
+
+    override fun getTimeLogs(clientId: String?, taskId: String?): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT
+                tl.id::text AS id,
+                tl.task_id::text AS task_id,
+                tl.client_id::text AS client_id,
+                tl.author_id::text AS author_id,
+                u.name AS author_name,
+                tl.minutes,
+                tl.work_date::text AS work_date,
+                tl.note,
+                tl.billable,
+                tl.created_at
+            FROM time_logs tl
+            JOIN users u ON u.id = tl.author_id
+            WHERE (? IS NULL OR tl.client_id::text = ?)
+              AND (? IS NULL OR tl.task_id::text = ?)
+            ORDER BY tl.work_date DESC, tl.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, clientId)
+            statement.setString(3, taskId)
+            statement.setString(4, taskId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(timeLogSnapshot(resultSet))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun createTimeLog(request: CreateTimeLogRequest): ServerTimeLogSnapshot = dataSource.withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val taskClientId = connection.prepareStatement(
+                "SELECT client_id::text AS client_id FROM tasks WHERE id::text = ? LIMIT 1",
+            ).use { statement ->
+                statement.setString(1, request.taskId)
+                statement.executeQuery().use { resultSet ->
+                    if (resultSet.next()) {
+                        resultSet.getString("client_id")
+                    } else {
+                        throw ServerNotFoundException("Task not found")
+                    }
+                }
+            }
+
+            val created = connection.prepareStatement(
+                """
+                INSERT INTO time_logs (task_id, client_id, author_id, minutes, work_date, note, billable)
+                VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, CAST(? AS date), ?, ?)
+                RETURNING id::text AS id, task_id::text AS task_id, client_id::text AS client_id,
+                          author_id::text AS author_id, minutes, work_date::text AS work_date, note, billable, created_at
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.taskId)
+                statement.setString(2, taskClientId)
+                statement.setString(3, request.authorId)
+                statement.setInt(4, request.minutes)
+                statement.setString(5, request.workDate)
+                statement.setString(6, request.note)
+                statement.setBoolean(7, request.billable)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    val authorName = resolveAuthorName(connection, request.authorId)
+                    ServerTimeLogSnapshot(
+                        id = resultSet.getString("id"),
+                        taskId = resultSet.getString("task_id"),
+                        clientId = resultSet.getString("client_id"),
+                        authorId = resultSet.getString("author_id"),
+                        authorName = authorName,
+                        minutes = resultSet.getInt("minutes"),
+                        workDate = resultSet.getString("work_date"),
+                        note = resultSet.getString("note"),
+                        billable = resultSet.getBoolean("billable"),
+                        createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                    )
+                }
+            }
+
+            connection.prepareStatement(
+                """
+                UPDATE tasks
+                SET logged_minutes = logged_minutes + ?
+                WHERE id::text = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInt(1, request.minutes)
+                statement.setString(2, request.taskId)
+                statement.executeUpdate()
+            }
+            connection.commit()
+            created
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun getDashboard(clientId: String?, labelId: String?): ServerDashboardSnapshot = dataSource.withConnection { connection ->
+        val summary = connection.prepareStatement(
+            """
+            SELECT open_tickets, pending_client_tickets, resolved_today, active_clients
+            FROM admin_dashboard_summary
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                listOf(
+                    resultSet.getInt("open_tickets"),
+                    resultSet.getInt("pending_client_tickets"),
+                    resultSet.getInt("resolved_today"),
+                    resultSet.getInt("active_clients"),
+                )
+            }
+        }
+        val totals = connection.prepareStatement(
+            """
+            SELECT
+                COALESCE(SUM(minutes), 0)::integer AS total_minutes,
+                COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes,
+                TO_CHAR(CURRENT_DATE, 'TMMonth YYYY') AS month_label
+            FROM time_logs
+            WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                Triple(
+                    resultSet.getInt("total_minutes"),
+                    resultSet.getInt("billable_minutes"),
+                    resultSet.getString("month_label").trim(),
+                )
+            }
+        }
+        val selectedClientTotals = if (clientId == null) {
+            Pair(0, 0)
+        } else {
+            connection.prepareStatement(
+                """
+                SELECT
+                    COALESCE(SUM(minutes), 0)::integer AS total_minutes,
+                    COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes
+                FROM time_logs
+                WHERE client_id::text = ?
+                  AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getInt("total_minutes") to resultSet.getInt("billable_minutes")
+                }
+            }
+        }
+        val dailyMinutes = connection.prepareStatement(
+            """
+            SELECT work_date::text AS work_date, COALESCE(SUM(minutes), 0)::integer AS minutes
+            FROM time_logs
+            WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+              AND (? IS NULL OR client_id::text = ?)
+            GROUP BY work_date
+            ORDER BY work_date ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, clientId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerDailyMinutesSnapshot(
+                                workDate = resultSet.getString("work_date"),
+                                minutes = resultSet.getInt("minutes"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        ServerDashboardSnapshot(
+            openTickets = summary[0],
+            pendingClientTickets = summary[1],
+            resolvedToday = summary[2],
+            activeClients = summary[3],
+            monthLabel = totals.third,
+            totalMinutes = totals.first,
+            billableMinutes = totals.second,
+            selectedClientId = clientId,
+            selectedClientMinutes = selectedClientTotals.first,
+            selectedClientBillableMinutes = selectedClientTotals.second,
+            dailyMinutes = dailyMinutes,
+            availableTasks = getTasks(clientId, labelId),
+        )
+    }
+
+    override fun getAttachment(id: String): ServerAttachmentSnapshot? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text, file_name, content_type
+            FROM attachments
+            WHERE id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) {
+                    ServerAttachmentSnapshot(
+                        id = resultSet.getString("id"),
+                        fileName = resultSet.getString("file_name"),
+                        contentType = resultSet.getString("content_type"),
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    override fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            INSERT INTO notification_devices (user_id, platform, token, last_seen_at)
+            VALUES (CAST(? AS uuid), ?, ?, NOW())
+            ON CONFLICT (token) DO UPDATE
+            SET user_id = EXCLUDED.user_id,
+                platform = EXCLUDED.platform,
+                last_seen_at = NOW()
+            RETURNING id::text, user_id::text, platform
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.userId)
+            statement.setString(2, request.platform)
+            statement.setString(3, request.token)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                ServerDeviceRegistration(
+                    id = resultSet.getString("id"),
+                    userId = resultSet.getString("user_id"),
+                    platform = resultSet.getString("platform"),
+                )
+            }
+        }
+    }
+
+    private fun updateLastLogin(connection: Connection, userId: String) {
+        connection.prepareStatement(
+            "UPDATE users SET last_login_at = NOW() WHERE id::text = ?",
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun findRequesterId(connection: Connection, clientId: String): String =
+        connection.prepareStatement(
+            """
+            SELECT id::text
+            FROM users
+            WHERE client_id = CAST(? AS uuid) AND role = 'CLIENT' AND is_active = TRUE
+            ORDER BY created_at ASC
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("id") else error("No active client user found for client $clientId")
+            }
+        }
+
+    private fun findAffectedApp(connection: Connection, clientId: String): String =
+        connection.prepareStatement(
+            """
+            SELECT product_name
+            FROM clients
+            WHERE id = CAST(? AS uuid)
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("product_name") else error("Client not found: $clientId")
+            }
+        }
+
+    private fun insertEvent(connection: Connection, ticketId: String, actorId: String, type: String, description: String) {
+        connection.prepareStatement(
+            """
+            INSERT INTO ticket_events (ticket_id, actor_id, type, description)
+            VALUES (CAST(? AS uuid), CAST(? AS uuid), ?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.setString(2, actorId)
+            statement.setString(3, type)
+            statement.setString(4, description)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun ticketSnapshot(resultSet: ResultSet): ServerTicketSnapshot = ServerTicketSnapshot(
+        id = resultSet.getString("id"),
+        ticketNumber = resultSet.getString("ticket_number"),
+        subject = resultSet.getString("subject"),
+        description = resultSet.getString("description"),
+        category = resultSet.getString("category"),
+        affectedApp = resultSet.getString("affected_app"),
+        platform = resultSet.getString("platform"),
+        appVersion = resultSet.getString("app_version"),
+        clientReference = resultSet.getString("client_reference"),
+        status = resultSet.getString("status"),
+        priority = resultSet.getString("priority"),
+        waitingOn = resultSet.getString("waiting_on"),
+        resolutionSummary = resultSet.getString("resolution_summary"),
+    )
+
+    private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
+        id = resultSet.getString("id"),
+        title = resultSet.getString("title"),
+        description = resultSet.getString("description") ?: "",
+        clientId = resultSet.getString("client_id"),
+        clientName = resultSet.getString("company_name"),
+        labelId = resultSet.getString("label_id"),
+        labelName = resultSet.getString("label_name"),
+        labelColorHex = resultSet.getString("color_hex"),
+        completed = resultSet.getBoolean("completed"),
+        loggedMinutes = resultSet.getInt("logged_minutes"),
+        createdAt = formatTimestamp(resultSet.getObject("created_at")),
+        updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+    )
+
+    private fun hydrateTaskSnapshot(connection: Connection, resultSet: ResultSet): ServerTaskSnapshot {
+        val taskId = resultSet.getString("id")
+        return connection.prepareStatement(
+            """
+            SELECT
+                t.id::text AS id,
+                t.title,
+                t.description,
+                t.client_id::text AS client_id,
+                c.company_name,
+                tl.id::text AS label_id,
+                tl.name AS label_name,
+                tl.color_hex,
+                t.completed,
+                t.logged_minutes,
+                t.created_at,
+                t.updated_at
+            FROM tasks t
+            JOIN task_labels tl ON tl.id = t.label_id
+            LEFT JOIN clients c ON c.id = t.client_id
+            WHERE t.id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, taskId)
+            statement.executeQuery().use { hydrated ->
+                hydrated.next()
+                taskSnapshot(hydrated)
+            }
+        }
+    }
+
+    private fun timeLogSnapshot(resultSet: ResultSet): ServerTimeLogSnapshot = ServerTimeLogSnapshot(
+        id = resultSet.getString("id"),
+        taskId = resultSet.getString("task_id"),
+        clientId = resultSet.getString("client_id"),
+        authorId = resultSet.getString("author_id"),
+        authorName = resultSet.getString("author_name"),
+        minutes = resultSet.getInt("minutes"),
+        workDate = resultSet.getString("work_date"),
+        note = resultSet.getString("note") ?: "",
+        billable = resultSet.getBoolean("billable"),
+        createdAt = formatTimestamp(resultSet.getObject("created_at")),
+    )
+
+    private fun resolveAuthorName(connection: Connection, authorId: String): String =
+        connection.prepareStatement(
+            "SELECT name FROM users WHERE id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, authorId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("name") else "Admin"
+            }
+        }
+
+    private fun getOpenTasksCount(connection: Connection, clientId: String): Int =
+        connection.prepareStatement(
+            "SELECT COUNT(*)::integer AS open_tasks_count FROM tasks WHERE client_id::text = ? AND completed = FALSE",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt("open_tasks_count")
+            }
+        }
+
+    private fun getActiveTicketCount(connection: Connection, clientId: String): Int =
+        connection.prepareStatement(
+            "SELECT COUNT(*)::integer AS active_ticket_count FROM tickets WHERE client_id::text = ? AND status NOT IN ('RESOLVED', 'CLOSED')",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt("active_ticket_count")
+            }
+        }
+
+    private fun getClientMonthlyMinutes(connection: Connection, clientId: String): Int =
+        connection.prepareStatement(
+            """
+            SELECT COALESCE(SUM(minutes), 0)::integer AS monthly_minutes
+            FROM time_logs
+            WHERE client_id::text = ?
+              AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt("monthly_minutes")
+            }
+        }
+
+    private fun requireClientExists(connection: Connection, clientId: String) {
+        if (!recordExists(connection, "clients", clientId)) {
+            throw ServerNotFoundException("Client not found")
+        }
+    }
+
+    private fun requireLabelExists(connection: Connection, labelId: String) {
+        if (!recordExists(connection, "task_labels", labelId)) {
+            throw ServerNotFoundException("Label not found")
+        }
+    }
+
+    private fun requireTaskExists(connection: Connection, taskId: String) {
+        if (!recordExists(connection, "tasks", taskId)) {
+            throw ServerNotFoundException("Task not found")
+        }
+    }
+
+    private fun recordExists(connection: Connection, tableName: String, id: String): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM $tableName WHERE id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+
+    private fun hasLinkedTickets(connection: Connection, clientId: String): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM tickets WHERE client_id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+
+    private fun hasTasksForLabel(connection: Connection, labelId: String): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM tasks WHERE label_id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, labelId)
+            statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+
+    private fun normalizeHex(raw: String): String {
+        val trimmed = raw.trim().removePrefix("#").uppercase()
+        return "#${trimmed.take(6).padEnd(6, '0')}"
+    }
+
+    private fun formatTimestamp(value: Any?): String {
+        val instant = when (value) {
+            is Instant -> value
+            is java.sql.Timestamp -> value.toInstant()
+            is java.time.OffsetDateTime -> value.toInstant()
+            is java.time.LocalDateTime -> value.toInstant(ZoneOffset.UTC)
+            else -> return ""
+        }
+        return DateTimeFormatter.ISO_INSTANT.format(instant)
+    }
+}
