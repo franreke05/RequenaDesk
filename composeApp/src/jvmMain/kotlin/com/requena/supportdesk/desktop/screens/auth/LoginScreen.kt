@@ -20,7 +20,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
@@ -73,7 +72,7 @@ fun LoginScreen(
             SectionCard(
                 modifier = Modifier.width(440.dp),
                 title = "Sign in",
-                subtitle = "Use your credentials or jump into a demo role to explore the current MVP experience.",
+                subtitle = "Use one of the configured admin accounts to enter the workspace.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     OutlinedTextField(
@@ -102,11 +101,6 @@ fun LoginScreen(
                     PrimaryButton(
                         text = if (state.isLoading) "Signing in..." else "Sign in",
                         onClick = { onEvent(AuthUiEvent.Submit) },
-                        fullWidth = true,
-                    )
-                    SecondaryButton(
-                        text = "Demo admin",
-                        onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
                         fullWidth = true,
                     )
                     Text(

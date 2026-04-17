@@ -36,6 +36,28 @@ import java.time.Instant
 class InMemorySupportDeskRepository(
     private val dataSource: InMemorySupportDeskDataSource,
 ) : SupportDeskRepository {
+    private data class LocalAdminAccount(
+        val userId: String,
+        val name: String,
+        val email: String,
+        val password: String,
+    )
+
+    private val adminAccounts = listOf(
+        LocalAdminAccount(
+            userId = "user-admin",
+            name = "Admin Requena",
+            email = "admin@requenadesk.dev",
+            password = "Admin1requena",
+        ),
+        LocalAdminAccount(
+            userId = "user-admin-2",
+            name = "Admin Sanchez",
+            email = "admin2@requenadesk.dev",
+            password = "Admin2Sanchez",
+        ),
+    )
+
     private val clients = dataSource.clients().map(SupportDeskMapper::client).toMutableList()
     private val labels = mutableListOf(
         ServerTaskLabelSnapshot("label-1", "Hoy", "#6B7A5B", 1),
@@ -125,12 +147,16 @@ class InMemorySupportDeskRepository(
     )
 
     override fun authenticate(email: String, password: String): ServerAuthIdentity? =
-        ServerAuthIdentity(
-            userId = "user-admin",
-            name = "Requena Admin",
-            email = "admin@requenadesk.local",
-            role = "ADMIN",
-        )
+        adminAccounts.firstOrNull { account ->
+            account.email.equals(email.trim(), ignoreCase = true) && account.password == password
+        }?.let { account ->
+            ServerAuthIdentity(
+                userId = account.userId,
+                name = account.name,
+                email = account.email,
+                role = "ADMIN",
+            )
+        }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) = Unit
 
@@ -138,12 +164,14 @@ class InMemorySupportDeskRepository(
         refreshToken: String,
         replacementRefreshToken: String,
         expiresAt: Instant,
-    ): ServerAuthIdentity? = ServerAuthIdentity(
-        userId = "user-admin",
-        name = "Requena Admin",
-        email = "admin@requenadesk.local",
-        role = "ADMIN",
-    )
+    ): ServerAuthIdentity? = adminAccounts.firstOrNull()?.let { account ->
+        ServerAuthIdentity(
+            userId = account.userId,
+            name = account.name,
+            email = account.email,
+            role = "ADMIN",
+        )
+    }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean = true
 

@@ -53,6 +53,21 @@ class ApplicationTest {
     }
 
     @Test
+    fun testLoginRouteParsesJsonBody() = testApplication {
+        application { testModule() }
+
+        val response = client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"admin@requenadesk.dev","password":"Admin1requena"}""")
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("admin@requenadesk.dev"))
+        assertTrue(body.contains("refreshToken"))
+    }
+
+    @Test
     fun testClientsRouteIncludesNewFields() = testApplication {
         application { testModule() }
         val response = client.get("/admin/clients")

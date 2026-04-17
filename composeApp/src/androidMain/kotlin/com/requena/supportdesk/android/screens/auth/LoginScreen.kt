@@ -18,7 +18,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
@@ -44,7 +43,7 @@ fun LoginScreen(
         SectionCard(
             modifier = Modifier.align(Alignment.Center),
             title = "RequenaDesk admin",
-            subtitle = "Mobile lite keeps the flow focused on fast review, notifications and quick ticket checks.",
+            subtitle = "Sign in with one of the configured admin accounts.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                 SupportDeskBadge(
@@ -78,11 +77,6 @@ fun LoginScreen(
                 PrimaryButton(
                     text = if (state.isLoading) "Signing in..." else "Sign in",
                     onClick = { onEvent(AuthUiEvent.Submit) },
-                    fullWidth = true,
-                )
-                SecondaryButton(
-                    text = "Use admin demo",
-                    onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
                     fullWidth = true,
                 )
             }

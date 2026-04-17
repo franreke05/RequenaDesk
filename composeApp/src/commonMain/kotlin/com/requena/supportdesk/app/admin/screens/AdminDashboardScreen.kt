@@ -165,7 +165,7 @@ private fun CounterHeroCard(
 
     SectionCard(
         title = "Tiempo y foco",
-        subtitle = "El contador manda; cliente y etiqueta acotan el contexto de trabajo.",
+        subtitle = null,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             FilterBar(
@@ -201,7 +201,7 @@ private fun CounterHeroCard(
             if (tasks.isEmpty()) {
                 EmptyState(
                     title = "Sin tareas para este contexto",
-                    message = "Cambia cliente, etiqueta o crea nuevas tareas desde la pantalla de Tareas.",
+                    message = "",
                 )
             } else {
                 LazyColumn(
@@ -222,8 +222,7 @@ private fun CounterHeroCard(
             SectionCard(
                 modifier = Modifier.animateContentSize(),
                 title = selectedTask?.title ?: "Selecciona una tarea",
-                subtitle = selectedTask?.description?.ifBlank { "Elige una tarea y usa el contador." }
-                    ?: "Elige una tarea y usa el contador.",
+                subtitle = null,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
@@ -362,7 +361,7 @@ private fun WheelCard(
     SectionCard(
         modifier = modifier,
         title = title,
-        subtitle = "Rueda mensual",
+        subtitle = null,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -447,7 +446,7 @@ private fun CompactCalendarCard(
     SectionCard(
         modifier = modifier,
         title = "Calendario",
-        subtitle = "Selecciona el dia de imputacion sin robar protagonismo al contador.",
+        subtitle = null,
         actions = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(

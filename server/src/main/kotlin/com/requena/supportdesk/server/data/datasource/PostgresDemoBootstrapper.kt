@@ -11,7 +11,8 @@ class PostgresDemoBootstrapper(
             connection.autoCommit = false
             try {
                 ensureClient(connection)
-                ensureAdminUser(connection, adminPassword)
+                ensurePrimaryAdminUser(connection)
+                ensureSecondaryAdminUser(connection)
                 ensureClientUser(connection, clientPassword)
                 ensureTaskLabel(connection)
                 ensureTask(connection)
@@ -48,14 +49,14 @@ class PostgresDemoBootstrapper(
         ).use { it.executeUpdate() }
     }
 
-    private fun ensureAdminUser(connection: Connection, password: String) {
+    private fun ensurePrimaryAdminUser(connection: Connection) {
         connection.prepareStatement(
             """
             INSERT INTO users (id, name, email, password_hash, role, is_active)
             VALUES (
                 CAST('22222222-2222-2222-2222-222222222222' AS uuid),
-                'Requena Admin',
-                'admin@requenadesk.local',
+                'Admin Requena',
+                'admin@requenadesk.dev',
                 ?,
                 'ADMIN',
                 TRUE
@@ -63,7 +64,27 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash(password))
+            it.setString(1, PasswordHasher.hash("Admin1requena"))
+            it.executeUpdate()
+        }
+    }
+
+    private fun ensureSecondaryAdminUser(connection: Connection) {
+        connection.prepareStatement(
+            """
+            INSERT INTO users (id, name, email, password_hash, role, is_active)
+            VALUES (
+                CAST('88888888-8888-8888-8888-888888888888' AS uuid),
+                'Admin Sanchez',
+                'admin2@requenadesk.dev',
+                ?,
+                'ADMIN',
+                TRUE
+            )
+            ON CONFLICT (email) DO NOTHING
+            """.trimIndent(),
+        ).use {
+            it.setString(1, PasswordHasher.hash("Admin2Sanchez"))
             it.executeUpdate()
         }
     }

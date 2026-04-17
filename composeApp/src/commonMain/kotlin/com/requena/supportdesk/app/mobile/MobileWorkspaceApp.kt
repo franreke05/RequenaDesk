@@ -253,7 +253,7 @@ private fun MobileLoginScreen(
             PhoneCard(modifier = Modifier.fillMaxWidth()) {
                 CardHeader(
                     title = "Entrar",
-                    subtitle = "Puedes usar acceso real o el modo demo para revisar la app desde el telefono.",
+                    subtitle = "Accede con uno de los usuarios configurados para revisar la app desde el telefono.",
                 )
                 OutlinedTextField(
                     value = state.email,
@@ -284,10 +284,6 @@ private fun MobileLoginScreen(
                         text = if (state.isLoading) "Entrando..." else "Entrar",
                         emphasized = true,
                         onClick = { onEvent(AuthUiEvent.Submit) },
-                    )
-                    ActionButton(
-                        text = "Usar demo",
-                        onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
                     )
                 }
             }

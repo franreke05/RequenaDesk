@@ -238,11 +238,13 @@ private fun AdminContentArea(
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
-                    text = subtitleFor(navigation.destination),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                subtitleFor(navigation.destination)?.let { subtitle ->
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -268,11 +270,13 @@ private fun AdminContentArea(
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        text = subtitleFor(navigation.destination),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    subtitleFor(navigation.destination)?.let { subtitle ->
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 SupportDeskBadge(
                     text = statusMessage,
@@ -349,8 +353,8 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Login -> "RequenaDesk Admin"
 }
 
-private fun subtitleFor(destination: AppDestination): String = when (destination) {
-    AppDestination.Dashboard -> "Contador dominante, cliente activo y vision mensual compacta."
+private fun subtitleFor(destination: AppDestination): String? = when (destination) {
+    AppDestination.Dashboard -> null
     AppDestination.Clients -> "Consulta clientes y enlaza contexto sin mezclar trabajo."
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
     AppDestination.Labels,

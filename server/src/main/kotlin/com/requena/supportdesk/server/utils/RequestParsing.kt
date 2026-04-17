@@ -1,15 +1,26 @@
 package com.requena.supportdesk.server.utils
 
-import io.ktor.server.request.receiveText
 import io.ktor.server.routing.RoutingCall
+import io.ktor.utils.io.charsets.Charsets
+import io.ktor.utils.io.core.readText
+import io.ktor.utils.io.readRemaining
 import kotlinx.serialization.json.Json
 
 @PublishedApi
 internal val requestJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
+    explicitNulls = false
 }
 
-@Suppress("REDUNDANT_INLINE_SUSPEND_FUNCTION_TYPE")
-suspend inline fun <reified T> RoutingCall.receiveOrDefault(default: T): T =
-    runCatching { requestJson.decodeFromString<T>(receiveText()) }.getOrDefault(default)
+suspend inline fun <reified T> RoutingCall.receiveOrDefault(default: T): T {
+    val rawBody = runCatching {
+        request.receiveChannel().readRemaining().readText(Charsets.UTF_8)
+    }.getOrDefault("")
+
+    if (rawBody.isBlank()) return default
+
+    return runCatching {
+        requestJson.decodeFromString<T>(rawBody)
+    }.getOrDefault(default)
+}
