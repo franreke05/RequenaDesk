@@ -23,6 +23,15 @@ val LocalSupportDeskThemeController = compositionLocalOf<SupportDeskThemeControl
 
 @Composable
 fun SupportDeskApp() {
+    SupportDeskApp {
+        SupportDeskPlatformApp()
+    }
+}
+
+@Composable
+fun SupportDeskApp(
+    content: @Composable () -> Unit,
+) {
     val systemDarkMode = isSystemInDarkTheme()
     var isDarkMode by rememberSaveable { mutableStateOf(systemDarkMode) }
     val controller = remember(isDarkMode) {
@@ -34,7 +43,7 @@ fun SupportDeskApp() {
 
     CompositionLocalProvider(LocalSupportDeskThemeController provides controller) {
         SupportDeskTheme(useDarkTheme = isDarkMode) {
-            SupportDeskPlatformApp()
+            content()
         }
     }
 }

@@ -5,66 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.requena.supportdesk.app.LocalSupportDeskThemeController
-
-private val MobileLightColorScheme = lightColorScheme(
-    primary = Color(0xFF0A84FF),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCEBFF),
-    onPrimaryContainer = Color(0xFF03224C),
-    secondary = Color(0xFF30B0C7),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFD7F3F7),
-    onSecondaryContainer = Color(0xFF06343C),
-    tertiary = Color(0xFFFF9F0A),
-    onTertiary = Color(0xFF3F2400),
-    tertiaryContainer = Color(0xFFFFE7BE),
-    onTertiaryContainer = Color(0xFF4D2A00),
-    background = Color(0xFFF3F5FB),
-    onBackground = Color(0xFF101623),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF101623),
-    surfaceVariant = Color(0xFFE9EEF7),
-    onSurfaceVariant = Color(0xFF667085),
-    outline = Color(0xFFD0D7E2),
-    outlineVariant = Color(0xFFE2E8F0),
-    error = Color(0xFFFF453A),
-    onError = Color.White,
-)
-
-private val MobileDarkColorScheme = darkColorScheme(
-    primary = Color(0xFF4DA3FF),
-    onPrimary = Color(0xFF042545),
-    primaryContainer = Color(0xFF103A66),
-    onPrimaryContainer = Color(0xFFD7EAFF),
-    secondary = Color(0xFF70D6E5),
-    onSecondary = Color(0xFF00363E),
-    secondaryContainer = Color(0xFF114B56),
-    onSecondaryContainer = Color(0xFFCCF3F9),
-    tertiary = Color(0xFFFFB340),
-    onTertiary = Color(0xFF4A2800),
-    tertiaryContainer = Color(0xFF6A3A00),
-    onTertiaryContainer = Color(0xFFFFE1B2),
-    background = Color(0xFF0D111A),
-    onBackground = Color(0xFFF4F7FC),
-    surface = Color(0xFF171C26),
-    onSurface = Color(0xFFF4F7FC),
-    surfaceVariant = Color(0xFF232B38),
-    onSurfaceVariant = Color(0xFFAAB6C8),
-    outline = Color(0xFF435064),
-    outlineVariant = Color(0xFF283241),
-    error = Color(0xFFFF7B74),
-    onError = Color(0xFF470705),
-)
 
 private val MobileTypography = Typography(
     displayLarge = TextStyle(
@@ -167,8 +113,7 @@ private val MobileShapes = Shapes(
 fun SupportDeskMobileTheme(
     content: @Composable () -> Unit,
 ) {
-    val controller = LocalSupportDeskThemeController.current
-    val colorScheme = if (controller.isDarkMode) MobileDarkColorScheme else MobileLightColorScheme
+    val colorScheme = MaterialTheme.colorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

@@ -823,7 +823,10 @@ private fun SelectedDayLogsCard(
                             category?.let {
                                 TagChip(
                                     text = it.name,
-                                    containerColor = parseColor(it.colorHex).copy(alpha = 0.2f),
+                                    containerColor = parseColor(
+                                        hex = it.colorHex,
+                                        fallback = MaterialTheme.colorScheme.primary,
+                                    ).copy(alpha = 0.2f),
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
@@ -1108,7 +1111,10 @@ private fun LabelFilterRow(
             FilterChip(
                 text = category.name,
                 selected = selectedCategoryId == category.id,
-                tint = parseColor(category.colorHex),
+                tint = parseColor(
+                    hex = category.colorHex,
+                    fallback = MaterialTheme.colorScheme.primary,
+                ),
                 onClick = {
                     onSelect(
                         if (selectedCategoryId == category.id) null else category.id,
@@ -1137,7 +1143,10 @@ private fun SelectedTaskCard(
             category?.let {
                 TagChip(
                     text = it.name,
-                    containerColor = parseColor(it.colorHex).copy(alpha = 0.22f),
+                    containerColor = parseColor(
+                        hex = it.colorHex,
+                        fallback = MaterialTheme.colorScheme.primary,
+                    ).copy(alpha = 0.22f),
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -1206,7 +1215,10 @@ private fun TaskRowCard(
                     category?.let {
                         TagChip(
                             text = it.name,
-                            containerColor = parseColor(it.colorHex).copy(alpha = 0.2f),
+                            containerColor = parseColor(
+                                hex = it.colorHex,
+                                fallback = MaterialTheme.colorScheme.primary,
+                            ).copy(alpha = 0.2f),
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -1545,7 +1557,13 @@ private fun SelectedLabelCard(
             Box(
                 modifier = Modifier
                     .size(18.dp)
-                    .background(parseColor(overview.category.colorHex), CircleShape),
+                    .background(
+                        parseColor(
+                            hex = overview.category.colorHex,
+                            fallback = MaterialTheme.colorScheme.primary,
+                        ),
+                        CircleShape,
+                    ),
             )
             TagChip(
                 text = overview.category.colorHex,
@@ -1602,7 +1620,13 @@ private fun LabelRowCard(
             Box(
                 modifier = Modifier
                     .size(14.dp)
-                    .background(parseColor(overview.category.colorHex), CircleShape),
+                    .background(
+                        parseColor(
+                            hex = overview.category.colorHex,
+                            fallback = MaterialTheme.colorScheme.primary,
+                        ),
+                        CircleShape,
+                    ),
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -1959,14 +1983,17 @@ private fun dayOfWeekMondayIndex(year: Int, month: Int, day: Int): Int {
 private fun isoDate(year: Int, month: Int, day: Int): String =
     "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}"
 
-private fun parseColor(hex: String): Color = runCatching {
+private fun parseColor(
+    hex: String,
+    fallback: Color,
+): Color = runCatching {
     val value = hex.removePrefix("#").toLong(16)
     val red = ((value shr 16) and 0xFF).toInt() / 255f
     val green = ((value shr 8) and 0xFF).toInt() / 255f
     val blue = (value and 0xFF).toInt() / 255f
     Color(red = red, green = green, blue = blue, alpha = 1f)
 }.getOrElse {
-    Color(0xFF0A84FF)
+    fallback
 }
 
 private val SPANISH_WEEKDAY_LABELS = listOf("L", "M", "X", "J", "V", "S", "D")
