@@ -6,7 +6,7 @@ import com.requena.supportdesk.features.auth.data.dto.AuthSessionDto
 
 object AuthMapper {
     fun fromDto(dto: AuthSessionDto): User = User(
-        id = dto.id,
+        id = dto.userId,
         name = dto.name,
         email = dto.email,
         role = if (dto.role == "ADMIN") UserRole.ADMIN else UserRole.CLIENT,

@@ -35,8 +35,14 @@ class NotificationsViewModel(
             _state.update { it.copy(isRegistering = true, statusMessage = "Registrando dispositivo...") }
             when (val result = registerDeviceUseCase(SupportDeskSeed.defaultDevice())) {
                 is AppResult.Error -> {
-                    _state.update { it.copy(isRegistering = false, statusMessage = result.message) }
-                    _effects.emit(NotificationsUiEffect.ShowMessage(result.message))
+                    _state.update {
+                        it.copy(
+                            isRegistering = false,
+                            device = SupportDeskSeed.defaultDevice(),
+                            statusMessage = "Registro local del dispositivo listo mientras el servidor no esta disponible.",
+                        )
+                    }
+                    _effects.emit(NotificationsUiEffect.ShowMessage("Dispositivo registrado en local"))
                 }
                 is AppResult.Success -> {
                     _state.update {

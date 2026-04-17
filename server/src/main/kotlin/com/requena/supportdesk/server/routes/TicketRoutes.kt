@@ -1,15 +1,17 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
-import com.requena.supportdesk.server.domain.service.SupportDeskPlaceholderService
+import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
+import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.utils.errorResponse
+import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.successResponse
 import com.requena.supportdesk.server.utils.ticketJson
 import com.requena.supportdesk.server.utils.ticketsJson
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -19,7 +21,7 @@ import io.ktor.server.routing.route
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-fun Route.ticketRoutes(service: SupportDeskPlaceholderService) {
+fun Route.ticketRoutes(service: SupportDeskService) {
     route("/tickets") {
         get {
             call.respond(successResponse("/tickets", ticketsJson(service.tickets())))
@@ -30,28 +32,40 @@ fun Route.ticketRoutes(service: SupportDeskPlaceholderService) {
             call.respond(successResponse("/tickets/$id", ticketJson(ticket)))
         }
         post {
-            val request = runCatching { call.receive<CreateTicketRequest>() }.getOrDefault(CreateTicketRequest())
-            if (request.category !in allowedTicketCategories || request.platform !in allowedPlatforms || request.priority !in allowedPriorities) {
+            val request = call.receiveOrDefault(CreateTicketRequest())
+            if (
+                request.clientId.isBlank() ||
+                request.subject.isBlank() ||
+                request.description.isBlank() ||
+                request.category !in allowedTicketCategories ||
+                request.platform !in allowedPlatforms ||
+                request.priority !in allowedPriorities
+            ) {
                 return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid ticket payload"))
             }
             call.respond(HttpStatusCode.Created, successResponse("/tickets", ticketJson(service.createdTicket(request))))
         }
         post("/{id}/messages") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val result = service.createdMessage(id)
+            val request = call.receiveOrDefault(CreateTicketMessageRequest())
+            if (request.authorId.isBlank() || request.body.isBlank()) {
+                return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid ticket message payload"))
+            }
+            val result = service.createdMessage(id, request)
             call.respond(
                 successResponse(
                     "/tickets/$id/messages",
                     buildJsonObject {
-                        put("ticketId", result.first)
-                        put("message", result.second)
+                        put("ticketId", result.ticketId)
+                        put("messageId", result.messageId)
+                        put("message", "Reply stored")
                     },
                 ),
             )
         }
         patch("/{id}/status") {
             val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = runCatching { call.receive<UpdateTicketStatusRequest>() }.getOrDefault(UpdateTicketStatusRequest())
+            val request = call.receiveOrDefault(UpdateTicketStatusRequest())
             if (request.status !in allowedStatuses) {
                 return@patch call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid ticket status"))
             }
@@ -60,15 +74,15 @@ fun Route.ticketRoutes(service: SupportDeskPlaceholderService) {
                 successResponse(
                     "/tickets/$id/status",
                     buildJsonObject {
-                        put("ticketId", result.first)
-                        put("status", result.second)
+                        put("ticketId", result.ticketId)
+                        put("status", result.value)
                     },
                 ),
             )
         }
         patch("/{id}/priority") {
             val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = runCatching { call.receive<UpdateTicketPriorityRequest>() }.getOrDefault(UpdateTicketPriorityRequest())
+            val request = call.receiveOrDefault(UpdateTicketPriorityRequest())
             if (request.priority !in allowedPriorities) {
                 return@patch call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid ticket priority"))
             }
@@ -77,22 +91,31 @@ fun Route.ticketRoutes(service: SupportDeskPlaceholderService) {
                 successResponse(
                     "/tickets/$id/priority",
                     buildJsonObject {
-                        put("ticketId", result.first)
-                        put("priority", result.second)
+                        put("ticketId", result.ticketId)
+                        put("priority", result.value)
                     },
                 ),
             )
         }
         post("/{id}/attachments") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val result = service.uploadedAttachment(id)
+            val request = call.receiveOrDefault(UploadAttachmentRequest())
+            if (
+                request.uploadedBy.isBlank() ||
+                request.fileName.isBlank() ||
+                request.storageKey.isBlank() ||
+                request.sizeBytes < 0
+            ) {
+                return@post call.respond(HttpStatusCode.BadRequest, errorResponse("Invalid attachment payload"))
+            }
+            val result = service.uploadedAttachment(id, request)
             call.respond(
                 successResponse(
                     "/tickets/$id/attachments",
                     buildJsonObject {
-                        put("ticketId", result.first)
-                        put("attachmentId", result.second)
-                        put("message", "Upload placeholder queued")
+                        put("ticketId", result.ticketId)
+                        put("attachmentId", result.attachmentId)
+                        put("message", "Attachment metadata stored")
                     },
                 ),
             )

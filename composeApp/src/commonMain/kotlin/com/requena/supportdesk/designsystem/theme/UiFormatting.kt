@@ -12,89 +12,106 @@ import com.requena.supportdesk.core.model.WaitingOn
 import com.requena.supportdesk.core.navigation.AppDestination
 
 fun TicketStatus.displayName(): String = when (this) {
-    TicketStatus.OPEN -> "Open"
-    TicketStatus.IN_PROGRESS -> "In progress"
-    TicketStatus.PENDING_CLIENT -> "Pending client"
-    TicketStatus.RESOLVED -> "Resolved"
-    TicketStatus.CLOSED -> "Closed"
+    TicketStatus.OPEN -> "Abierto"
+    TicketStatus.IN_PROGRESS -> "En curso"
+    TicketStatus.PENDING_CLIENT -> "Pendiente del cliente"
+    TicketStatus.RESOLVED -> "Resuelto"
+    TicketStatus.CLOSED -> "Cerrado"
 }
 
 fun TicketPriority.displayName(): String = when (this) {
-    TicketPriority.LOW -> "Low"
-    TicketPriority.MEDIUM -> "Medium"
-    TicketPriority.HIGH -> "High"
-    TicketPriority.URGENT -> "Urgent"
+    TicketPriority.LOW -> "Baja"
+    TicketPriority.MEDIUM -> "Media"
+    TicketPriority.HIGH -> "Alta"
+    TicketPriority.URGENT -> "Urgente"
 }
 
 fun TicketCategory.displayName(): String = when (this) {
     TicketCategory.BUG -> "Bug"
-    TicketCategory.ACCESS -> "Access"
-    TicketCategory.BILLING -> "Billing"
-    TicketCategory.CHANGE_REQUEST -> "Change request"
-    TicketCategory.QUESTION -> "Question"
-    TicketCategory.OTHER -> "Other"
+    TicketCategory.ACCESS -> "Acceso"
+    TicketCategory.BILLING -> "Facturacion"
+    TicketCategory.CHANGE_REQUEST -> "Cambio solicitado"
+    TicketCategory.QUESTION -> "Consulta"
+    TicketCategory.OTHER -> "Otro"
 }
 
 fun SupportPlatform.displayName(): String = when (this) {
     SupportPlatform.ANDROID -> "Android"
     SupportPlatform.IOS -> "iOS"
-    SupportPlatform.DESKTOP -> "Desktop"
+    SupportPlatform.DESKTOP -> "Escritorio"
     SupportPlatform.WEB -> "Web"
     SupportPlatform.BACKEND -> "Backend"
-    SupportPlatform.OTHER -> "Other"
+    SupportPlatform.OTHER -> "Otro"
 }
 
 fun WaitingOn.displayName(): String = when (this) {
-    WaitingOn.CLIENT -> "Waiting on client"
-    WaitingOn.ADMIN -> "Waiting on admin"
+    WaitingOn.CLIENT -> "Esperando al cliente"
+    WaitingOn.ADMIN -> "Esperando a admin"
 }
 
 fun ClientAccountStatus.displayName(): String = when (this) {
-    ClientAccountStatus.ACTIVE -> "Active"
-    ClientAccountStatus.PAUSED -> "Paused"
-    ClientAccountStatus.INACTIVE -> "Inactive"
+    ClientAccountStatus.ACTIVE -> "Activo"
+    ClientAccountStatus.PAUSED -> "Pausado"
+    ClientAccountStatus.INACTIVE -> "Inactivo"
 }
 
 fun ClientServiceTier.displayName(): String = when (this) {
-    ClientServiceTier.STANDARD -> "Standard"
-    ClientServiceTier.PRIORITY -> "Priority"
+    ClientServiceTier.STANDARD -> "Estandar"
+    ClientServiceTier.PRIORITY -> "Prioritario"
     ClientServiceTier.VIP -> "VIP"
 }
 
 fun PreferredContactChannel.displayName(): String = when (this) {
     PreferredContactChannel.TICKET -> "Ticket"
-    PreferredContactChannel.EMAIL -> "Email"
+    PreferredContactChannel.EMAIL -> "Correo"
     PreferredContactChannel.WHATSAPP -> "WhatsApp"
-    PreferredContactChannel.CALL -> "Call"
+    PreferredContactChannel.CALL -> "Llamada"
 }
 
 fun UserRole.displayName(): String = when (this) {
-    UserRole.CLIENT -> "Client"
+    UserRole.CLIENT -> "Cliente"
     UserRole.ADMIN -> "Admin"
 }
 
 fun AppDestination.displayTitle(): String = when (this) {
-    AppDestination.Login -> "Welcome"
+    AppDestination.Login -> "Acceso Admin"
     AppDestination.Dashboard -> "Dashboard"
-    AppDestination.Tickets -> "Tickets"
-    AppDestination.CreateTicket -> "Create ticket"
-    is AppDestination.TicketDetail -> "Ticket detail"
-    AppDestination.Clients -> "Clients"
-    AppDestination.Notifications -> "Notifications"
+    AppDestination.Tasks -> "Tareas"
+    AppDestination.Labels -> "Etiquetas"
+    AppDestination.Tickets -> "Agenda"
+    AppDestination.CreateTicket -> "Agenda"
+    is AppDestination.TicketDetail -> "Agenda"
+    AppDestination.Clients -> "Clientes"
+    AppDestination.Notifications -> "Etiquetas"
 }
 
 fun AppDestination.displaySubtitle(): String = when (this) {
-    AppDestination.Login -> "Freelance support, one desktop product."
-    AppDestination.Dashboard -> "Daily admin view with active workload."
-    AppDestination.Tickets -> "Review, filter and resolve tickets fast."
-    AppDestination.CreateTicket -> "Open a new ticket with the minimum friction."
-    is AppDestination.TicketDetail -> "Conversation, metadata and next actions."
-    AppDestination.Clients -> "Accounts, contacts and ticket activity."
-    AppDestination.Notifications -> "Admin mobile alerts and device registration."
+    AppDestination.Login -> "Workspace solo admin para operar clientes."
+    AppDestination.Dashboard -> "Tiempo central, cliente activo y ruedas mensuales."
+    AppDestination.Tasks -> "Trabajo operativo con cliente opcional y etiquetas."
+    AppDestination.Labels -> "Colores y grupos para ordenar tareas."
+    AppDestination.Tickets -> "Ruta legacy retirada de la navegacion principal."
+    AppDestination.CreateTicket -> "Ruta legacy retirada de la navegacion principal."
+    is AppDestination.TicketDetail -> "Ruta legacy retirada de la navegacion principal."
+    AppDestination.Clients -> "Directorio limpio y ficha rapida de clientes."
+    AppDestination.Notifications -> "Categorias de tareas y colores de seccion."
 }
 
 fun formatSupportDeskDateTime(raw: String): String {
     if (raw.isBlank()) return "-"
     val cleaned = raw.removeSuffix("Z").replace("T", "  ")
     return if (cleaned.length > 16) cleaned.substring(0, 16) else cleaned
+}
+
+fun formatSupportDeskDuration(minutes: Int): String {
+    if (minutes <= 0) return "0 h"
+    val hours = minutes / 60
+    val remainingMinutes = minutes % 60
+    return if (hours == 0) {
+        "${remainingMinutes} m"
+    } else if (remainingMinutes == 0) {
+        "${hours} h"
+    } else {
+        "${hours} h ${remainingMinutes} m"
+    }
 }

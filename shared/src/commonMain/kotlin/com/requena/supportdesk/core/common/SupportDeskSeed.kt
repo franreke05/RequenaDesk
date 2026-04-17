@@ -3,21 +3,27 @@ package com.requena.supportdesk.core.common
 import com.requena.supportdesk.core.model.Attachment
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.ClientAccountStatus
+import com.requena.supportdesk.core.model.ClientMonthlyHoursSummary
+import com.requena.supportdesk.core.model.ClientNote
 import com.requena.supportdesk.core.model.ClientServiceTier
 import com.requena.supportdesk.core.model.DashboardSummary
 import com.requena.supportdesk.core.model.InternalComment
 import com.requena.supportdesk.core.model.NotificationDevice
 import com.requena.supportdesk.core.model.PreferredContactChannel
 import com.requena.supportdesk.core.model.SupportPlatform
+import com.requena.supportdesk.core.model.TaskCategory
+import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketEvent
 import com.requena.supportdesk.core.model.TicketMessage
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.core.model.User
 import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.model.WaitingOn
+import com.requena.supportdesk.core.model.WorkTask
 
 object SupportDeskSeed {
     val adminUser = User(
@@ -27,12 +33,178 @@ object SupportDeskSeed {
         role = UserRole.ADMIN,
     )
 
+    val partnerAdminUser = User(
+        id = "user-admin-2",
+        name = "Socio Operaciones",
+        email = SUPPORT_DESK_PARTNER_EMAIL,
+        role = UserRole.ADMIN,
+    )
+
     val clientUser = User(
         id = "user-client",
         name = "Cliente Demo",
         email = SUPPORT_DESK_CLIENT_EMAIL,
         role = UserRole.CLIENT,
         clientId = "client-1",
+    )
+
+    private val seededClientNotes = listOf(
+        ClientNote(
+            id = "client-note-1",
+            clientId = "client-1",
+            authorId = adminUser.id,
+            authorName = adminUser.name,
+            body = "Cliente sensible a cambios en instaladores. Hacer smoke test en Windows antes de cada entrega.",
+            createdAt = "2026-04-12T09:00:00Z",
+        ),
+        ClientNote(
+            id = "client-note-2",
+            clientId = "client-1",
+            authorId = partnerAdminUser.id,
+            authorName = partnerAdminUser.name,
+            body = "En mayo quieren revisar backlog y propuesta mensual de soporte.",
+            createdAt = "2026-04-14T18:10:00Z",
+        ),
+        ClientNote(
+            id = "client-note-3",
+            clientId = "client-2",
+            authorId = partnerAdminUser.id,
+            authorName = partnerAdminUser.name,
+            body = "Prefieren cambios agrupados y validacion por correo antes de desplegar.",
+            createdAt = "2026-04-13T11:45:00Z",
+        ),
+    )
+
+    private val seededTimeEntries = listOf(
+        TimeEntry(
+            id = "time-1",
+            clientId = "client-1",
+            ticketId = "ticket-1",
+            authorId = adminUser.id,
+            authorName = adminUser.name,
+            minutes = 95,
+            workDate = "2026-04-12",
+            note = "Analisis de logs y reproduccion del fallo de arranque.",
+            billable = true,
+            createdAt = "2026-04-12T10:40:00Z",
+        ),
+        TimeEntry(
+            id = "time-2",
+            clientId = "client-1",
+            ticketId = "ticket-1",
+            authorId = partnerAdminUser.id,
+            authorName = partnerAdminUser.name,
+            minutes = 50,
+            workDate = "2026-04-13",
+            note = "Seguimiento con cliente y validacion interna del parche.",
+            billable = false,
+            createdAt = "2026-04-13T17:20:00Z",
+        ),
+        TimeEntry(
+            id = "time-3",
+            clientId = "client-2",
+            ticketId = "ticket-2",
+            authorId = adminUser.id,
+            authorName = adminUser.name,
+            minutes = 75,
+            workDate = "2026-04-14",
+            note = "Diseno funcional del campo de referencia y respuesta al cliente.",
+            billable = true,
+            createdAt = "2026-04-14T16:25:00Z",
+        ),
+    )
+
+    private val seededTaskCategories = listOf(
+        TaskCategory(
+            id = "task-category-1",
+            name = "Hoy",
+            colorHex = "#6B7A5B",
+        ),
+        TaskCategory(
+            id = "task-category-2",
+            name = "Seguimiento",
+            colorHex = "#A67C52",
+        ),
+        TaskCategory(
+            id = "task-category-3",
+            name = "Bloqueos",
+            colorHex = "#7D4E57",
+        ),
+    )
+
+    private val seededTaskLogs = listOf(
+        TaskLog(
+            id = "task-log-1",
+            taskId = "task-1",
+            clientId = "client-1",
+            authorId = adminUser.id,
+            authorName = adminUser.name,
+            minutes = 80,
+            workDate = "2026-04-10",
+            note = "Revision del arranque en escritorio.",
+            billable = true,
+            createdAt = "2026-04-10T12:10:00Z",
+        ),
+        TaskLog(
+            id = "task-log-2",
+            taskId = "task-2",
+            clientId = "client-2",
+            authorId = partnerAdminUser.id,
+            authorName = partnerAdminUser.name,
+            minutes = 45,
+            workDate = "2026-04-12",
+            note = "Preparacion de feedback para cliente.",
+            billable = true,
+            createdAt = "2026-04-12T18:20:00Z",
+        ),
+        TaskLog(
+            id = "task-log-3",
+            taskId = "task-3",
+            clientId = null,
+            authorId = adminUser.id,
+            authorName = adminUser.name,
+            minutes = 35,
+            workDate = "2026-04-14",
+            note = "Plan semanal interna.",
+            billable = false,
+            createdAt = "2026-04-14T09:40:00Z",
+        ),
+    )
+
+    private val seededTasks = listOf(
+        WorkTask(
+            id = "task-1",
+            title = "Revisar build de escritorio de Northwind",
+            clientId = "client-1",
+            categoryId = "task-category-1",
+            description = "Validar arranque limpio y registrar horas facturables.",
+            dueDate = "2026-04-15",
+            loggedMinutes = seededTaskLogs.filter { it.taskId == "task-1" }.sumOf { it.minutes },
+            createdAt = "2026-04-10T08:00:00Z",
+            updatedAt = "2026-04-14T16:40:00Z",
+        ),
+        WorkTask(
+            id = "task-2",
+            title = "Enviar seguimiento de Forge Flow",
+            clientId = "client-2",
+            categoryId = "task-category-2",
+            description = "Cerrar dudas del formulario y preparar siguiente iteracion.",
+            dueDate = "2026-04-16",
+            loggedMinutes = seededTaskLogs.filter { it.taskId == "task-2" }.sumOf { it.minutes },
+            createdAt = "2026-04-12T10:30:00Z",
+            updatedAt = "2026-04-14T18:20:00Z",
+        ),
+        WorkTask(
+            id = "task-3",
+            title = "Planificar semana y priorizar agenda",
+            clientId = null,
+            categoryId = "task-category-3",
+            description = "Ordenar huecos del mes y repartirse carga.",
+            dueDate = "2026-04-15",
+            loggedMinutes = seededTaskLogs.filter { it.taskId == "task-3" }.sumOf { it.minutes },
+            createdAt = "2026-04-14T08:50:00Z",
+            updatedAt = "2026-04-14T09:40:00Z",
+        ),
     )
 
     val clients = listOf(
@@ -46,6 +218,9 @@ object SupportDeskSeed {
             serviceTier = ClientServiceTier.PRIORITY,
             preferredContactChannel = PreferredContactChannel.TICKET,
             activeTicketCount = 2,
+            notes = seededClientNotes.filter { it.clientId == "client-1" },
+            monthlyHoursSummary = monthlySummaryFor("client-1"),
+            timeEntries = seededTimeEntries.filter { it.clientId == "client-1" },
         ),
         Client(
             id = "client-2",
@@ -57,8 +232,21 @@ object SupportDeskSeed {
             serviceTier = ClientServiceTier.STANDARD,
             preferredContactChannel = PreferredContactChannel.EMAIL,
             activeTicketCount = 1,
+            notes = seededClientNotes.filter { it.clientId == "client-2" },
+            monthlyHoursSummary = monthlySummaryFor("client-2"),
+            timeEntries = seededTimeEntries.filter { it.clientId == "client-2" },
         ),
     )
+
+    fun clientNotes(): List<ClientNote> = seededClientNotes
+
+    fun timeEntries(): List<TimeEntry> = seededTimeEntries
+
+    fun taskCategories(): List<TaskCategory> = seededTaskCategories
+
+    fun taskLogs(): List<TaskLog> = seededTaskLogs
+
+    fun workTasks(): List<WorkTask> = seededTasks
 
     fun tickets(): List<Ticket> {
         val firstAttachment = Attachment(
@@ -122,6 +310,7 @@ object SupportDeskSeed {
                         createdAt = "2026-03-19T09:20:00Z",
                     ),
                 ),
+                timeEntries = seededTimeEntries.filter { it.ticketId == "ticket-1" },
                 events = listOf(
                     TicketEvent(
                         id = "event-1",
@@ -177,6 +366,17 @@ object SupportDeskSeed {
                         createdAt = "2026-03-18T16:05:00Z",
                     ),
                 ),
+                internalComments = listOf(
+                    InternalComment(
+                        id = "comment-2",
+                        ticketId = "ticket-2",
+                        authorId = partnerAdminUser.id,
+                        authorName = partnerAdminUser.name,
+                        body = "Confirmar si el campo debe ser unico o solo visible en admin.",
+                        createdAt = "2026-04-14T17:15:00Z",
+                    ),
+                ),
+                timeEntries = seededTimeEntries.filter { it.ticketId == "ticket-2" },
                 events = listOf(
                     TicketEvent(
                         id = "event-3",
@@ -206,4 +406,14 @@ object SupportDeskSeed {
         token = "placeholder-device-token",
         lastSeenAt = "2026-03-19T10:00:00Z",
     )
+
+    private fun monthlySummaryFor(clientId: String): ClientMonthlyHoursSummary {
+        val entries = seededTimeEntries.filter { it.clientId == clientId }
+        return ClientMonthlyHoursSummary(
+            monthLabel = "April 2026",
+            totalMinutes = entries.sumOf { it.minutes },
+            billableMinutes = entries.filter { it.billable }.sumOf { it.minutes },
+            entriesCount = entries.size,
+        )
+    }
 }

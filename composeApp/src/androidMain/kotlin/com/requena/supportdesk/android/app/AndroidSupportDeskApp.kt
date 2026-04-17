@@ -163,6 +163,8 @@ fun AndroidSupportDeskApp() {
                                     state = notificationsState,
                                     onRegisterDevice = { module.notificationsViewModel.onEvent(NotificationsUiEvent.RegisterAdminDevice) },
                                 )
+                                AppDestination.Tasks,
+                                AppDestination.Labels,
                                 AppDestination.Dashboard,
                                 AppDestination.CreateTicket,
                                 AppDestination.Clients -> TicketListScreen(

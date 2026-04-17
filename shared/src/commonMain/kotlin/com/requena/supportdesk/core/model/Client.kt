@@ -10,4 +10,7 @@ data class Client(
     val serviceTier: ClientServiceTier = ClientServiceTier.STANDARD,
     val preferredContactChannel: PreferredContactChannel = PreferredContactChannel.TICKET,
     val activeTicketCount: Int = 0,
+    val notes: List<ClientNote> = emptyList(),
+    val monthlyHoursSummary: ClientMonthlyHoursSummary? = null,
+    val timeEntries: List<TimeEntry> = emptyList(),
 )

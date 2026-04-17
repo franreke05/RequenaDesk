@@ -22,4 +22,16 @@ sealed interface TicketsUiEvent {
     data class ReplyToSelected(val message: String) : TicketsUiEvent
     data class ChangeSelectedStatus(val status: TicketStatus) : TicketsUiEvent
     data class ChangeSelectedPriority(val priority: TicketPriority) : TicketsUiEvent
+    data class AddInternalNote(
+        val body: String,
+        val authorId: String,
+        val authorName: String,
+    ) : TicketsUiEvent
+    data class AddTimeEntry(
+        val minutes: Int,
+        val note: String,
+        val billable: Boolean,
+        val authorId: String,
+        val authorName: String,
+    ) : TicketsUiEvent
 }

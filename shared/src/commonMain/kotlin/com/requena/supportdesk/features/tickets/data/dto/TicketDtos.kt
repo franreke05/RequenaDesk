@@ -1,5 +1,8 @@
 package com.requena.supportdesk.features.tickets.data.dto
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class TicketDto(
     val id: String,
     val clientId: String,
@@ -16,4 +19,34 @@ data class TicketDto(
     val priority: String,
     val waitingOn: String = "ADMIN",
     val resolutionSummary: String? = null,
+)
+
+@Serializable
+data class CreateTicketRequestDto(
+    val clientId: String,
+    val subject: String,
+    val description: String,
+    val category: String,
+    val affectedApp: String,
+    val platform: String,
+    val appVersion: String? = null,
+    val stepsToReproduce: String? = null,
+    val clientReference: String? = null,
+    val priority: String,
+)
+
+@Serializable
+data class CreateTicketMessageRequestDto(
+    val authorId: String,
+    val body: String,
+)
+
+@Serializable
+data class UpdateTicketStatusRequestDto(
+    val status: String,
+)
+
+@Serializable
+data class UpdateTicketPriorityRequestDto(
+    val priority: String,
 )

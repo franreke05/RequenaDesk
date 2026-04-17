@@ -73,10 +73,10 @@ fun DesktopSupportDeskApp() {
                 when (effect) {
                     is AuthUiEffect.NavigateToHome -> {
                         navigation = navigation.copy(
-                            role = effect.role,
-                            destination = desktopHomeFor(effect.role),
+                            role = UserRole.ADMIN,
+                            destination = desktopHomeFor(UserRole.ADMIN),
                         )
-                        statusMessage = "Signed in as ${effect.role.displayName()}"
+                        statusMessage = "Signed in as ${UserRole.ADMIN.displayName()}"
                     }
                     is AuthUiEffect.ShowMessage -> statusMessage = effect.message
                 }
@@ -210,6 +210,8 @@ fun DesktopSupportDeskApp() {
                                             state = clientsState,
                                             onEvent = module.clientsViewModel::onEvent,
                                         )
+                                        AppDestination.Tasks,
+                                        AppDestination.Labels,
                                         AppDestination.Notifications -> EmptyState(
                                             title = "Mobile-only notifications",
                                             message = "Push registration and quick admin alerts stay in the Android lite app.",
@@ -317,6 +319,8 @@ private fun desktopSidebarItems(role: UserRole): List<NavigationItemSpec<AppDest
 private fun sidebarDestinationFor(destination: AppDestination): AppDestination = when (destination) {
     AppDestination.Dashboard -> AppDestination.Dashboard
     AppDestination.Clients -> AppDestination.Clients
+    AppDestination.Tasks -> AppDestination.Tickets
+    AppDestination.Labels -> AppDestination.Tickets
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> AppDestination.Tickets

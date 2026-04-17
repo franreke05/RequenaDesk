@@ -4,7 +4,11 @@ import com.requena.supportdesk.core.model.Client
 
 data class ClientsUiState(
     val clients: List<Client> = emptyList(),
+    val selectedClientId: String? = null,
     val query: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-)
+) {
+    val selectedClient: Client?
+        get() = clients.firstOrNull { it.id == selectedClientId } ?: clients.firstOrNull()
+}

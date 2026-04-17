@@ -1,6 +1,7 @@
 package com.requena.supportdesk.features.tickets.data.mapper
 
-import com.requena.supportdesk.core.common.SupportDeskSeed
+import com.requena.supportdesk.core.model.User
+import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.model.SupportPlatform
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
@@ -11,10 +12,6 @@ import com.requena.supportdesk.features.tickets.data.dto.TicketDto
 
 object TicketsMapper {
     fun fromDto(dto: TicketDto): Ticket {
-        val requester = SupportDeskSeed.clients.firstOrNull { it.id == dto.clientId }?.let {
-            SupportDeskSeed.clientUser.copy(clientId = it.id)
-        } ?: SupportDeskSeed.clientUser
-
         return Ticket(
             id = dto.id,
             clientId = dto.clientId,
@@ -31,8 +28,19 @@ object TicketsMapper {
             priority = TicketPriority.valueOf(dto.priority),
             waitingOn = WaitingOn.valueOf(dto.waitingOn),
             resolutionSummary = dto.resolutionSummary,
-            requester = requester,
-            assignee = SupportDeskSeed.adminUser,
+            requester = User(
+                id = "requester-${dto.clientId}",
+                name = "Client requester",
+                email = "client@support.local",
+                role = UserRole.CLIENT,
+                clientId = dto.clientId,
+            ),
+            assignee = User(
+                id = "admin-assignee",
+                name = "Admin",
+                email = "admin@support.local",
+                role = UserRole.ADMIN,
+            ),
             createdAt = "2026-03-19T00:00:00Z",
             updatedAt = "2026-03-19T00:00:00Z",
         )

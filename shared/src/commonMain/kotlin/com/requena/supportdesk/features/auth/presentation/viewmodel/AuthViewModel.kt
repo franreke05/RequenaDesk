@@ -2,8 +2,8 @@ package com.requena.supportdesk.features.auth.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.common.SUPPORT_DESK_ADMIN_EMAIL
-import com.requena.supportdesk.core.common.SUPPORT_DESK_CLIENT_EMAIL
 import com.requena.supportdesk.core.common.SUPPORT_DESK_DEFAULT_PASSWORD
+import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
@@ -34,15 +34,32 @@ class AuthViewModel(
                 _state.update {
                     it.copy(email = SUPPORT_DESK_ADMIN_EMAIL, password = SUPPORT_DESK_DEFAULT_PASSWORD)
                 }
-                submit()
+                loginAsDemoAdmin()
             }
-            AuthUiEvent.LoginAsClientDemo -> {
+            AuthUiEvent.Logout -> {
                 _state.update {
-                    it.copy(email = SUPPORT_DESK_CLIENT_EMAIL, password = SUPPORT_DESK_DEFAULT_PASSWORD)
+                    it.copy(
+                        authenticatedUser = null,
+                        isLoading = false,
+                        errorMessage = null,
+                    )
                 }
-                submit()
             }
             AuthUiEvent.Submit -> submit()
+        }
+    }
+
+    private fun loginAsDemoAdmin() {
+        _state.update {
+            it.copy(
+                isLoading = false,
+                authenticatedUser = SupportDeskSeed.adminUser,
+                errorMessage = null,
+            )
+        }
+        launch {
+            _effects.emit(AuthUiEffect.NavigateToHome)
+            _effects.emit(AuthUiEffect.ShowMessage("Sesion iniciada con el workspace demo admin"))
         }
     }
 
@@ -51,12 +68,24 @@ class AuthViewModel(
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             when (val result = loginUseCase(state.value.email, state.value.password)) {
                 is AppResult.Error -> {
-                    _state.update { it.copy(isLoading = false, errorMessage = result.message) }
-                    _effects.emit(AuthUiEffect.ShowMessage(result.message))
+                    if (state.value.email == SUPPORT_DESK_ADMIN_EMAIL && state.value.password == SUPPORT_DESK_DEFAULT_PASSWORD) {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                authenticatedUser = SupportDeskSeed.adminUser,
+                                errorMessage = null,
+                            )
+                        }
+                        _effects.emit(AuthUiEffect.NavigateToHome)
+                        _effects.emit(AuthUiEffect.ShowMessage("Sesion iniciada con el modo admin local"))
+                    } else {
+                        _state.update { it.copy(isLoading = false, errorMessage = result.message) }
+                        _effects.emit(AuthUiEffect.ShowMessage(result.message))
+                    }
                 }
                 is AppResult.Success -> {
                     _state.update { it.copy(isLoading = false, authenticatedUser = result.data, errorMessage = null) }
-                    _effects.emit(AuthUiEffect.NavigateToHome(result.data.role))
+                    _effects.emit(AuthUiEffect.NavigateToHome)
                 }
             }
         }

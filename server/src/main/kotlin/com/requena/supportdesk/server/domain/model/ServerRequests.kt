@@ -9,8 +9,19 @@ data class LoginRequest(
 )
 
 @Serializable
+data class RefreshSessionRequest(
+    val refreshToken: String = "",
+)
+
+@Serializable
+data class LogoutRequest(
+    val refreshToken: String = "",
+)
+
+@Serializable
 data class CreateTicketRequest(
     val clientId: String = "client-1",
+    val requesterId: String? = null,
     val subject: String = "",
     val description: String = "",
     val category: String = "QUESTION",
@@ -20,6 +31,12 @@ data class CreateTicketRequest(
     val stepsToReproduce: String? = null,
     val clientReference: String? = null,
     val priority: String = "MEDIUM",
+)
+
+@Serializable
+data class CreateTicketMessageRequest(
+    val authorId: String = "",
+    val body: String = "",
 )
 
 @Serializable
@@ -36,6 +53,7 @@ data class UpdateTicketPriorityRequest(
 data class CreateClientRequest(
     val companyName: String = "",
     val productName: String = "",
+    val contactName: String = "",
     val email: String = "",
     val accountStatus: String = "ACTIVE",
     val serviceTier: String = "STANDARD",
@@ -43,7 +61,68 @@ data class CreateClientRequest(
 )
 
 @Serializable
+data class UpdateClientRequest(
+    val companyName: String? = null,
+    val productName: String? = null,
+    val contactName: String? = null,
+    val email: String? = null,
+    val accountStatus: String? = null,
+    val serviceTier: String? = null,
+    val preferredContactChannel: String? = null,
+)
+
+@Serializable
+data class CreateTaskLabelRequest(
+    val name: String = "",
+    val colorHex: String = "#6B7A5B",
+)
+
+@Serializable
+data class UpdateTaskLabelRequest(
+    val name: String? = null,
+    val colorHex: String? = null,
+)
+
+@Serializable
+data class CreateTaskRequest(
+    val title: String = "",
+    val description: String = "",
+    val clientId: String? = null,
+    val labelId: String = "",
+)
+
+@Serializable
+data class UpdateTaskRequest(
+    val title: String? = null,
+    val description: String? = null,
+    val clientId: String? = null,
+    val labelId: String? = null,
+    val completed: Boolean? = null,
+)
+
+@Serializable
+data class CreateTimeLogRequest(
+    val taskId: String = "",
+    val authorId: String = "",
+    val workDate: String = "",
+    val minutes: Int = 0,
+    val note: String = "",
+    val billable: Boolean = false,
+)
+
+@Serializable
+data class UploadAttachmentRequest(
+    val uploadedBy: String = "",
+    val fileName: String = "",
+    val contentType: String = "application/octet-stream",
+    val storageKey: String = "",
+    val sizeBytes: Long = 0,
+    val messageId: String? = null,
+)
+
+@Serializable
 data class RegisterDeviceRequest(
     val userId: String = "user-admin",
+    val token: String = "",
     val platform: String = "ANDROID",
 )
