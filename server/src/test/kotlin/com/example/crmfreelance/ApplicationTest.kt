@@ -3,8 +3,11 @@ package com.example.crmfreelance
 import com.requena.supportdesk.server.application.configureSupportDeskModule
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.repository.InMemorySupportDeskRepository
+import com.requena.supportdesk.server.utils.ADMIN_USER_ID_HEADER
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -19,6 +22,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ApplicationTest {
+
+    private fun HttpRequestBuilder.asAdmin(ownerId: String = "user-admin") {
+        header(ADMIN_USER_ID_HEADER, ownerId)
+    }
 
     private fun io.ktor.server.application.Application.testModule() {
         configureSupportDeskModule(
@@ -48,7 +55,9 @@ class ApplicationTest {
     @Test
     fun testDashboardRoute() = testApplication {
         application { testModule() }
-        val response = client.get("/admin/dashboard")
+        val response = client.get("/admin/dashboard") {
+            asAdmin()
+        }
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("openTickets"))
     }
@@ -71,7 +80,9 @@ class ApplicationTest {
     @Test
     fun testClientsRouteIncludesNewFields() = testApplication {
         application { testModule() }
-        val response = client.get("/admin/clients")
+        val response = client.get("/admin/clients") {
+            asAdmin()
+        }
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("productName"))
         assertTrue(response.bodyAsText().contains("serviceTier"))
@@ -81,21 +92,27 @@ class ApplicationTest {
     fun testDeleteTaskRemovesTaskFromList() = testApplication {
         application { testModule() }
 
-        val deleteResponse = client.delete("/admin/tasks/task-2")
+        val deleteResponse = client.delete("/admin/tasks/task-1") {
+            asAdmin()
+        }
         assertEquals(HttpStatusCode.OK, deleteResponse.status)
 
-        val tasksResponse = client.get("/admin/tasks")
+        val tasksResponse = client.get("/admin/tasks") {
+            asAdmin()
+        }
         assertEquals(HttpStatusCode.OK, tasksResponse.status)
         val body = tasksResponse.bodyAsText()
-        assertTrue(body.contains("task-1"))
-        assertTrue(!body.contains("task-2"))
+        assertTrue(!body.contains("task-1"))
+        assertTrue(body.contains("task-3"))
     }
 
     @Test
     fun testDeleteClientReturnsConflictWhenClientHasTickets() = testApplication {
         application { testModule() }
 
-        val response = client.delete("/admin/clients/client-1")
+        val response = client.delete("/admin/clients/client-1") {
+            asAdmin()
+        }
 
         assertEquals(HttpStatusCode.Conflict, response.status)
         assertTrue(response.bodyAsText().contains("cannot be deleted"))
@@ -115,7 +132,9 @@ class ApplicationTest {
     fun testDeleteMissingTaskReturnsNotFound() = testApplication {
         application { testModule() }
 
-        val response = client.delete("/admin/tasks/task-missing")
+        val response = client.delete("/admin/tasks/task-missing") {
+            asAdmin()
+        }
 
         assertEquals(HttpStatusCode.NotFound, response.status)
         assertTrue(response.bodyAsText().contains("Task not found"))
@@ -127,11 +146,12 @@ class ApplicationTest {
 
         val createResponse = client.post("/admin/labels") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Backlog","colorHex":"#445566"}""")
+            setBody("""{"ownerAdminId":"user-admin-2","name":"Backlog","colorHex":"#445566"}""")
         }
         assertEquals(HttpStatusCode.Created, createResponse.status)
         val createdBody = createResponse.bodyAsText()
         assertTrue(createdBody.contains("Backlog"))
+        assertTrue(createdBody.contains("\"ownerAdminId\":\"user-admin-2\""))
 
         val idRegex = """"id":"([^"]+)"""".toRegex()
         val labelId = requireNotNull(idRegex.find(createdBody)?.groupValues?.get(1))
@@ -148,6 +168,7 @@ class ApplicationTest {
         application { testModule() }
 
         val createResponse = client.post("/admin/clients") {
+            asAdmin()
             contentType(ContentType.Application.Json)
             setBody(
                 """
@@ -168,10 +189,14 @@ class ApplicationTest {
         val idRegex = """"id":"([^"]+)"""".toRegex()
         val clientId = requireNotNull(idRegex.find(createdBody)?.groupValues?.get(1))
 
-        val deleteResponse = client.delete("/admin/clients/$clientId")
+        val deleteResponse = client.delete("/admin/clients/$clientId") {
+            asAdmin()
+        }
         assertEquals(HttpStatusCode.OK, deleteResponse.status)
 
-        val clientsResponse = client.get("/admin/clients")
+        val clientsResponse = client.get("/admin/clients") {
+            asAdmin()
+        }
         assertTrue(!clientsResponse.bodyAsText().contains(clientId))
     }
 
@@ -181,6 +206,7 @@ class ApplicationTest {
         val futureDate = LocalDate.now().plusDays(2).toString()
 
         val response = client.post("/admin/tasks") {
+            asAdmin()
             contentType(ContentType.Application.Json)
             setBody(
                 """
@@ -204,6 +230,7 @@ class ApplicationTest {
         val pastDate = LocalDate.now().minusDays(1).toString()
 
         val response = client.post("/admin/time-logs") {
+            asAdmin()
             contentType(ContentType.Application.Json)
             setBody(
                 """
@@ -229,12 +256,170 @@ class ApplicationTest {
         application { testModule() }
 
         val response = client.patch("/admin/clients/client-missing") {
+            asAdmin()
             contentType(ContentType.Application.Json)
             setBody("""{"companyName":"Renamed"}""")
         }
 
         assertEquals(HttpStatusCode.NotFound, response.status)
         assertTrue(response.bodyAsText().contains("Client not found"))
+    }
+
+    @Test
+    fun testAdminReadRoutesRequireOwnerHeader() = testApplication {
+        application { testModule() }
+
+        val clientsResponse = client.get("/admin/clients")
+        val tasksResponse = client.get("/admin/tasks")
+        val timeLogsResponse = client.get("/admin/time-logs")
+        val dashboardResponse = client.get("/admin/dashboard")
+
+        assertEquals(HttpStatusCode.BadRequest, clientsResponse.status)
+        assertEquals(HttpStatusCode.BadRequest, tasksResponse.status)
+        assertEquals(HttpStatusCode.BadRequest, timeLogsResponse.status)
+        assertEquals(HttpStatusCode.BadRequest, dashboardResponse.status)
+        assertTrue(clientsResponse.bodyAsText().contains(ADMIN_USER_ID_HEADER))
+    }
+
+    @Test
+    fun testAdminWriteRoutesRequireOwnerHeader() = testApplication {
+        application { testModule() }
+        val futureDate = LocalDate.now().plusDays(1).toString()
+
+        val createClientResponse = client.post("/admin/clients") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "companyName":"Headerless Client",
+                  "productName":"Headerless Product",
+                  "contactName":"Headerless Contact",
+                  "email":"headerless@example.com",
+                  "accountStatus":"ACTIVE",
+                  "serviceTier":"STANDARD",
+                  "preferredContactChannel":"TICKET"
+                }
+                """.trimIndent(),
+            )
+        }
+        val createTaskResponse = client.post("/admin/tasks") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "title":"Headerless Task",
+                  "description":"Debe fallar sin owner",
+                  "labelId":"label-1",
+                  "dueDate":"$futureDate"
+                }
+                """.trimIndent(),
+            )
+        }
+        val createTimeLogResponse = client.post("/admin/time-logs") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "taskId":"task-1",
+                  "authorId":"user-admin",
+                  "workDate":"${LocalDate.now()}",
+                  "minutes":15,
+                  "seconds":900,
+                  "note":"Debe fallar sin owner",
+                  "billable":true
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.BadRequest, createClientResponse.status)
+        assertEquals(HttpStatusCode.BadRequest, createTaskResponse.status)
+        assertEquals(HttpStatusCode.BadRequest, createTimeLogResponse.status)
+    }
+
+    @Test
+    fun testAdminRoutesFilterByOwnerHeader() = testApplication {
+        application { testModule() }
+
+        val adminClients = client.get("/admin/clients") {
+            asAdmin("user-admin")
+        }.bodyAsText()
+        val partnerClients = client.get("/admin/clients") {
+            asAdmin("user-admin-2")
+        }.bodyAsText()
+        val adminTasks = client.get("/admin/tasks") {
+            asAdmin("user-admin")
+        }.bodyAsText()
+        val partnerTasks = client.get("/admin/tasks") {
+            asAdmin("user-admin-2")
+        }.bodyAsText()
+        val adminLogs = client.get("/admin/time-logs") {
+            asAdmin("user-admin")
+        }.bodyAsText()
+        val partnerLogs = client.get("/admin/time-logs") {
+            asAdmin("user-admin-2")
+        }.bodyAsText()
+        val adminDashboard = client.get("/admin/dashboard") {
+            asAdmin("user-admin")
+        }.bodyAsText()
+        val partnerDashboard = client.get("/admin/dashboard") {
+            asAdmin("user-admin-2")
+        }.bodyAsText()
+
+        assertTrue(adminClients.contains("client-1"))
+        assertTrue(!adminClients.contains("client-2"))
+        assertTrue(partnerClients.contains("client-2"))
+        assertTrue(!partnerClients.contains("client-1"))
+
+        assertTrue(adminTasks.contains("task-1"))
+        assertTrue(adminTasks.contains("task-3"))
+        assertTrue(!adminTasks.contains("task-2"))
+        assertTrue(partnerTasks.contains("task-2"))
+        assertTrue(!partnerTasks.contains("task-1"))
+
+        assertTrue(adminLogs.contains("time-log-1"))
+        assertTrue(adminLogs.contains("time-log-3"))
+        assertTrue(!adminLogs.contains("time-log-2"))
+        assertTrue(partnerLogs.contains("time-log-2"))
+        assertTrue(!partnerLogs.contains("time-log-1"))
+
+        assertTrue(adminDashboard.contains("\"activeClients\":1"))
+        assertTrue(adminDashboard.contains("task-1"))
+        assertTrue(!adminDashboard.contains("task-2"))
+        assertTrue(partnerDashboard.contains("\"activeClients\":1"))
+        assertTrue(partnerDashboard.contains("task-2"))
+        assertTrue(!partnerDashboard.contains("task-1"))
+    }
+
+    @Test
+    fun testTimeLogsRouteIncludesOwnerAdminId() = testApplication {
+        application { testModule() }
+
+        val response = client.get("/admin/time-logs") {
+            asAdmin()
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertTrue(response.bodyAsText().contains("\"ownerAdminId\":\"user-admin\""))
+    }
+
+    @Test
+    fun testLabelsRouteDoesNotFilterByOwnerHeader() = testApplication {
+        application { testModule() }
+
+        val adminResponse = client.get("/admin/labels") {
+            asAdmin("user-admin")
+        }
+        val partnerResponse = client.get("/admin/labels") {
+            asAdmin("user-admin-2")
+        }
+
+        assertEquals(HttpStatusCode.OK, adminResponse.status)
+        assertEquals(HttpStatusCode.OK, partnerResponse.status)
+        assertTrue(adminResponse.bodyAsText().contains("\"id\":\"label-2\""))
+        assertTrue(adminResponse.bodyAsText().contains("\"ownerAdminId\":\"user-admin-2\""))
+        assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-1\""))
+        assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-2\""))
     }
 
 }

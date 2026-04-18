@@ -351,6 +351,7 @@ class PostgresSupportDeskRepository(
             """
             SELECT
                 c.id::text AS id,
+                c.owner_admin_id::text AS owner_admin_id,
                 c.company_name,
                 c.product_name,
                 c.contact_name,
@@ -396,6 +397,7 @@ class PostgresSupportDeskRepository(
                         add(
                             ServerClientSnapshot(
                                 id = resultSet.getString("id"),
+                                ownerAdminId = resultSet.getString("owner_admin_id"),
                                 companyName = resultSet.getString("company_name"),
                                 productName = resultSet.getString("product_name"),
                                 contactName = resultSet.getString("contact_name"),
@@ -415,16 +417,17 @@ class PostgresSupportDeskRepository(
     }
 
     override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot = dataSource.withConnection { connection ->
+        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         connection.prepareStatement(
             """
             INSERT INTO clients (
                 owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
             )
             VALUES (CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
+            RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId ?: DEFAULT_ADMIN_OWNER_ID)
+            statement.setString(1, resolvedOwnerAdminId)
             statement.setString(2, request.companyName)
             statement.setString(3, request.productName)
             statement.setString(4, request.contactName)
@@ -436,6 +439,7 @@ class PostgresSupportDeskRepository(
                 resultSet.next()
                 ServerClientSnapshot(
                     id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
                     companyName = resultSet.getString("company_name"),
                     productName = resultSet.getString("product_name"),
                     contactName = resultSet.getString("contact_name"),
@@ -469,7 +473,7 @@ class PostgresSupportDeskRepository(
                 preferred_contact_channel = COALESCE(NULLIF(?, ''), preferred_contact_channel)
             WHERE id::text = ?
               AND (? IS NULL OR owner_admin_id::text = ?)
-            RETURNING id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
+            RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.companyName)
@@ -488,6 +492,7 @@ class PostgresSupportDeskRepository(
                 }
                 ServerClientSnapshot(
                     id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
                     companyName = resultSet.getString("company_name"),
                     productName = resultSet.getString("product_name"),
                     contactName = resultSet.getString("contact_name"),
@@ -535,25 +540,23 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
+    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT tl.id::text AS id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
+            SELECT tl.id::text AS id, tl.owner_admin_id::text AS owner_admin_id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
             FROM task_labels tl
             LEFT JOIN tasks t ON t.label_id = tl.id
-                AND (? IS NULL OR t.owner_admin_id::text = ?)
-            GROUP BY tl.id, tl.name, tl.color_hex
+            GROUP BY tl.id, tl.owner_admin_id, tl.name, tl.color_hex
             ORDER BY tl.name ASC
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
-            statement.setString(2, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
                         add(
                             ServerTaskLabelSnapshot(
                                 id = resultSet.getString("id"),
+                                ownerAdminId = resultSet.getString("owner_admin_id"),
                                 name = resultSet.getString("name"),
                                 colorHex = resultSet.getString("color_hex"),
                                 tasksCount = resultSet.getInt("tasks_count"),
@@ -566,19 +569,22 @@ class PostgresSupportDeskRepository(
     }
 
     override fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+        val resolvedOwnerAdminId = request.ownerAdminId.takeIf { it.isNotBlank() } ?: DEFAULT_ADMIN_OWNER_ID
         connection.prepareStatement(
             """
-            INSERT INTO task_labels (name, color_hex)
-            VALUES (?, ?)
-            RETURNING id::text, name, color_hex
+            INSERT INTO task_labels (owner_admin_id, name, color_hex)
+            VALUES (CAST(? AS uuid), ?, ?)
+            RETURNING id::text, owner_admin_id::text, name, color_hex
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, request.name.trim())
-            statement.setString(2, normalizeHex(request.colorHex))
+            statement.setString(1, resolvedOwnerAdminId)
+            statement.setString(2, request.name.trim())
+            statement.setString(3, normalizeHex(request.colorHex))
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 ServerTaskLabelSnapshot(
                     id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
                     name = resultSet.getString("name"),
                     colorHex = resultSet.getString("color_hex"),
                     tasksCount = 0,
@@ -594,7 +600,7 @@ class PostgresSupportDeskRepository(
             SET name = COALESCE(NULLIF(?, ''), name),
                 color_hex = COALESCE(NULLIF(?, ''), color_hex)
             WHERE id::text = ?
-            RETURNING id::text, name, color_hex
+            RETURNING id::text, owner_admin_id::text, name, color_hex
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.name)
@@ -606,9 +612,10 @@ class PostgresSupportDeskRepository(
                 }
                 ServerTaskLabelSnapshot(
                     id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
                     name = resultSet.getString("name"),
                     colorHex = resultSet.getString("color_hex"),
-                    tasksCount = getTasks(labelId = labelId, ownerAdminId = null).size,
+                    tasksCount = countTasksForLabel(connection, labelId),
                 )
             }
         }
@@ -634,6 +641,7 @@ class PostgresSupportDeskRepository(
             """
             SELECT
                 t.id::text AS id,
+                t.owner_admin_id::text AS owner_admin_id,
                 t.title,
                 t.description,
                 t.client_id::text AS client_id,
@@ -674,8 +682,8 @@ class PostgresSupportDeskRepository(
 
     override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
         requireLabelExists(connection, request.labelId)
-        val resolvedOwnerAdminId = ownerAdminId ?: DEFAULT_ADMIN_OWNER_ID
-        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, ownerAdminId) }
+        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOwnerAdminId) }
         connection.prepareStatement(
             """
             INSERT INTO tasks (title, description, client_id, owner_admin_id, label_id, due_date, completed, logged_minutes, logged_seconds)
@@ -795,6 +803,7 @@ class PostgresSupportDeskRepository(
             """
             SELECT
                 tl.id::text AS id,
+                t.owner_admin_id::text AS owner_admin_id,
                 tl.task_id::text AS task_id,
                 tl.client_id::text AS client_id,
                 tl.author_id::text AS author_id,
@@ -835,9 +844,9 @@ class PostgresSupportDeskRepository(
         try {
             val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
             val resolvedMinutes = resolvedSeconds / 60
-            val taskClientId = connection.prepareStatement(
+            val taskContext = connection.prepareStatement(
                 """
-                SELECT client_id::text AS client_id
+                SELECT client_id::text AS client_id, owner_admin_id::text AS owner_admin_id
                 FROM tasks
                 WHERE id::text = ?
                   AND (? IS NULL OR owner_admin_id::text = ?)
@@ -849,7 +858,7 @@ class PostgresSupportDeskRepository(
                 statement.setString(3, ownerAdminId)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) {
-                        resultSet.getString("client_id")
+                        resultSet.getString("client_id") to resultSet.getString("owner_admin_id")
                     } else {
                         throw ServerNotFoundException("Task not found")
                     }
@@ -865,7 +874,7 @@ class PostgresSupportDeskRepository(
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, request.taskId)
-                statement.setString(2, taskClientId)
+                statement.setString(2, taskContext.first)
                 statement.setString(3, request.authorId)
                 statement.setInt(4, resolvedMinutes)
                 statement.setInt(5, resolvedSeconds)
@@ -877,6 +886,7 @@ class PostgresSupportDeskRepository(
                     val authorName = resolveAuthorName(connection, request.authorId)
                     ServerTimeLogSnapshot(
                         id = resultSet.getString("id"),
+                        ownerAdminId = taskContext.second,
                         taskId = resultSet.getString("task_id"),
                         clientId = resultSet.getString("client_id"),
                         authorId = resultSet.getString("author_id"),
@@ -1148,6 +1158,7 @@ class PostgresSupportDeskRepository(
 
     private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
         id = resultSet.getString("id"),
+        ownerAdminId = resultSet.getString("owner_admin_id"),
         title = resultSet.getString("title"),
         description = resultSet.getString("description") ?: "",
         clientId = resultSet.getString("client_id"),
@@ -1169,6 +1180,7 @@ class PostgresSupportDeskRepository(
             """
             SELECT
                 t.id::text AS id,
+                t.owner_admin_id::text AS owner_admin_id,
                 t.title,
                 t.description,
                 t.client_id::text AS client_id,
@@ -1199,6 +1211,7 @@ class PostgresSupportDeskRepository(
 
     private fun timeLogSnapshot(resultSet: ResultSet): ServerTimeLogSnapshot = ServerTimeLogSnapshot(
         id = resultSet.getString("id"),
+        ownerAdminId = resultSet.getString("owner_admin_id"),
         taskId = resultSet.getString("task_id"),
         clientId = resultSet.getString("client_id"),
         authorId = resultSet.getString("author_id"),
@@ -1319,6 +1332,17 @@ class PostgresSupportDeskRepository(
         ).use { statement ->
             statement.setString(1, labelId)
             statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+
+    private fun countTasksForLabel(connection: Connection, labelId: String): Int =
+        connection.prepareStatement(
+            "SELECT COUNT(*)::integer AS tasks_count FROM tasks WHERE label_id::text = ?",
+        ).use { statement ->
+            statement.setString(1, labelId)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt("tasks_count")
+            }
         }
 
     private fun normalizeHex(raw: String): String {

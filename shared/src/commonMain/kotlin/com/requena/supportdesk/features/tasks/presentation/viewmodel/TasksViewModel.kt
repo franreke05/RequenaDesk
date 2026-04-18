@@ -134,8 +134,9 @@ class TasksViewModel(
     private fun createLabel(name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
+        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
         launch {
-            when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex)))) {
+            when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
                     selectedCategoryId = result.data.id,
@@ -148,8 +149,9 @@ class TasksViewModel(
     private fun updateLabel(labelId: String, name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
+        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
         launch {
-            when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex)))) {
+            when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
                     selectedCategoryId = result.data.id,

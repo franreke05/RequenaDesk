@@ -85,6 +85,7 @@ class TasksRepositoryImpl(
             CreateTaskLabelRequestDto(
                 name = input.name,
                 colorHex = input.colorHex,
+                ownerAdminId = input.ownerAdminId,
             ),
         ).let(TasksMapper::fromLabelDto)
     }.fold(

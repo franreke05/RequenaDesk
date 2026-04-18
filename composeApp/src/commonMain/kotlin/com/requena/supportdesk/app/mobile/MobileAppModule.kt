@@ -7,12 +7,22 @@ import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewMo
 
 class MobileAppModule {
     val authViewModel: AuthViewModel = SupportDeskSharedModule.createAuthViewModel()
-    val clientsViewModel: ClientsViewModel = SupportDeskSharedModule.createClientsViewModel()
-    val tasksViewModel: TasksViewModel = SupportDeskSharedModule.createTasksViewModel()
+    private val clientsViewModelDelegate = lazy { SupportDeskSharedModule.createClientsViewModel() }
+    private val tasksViewModelDelegate = lazy { SupportDeskSharedModule.createTasksViewModel() }
+
+    val clientsViewModel: ClientsViewModel
+        get() = clientsViewModelDelegate.value
+
+    val tasksViewModel: TasksViewModel
+        get() = tasksViewModelDelegate.value
 
     fun clear() {
         authViewModel.clear()
-        clientsViewModel.clear()
-        tasksViewModel.clear()
+        if (clientsViewModelDelegate.isInitialized()) {
+            clientsViewModelDelegate.value.clear()
+        }
+        if (tasksViewModelDelegate.isInitialized()) {
+            tasksViewModelDelegate.value.clear()
+        }
     }
 }

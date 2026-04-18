@@ -28,6 +28,7 @@ import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
 import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
 import com.requena.supportdesk.app.admin.screens.AdminTasksScreen
 import com.requena.supportdesk.core.navigation.AppDestination
+import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
@@ -39,7 +40,9 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
+import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlinx.coroutines.launch
 
@@ -88,6 +91,22 @@ fun AdminWorkspaceApp() {
                 }
             }
         }
+    }
+
+    LaunchedEffect(currentUser?.id) {
+        currentUser?.id ?: return@LaunchedEffect
+
+        navigation = navigation.copy(destination = AppDestination.Dashboard)
+        statusMessage = "Sesion iniciada como ${currentUser.name}"
+
+        module.clientsViewModel.onEvent(ClientsUiEvent.Load)
+
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectTask(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectCategory(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectClientFilter(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectDashboardClient(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectDay(currentIsoDate()))
+        module.tasksViewModel.onEvent(TasksUiEvent.Load)
     }
 
     BoxWithConstraints(

@@ -89,6 +89,7 @@ fun clientsJson(clients: List<ServerClientSnapshot>) = buildJsonArray {
 
 fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("id", client.id)
+    put("ownerAdminId", client.ownerAdminId)
     put("companyName", client.companyName)
     put("productName", client.productName)
     put("contactName", client.contactName)
@@ -122,6 +123,7 @@ fun labelsJson(labels: List<ServerTaskLabelSnapshot>) = buildJsonArray {
 
 fun labelJson(label: ServerTaskLabelSnapshot) = buildJsonObject {
     put("id", label.id)
+    put("ownerAdminId", label.ownerAdminId)
     put("name", label.name)
     put("colorHex", label.colorHex)
     put("tasksCount", label.tasksCount)
@@ -133,6 +135,7 @@ fun tasksJson(tasks: List<ServerTaskSnapshot>) = buildJsonArray {
 
 fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("id", task.id)
+    put("ownerAdminId", task.ownerAdminId)
     put("title", task.title)
     put("description", task.description)
     put("clientId", task.clientId)
@@ -154,6 +157,7 @@ fun timeLogsJson(logs: List<ServerTimeLogSnapshot>) = buildJsonArray {
 
 fun timeLogJson(log: ServerTimeLogSnapshot) = buildJsonObject {
     put("id", log.id)
+    put("ownerAdminId", log.ownerAdminId)
     put("taskId", log.taskId)
     put("clientId", log.clientId)
     put("authorId", log.authorId)

@@ -36,6 +36,7 @@ data class ServerTicketSnapshot(
 
 data class ServerClientSnapshot(
     val id: String,
+    val ownerAdminId: String,
     val companyName: String,
     val productName: String,
     val contactName: String = "",
@@ -65,6 +66,7 @@ data class ServerDashboardSnapshot(
 
 data class ServerTaskLabelSnapshot(
     val id: String,
+    val ownerAdminId: String,
     val name: String,
     val colorHex: String,
     val tasksCount: Int,
@@ -72,6 +74,7 @@ data class ServerTaskLabelSnapshot(
 
 data class ServerTaskSnapshot(
     val id: String,
+    val ownerAdminId: String,
     val title: String,
     val description: String,
     val clientId: String? = null,
@@ -89,6 +92,7 @@ data class ServerTaskSnapshot(
 
 data class ServerTimeLogSnapshot(
     val id: String,
+    val ownerAdminId: String,
     val taskId: String,
     val clientId: String? = null,
     val authorId: String,

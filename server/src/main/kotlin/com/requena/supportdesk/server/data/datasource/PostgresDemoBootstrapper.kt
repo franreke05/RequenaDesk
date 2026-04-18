@@ -32,10 +32,11 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO clients (
-                id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+                id, owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
             )
             VALUES (
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 'Requena Demo Client',
                 'Requena Mobile Suite',
                 'Demo Client',
@@ -142,9 +143,10 @@ class PostgresDemoBootstrapper(
     private fun ensureTaskLabel(connection: Connection) {
         connection.prepareStatement(
             """
-            INSERT INTO task_labels (id, name, color_hex)
+            INSERT INTO task_labels (id, owner_admin_id, name, color_hex)
             VALUES (
                 CAST('55555555-5555-5555-5555-555555555555' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 'Hoy',
                 '#6B7A5B'
             )
@@ -157,11 +159,12 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO tasks (
-                id, client_id, label_id, title, description, due_date, completed, logged_minutes, logged_seconds
+                id, client_id, owner_admin_id, label_id, title, description, due_date, completed, logged_minutes, logged_seconds
             )
             VALUES (
                 CAST('66666666-6666-6666-6666-666666666666' AS uuid),
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 CAST('55555555-5555-5555-5555-555555555555' AS uuid),
                 'Demo task',
                 'Operational task to validate dashboard, timer and client linkage.',

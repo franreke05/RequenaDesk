@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class TaskLabelDto(
     val id: String,
+    val ownerAdminId: String,
     val name: String,
     val colorHex: String,
     val tasksCount: Int = 0,
@@ -13,6 +14,7 @@ data class TaskLabelDto(
 @Serializable
 data class TaskDto(
     val id: String,
+    val ownerAdminId: String,
     val title: String,
     val description: String = "",
     val clientId: String? = null,
@@ -31,6 +33,7 @@ data class TaskDto(
 @Serializable
 data class TaskLogDto(
     val id: String,
+    val ownerAdminId: String,
     val taskId: String,
     val clientId: String? = null,
     val authorId: String,
@@ -66,6 +69,7 @@ data class UpdateTaskRequestDto(
 data class CreateTaskLabelRequestDto(
     val name: String,
     val colorHex: String,
+    val ownerAdminId: String,
 )
 
 @Serializable

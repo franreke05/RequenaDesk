@@ -20,6 +20,7 @@ data class TaskUpdateInput(
 data class TaskLabelDraft(
     val name: String,
     val colorHex: String,
+    val ownerAdminId: String,
 )
 
 data class TaskTimeLogDraft(

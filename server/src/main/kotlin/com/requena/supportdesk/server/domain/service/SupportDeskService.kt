@@ -98,7 +98,7 @@ class SupportDeskService(
 
     fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
 
-    fun taskLabels(ownerAdminId: String? = null) = repository.getTaskLabels(ownerAdminId)
+    fun taskLabels() = repository.getTaskLabels()
 
     fun createdTaskLabel(request: CreateTaskLabelRequest) = repository.createTaskLabel(request)
 

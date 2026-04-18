@@ -2,8 +2,8 @@ package com.requena.supportdesk.server.routes
 
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
-import com.requena.supportdesk.server.utils.adminOwnerId
 import com.requena.supportdesk.server.utils.errorResponse
+import com.requena.supportdesk.server.utils.requireAdminOwnerId
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -18,14 +18,15 @@ import io.ktor.server.routing.route
 fun Route.timeLogRoutes(service: SupportDeskService) {
     route("/admin") {
         get("/time-logs") {
+            val ownerAdminId = call.requireAdminOwnerId() ?: return@get
             val clientId = call.request.queryParameters["clientId"]
             val taskId = call.request.queryParameters["taskId"]
             call.respondJson(
-                body = successResponse("/admin/time-logs", timeLogsJson(service.timeLogs(clientId, taskId, call.adminOwnerId()))),
+                body = successResponse("/admin/time-logs", timeLogsJson(service.timeLogs(clientId, taskId, ownerAdminId))),
             )
         }
         post("/time-logs") {
-            val ownerAdminId = call.adminOwnerId()
+            val ownerAdminId = call.requireAdminOwnerId() ?: return@post
             val request = call.receiveOrDefault(CreateTimeLogRequest())
             val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
             if (request.taskId.isBlank() || request.authorId.isBlank() || request.workDate.isBlank() || resolvedSeconds <= 0) {

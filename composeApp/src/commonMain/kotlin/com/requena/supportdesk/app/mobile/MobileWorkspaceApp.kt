@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -50,6 +51,7 @@ import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
+import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
@@ -65,27 +67,22 @@ import kotlinx.coroutines.launch
 
 private enum class MobileTab(
     val title: String,
-    val subtitle: String,
     val navLabel: String,
 ) {
     SUMMARY(
         title = "Resumen",
-        subtitle = "Horas, calendario y carga del dia en modo lectura.",
         navLabel = "Hoy",
     ),
     TASKS(
         title = "Tareas",
-        subtitle = "Consulta trabajo, tiempo acumulado y contexto por cliente.",
         navLabel = "Tareas",
     ),
     CLIENTS(
         title = "Clientes",
-        subtitle = "Directorio rapido para revisar horas, contacto y actividad.",
         navLabel = "Clientes",
     ),
     LABELS(
         title = "Etiquetas",
-        subtitle = "Colores, volumen y tareas asociadas sin editar desde movil.",
         navLabel = "Etiquetas",
     ),
 }
@@ -136,11 +133,20 @@ private data class CalendarDay(
 fun MobileWorkspaceApp() {
     val module = remember { MobileAppModule() }
     var currentTab by remember { mutableStateOf(MobileTab.SUMMARY) }
-    var statusMessage by remember { mutableStateOf("Vista movil lista para consulta rapida.") }
+    var statusMessage by remember { mutableStateOf("Movil listo.") }
 
     val authState by module.authViewModel.state.collectAsState()
-    val tasksState by module.tasksViewModel.state.collectAsState()
-    val clientsState by module.clientsViewModel.state.collectAsState()
+    val currentUser = authState.authenticatedUser
+    val tasksState = if (currentUser != null) {
+        module.tasksViewModel.state.collectAsState().value
+    } else {
+        TasksUiState()
+    }
+    val clientsState = if (currentUser != null) {
+        module.clientsViewModel.state.collectAsState().value
+    } else {
+        ClientsUiState()
+    }
 
     DisposableEffect(module) {
         onDispose { module.clear() }
@@ -152,13 +158,16 @@ fun MobileWorkspaceApp() {
                 when (effect) {
                     AuthUiEffect.NavigateToHome -> {
                         currentTab = MobileTab.SUMMARY
-                        statusMessage = "Sesion iniciada en modo movil solo lectura."
+                        statusMessage = "Sesion iniciada."
                     }
                     is AuthUiEffect.ShowMessage -> statusMessage = effect.message
                 }
             }
         }
-        launch {
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser != null) {
             module.clientsViewModel.effects.collect { effect ->
                 when (effect) {
                     is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
@@ -167,8 +176,24 @@ fun MobileWorkspaceApp() {
         }
     }
 
+    LaunchedEffect(currentUser?.id) {
+        currentUser?.id ?: return@LaunchedEffect
+
+        currentTab = MobileTab.SUMMARY
+        statusMessage = "Sesion iniciada como ${currentUser.name}"
+
+        module.clientsViewModel.onEvent(ClientsUiEvent.Load)
+
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectTask(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectCategory(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectClientFilter(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectDashboardClient(null))
+        module.tasksViewModel.onEvent(TasksUiEvent.SelectDay(currentIsoDate()))
+        module.tasksViewModel.onEvent(TasksUiEvent.Load)
+    }
+
     SupportDeskMobileTheme {
-        if (authState.authenticatedUser == null) {
+        if (currentUser == null) {
             MobileLoginScreen(
                 state = authState,
                 onEvent = module.authViewModel::onEvent,
@@ -178,11 +203,11 @@ fun MobileWorkspaceApp() {
                 currentTab = currentTab,
                 onTabSelected = { currentTab = it },
                 statusMessage = tasksState.errorMessage ?: tasksState.statusMessage ?: statusMessage,
-                currentUserName = authState.authenticatedUser?.name.orEmpty(),
+                currentUserName = currentUser.name,
                 onRefresh = {
                     module.tasksViewModel.onEvent(TasksUiEvent.Load)
                     module.clientsViewModel.onEvent(ClientsUiEvent.Load)
-                    statusMessage = "Sincronizando contenido movil."
+                    statusMessage = "Actualizando."
                 },
                 onSignOut = {
                     currentTab = MobileTab.SUMMARY
@@ -215,88 +240,87 @@ private fun MobileLoginScreen(
                 ),
             ),
     ) {
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
         ) {
-            PhoneCard(
-                modifier = Modifier.fillMaxWidth(),
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
-            ) {
-                Text(
-                    text = "RequenaDesk Mobile",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                Text(
-                    text = "La app movil queda limitada a lectura: tareas, horas, calendario, clientes y etiquetas.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TagChip(
-                        text = "Solo lectura",
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    )
-                    TagChip(
-                        text = "Movil",
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-            }
+            val compactLayout = maxWidth < 380.dp
 
-            PhoneCard(modifier = Modifier.fillMaxWidth()) {
-                CardHeader(
-                    title = "Entrar",
-                    subtitle = "Accede con uno de los usuarios configurados para revisar la app desde el telefono.",
-                )
-                OutlinedTextField(
-                    value = state.email,
-                    onValueChange = { onEvent(AuthUiEvent.EmailChanged(it)) },
+            Column(
+                verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+            ) {
+                PhoneCard(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Correo") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                )
-                OutlinedTextField(
-                    value = state.password,
-                    onValueChange = { onEvent(AuthUiEvent.PasswordChanged(it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Contrasena") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                )
-                state.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+                ) {
                     Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        text = "RequenaDesk Mobile",
+                        style = MaterialTheme.typography.displayMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
+                    if (compactLayout) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TagChip(
+                                text = "Solo lectura",
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            )
+                            TagChip(
+                                text = "Movil",
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TagChip(
+                                text = "Solo lectura",
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            )
+                            TagChip(
+                                text = "Movil",
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                    CardHeader(title = "Entrar")
+                    OutlinedTextField(
+                        value = state.email,
+                        onValueChange = { onEvent(AuthUiEvent.EmailChanged(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Correo") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    )
+                    OutlinedTextField(
+                        value = state.password,
+                        onValueChange = { onEvent(AuthUiEvent.PasswordChanged(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Contrasena") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    )
+                    state.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     ActionButton(
                         text = if (state.isLoading) "Entrando..." else "Entrar",
                         emphasized = true,
                         onClick = { onEvent(AuthUiEvent.Submit) },
                     )
                 }
-            }
-
-            PhoneCard(modifier = Modifier.fillMaxWidth()) {
-                CardHeader(
-                    title = "Que veras",
-                    subtitle = "Todo enfocado a consulta rapida sin acciones de edicion en movil.",
-                )
-                ValuePair(label = "Tareas", value = "Estado, cliente, etiqueta y horas")
-                ValuePair(label = "Calendario", value = "Carga diaria y detalle por jornada")
-                ValuePair(label = "Clientes", value = "Contacto, tier y actividad reciente")
-                ValuePair(label = "Etiquetas", value = "Colores, volumen y clientes impactados")
             }
         }
     }
@@ -344,7 +368,7 @@ private fun MobileReadOnlyShell(
             MobileHeader(
                 currentTab = currentTab,
                 currentUserName = currentUserName,
-                statusMessage = statusMessage ?: "La app movil queda limitada a consulta.",
+                statusMessage = statusMessage ?: "Consulta",
                 onRefresh = onRefresh,
                 onSignOut = onSignOut,
             )
@@ -392,33 +416,52 @@ private fun MobileHeader(
         modifier = Modifier.fillMaxWidth(),
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = currentTab.title,
-                    style = MaterialTheme.typography.displayMedium,
-                )
-                Text(
-                    text = currentTab.subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton(text = "Actualizar", onClick = onRefresh)
-                ActionButton(text = "Salir", onClick = onSignOut)
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compactLayout = maxWidth < 380.dp
+
+            if (compactLayout) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = currentTab.title,
+                            style = MaterialTheme.typography.displayMedium,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActionButton(text = "Actualizar", compact = true, onClick = onRefresh)
+                        ActionButton(text = "Salir", compact = true, onClick = onSignOut)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = currentTab.title,
+                            style = MaterialTheme.typography.displayMedium,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActionButton(text = "Actualizar", compact = true, onClick = onRefresh)
+                        ActionButton(text = "Salir", compact = true, onClick = onSignOut)
+                    }
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -427,11 +470,13 @@ private fun MobileHeader(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             )
-            TagChip(
-                text = statusMessage,
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            statusMessage.takeIf { it.isNotBlank() }?.let {
+                TagChip(
+                    text = it,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -474,9 +519,9 @@ private fun MobileBottomBar(
                         },
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.Center,
                         ) {
                             Text(
                                 text = tab.navLabel,
@@ -485,15 +530,6 @@ private fun MobileBottomBar(
                                     MaterialTheme.colorScheme.onPrimary
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                            Text(
-                                text = tab.title,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                             )
                         }
@@ -584,10 +620,7 @@ private fun OverviewHeroCard(
         modifier = Modifier.fillMaxWidth(),
         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
     ) {
-        CardHeader(
-            title = "Carga actual",
-            subtitle = "Lo mas importante para revisar desde el telefono sin entrar al workspace completo.",
-        )
+        CardHeader(title = "Carga actual")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             InfoMetric(
                 label = "Dia",
@@ -645,7 +678,6 @@ private fun MobileCalendarCard(
     PhoneCard(modifier = Modifier.fillMaxWidth()) {
         CardHeader(
             title = "Calendario",
-            subtitle = "Toca un dia para ver horas y registros asociados.",
             trailing = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActionButton(
@@ -768,12 +800,11 @@ private fun SelectedDayLogsCard(
     PhoneCard(modifier = Modifier.fillMaxWidth()) {
         CardHeader(
             title = "Actividad del dia",
-            subtitle = "Registros de tiempo del $selectedDay.",
+            subtitle = selectedDay,
         )
         if (logs.isEmpty()) {
             EmptyPhoneState(
                 title = "Sin registros",
-                message = "No hay horas cargadas para el dia seleccionado.",
             )
         } else {
             logs.forEach { log ->
@@ -859,14 +890,10 @@ private fun TopClientsCard(
     topClients: List<ClientOverview>,
 ) {
     PhoneCard(modifier = Modifier.fillMaxWidth()) {
-        CardHeader(
-            title = "Clientes con mas carga",
-            subtitle = "Ranking rapido para ubicar donde se va el tiempo del mes.",
-        )
+        CardHeader(title = "Clientes con mas carga")
         if (topClients.isEmpty()) {
             EmptyPhoneState(
                 title = "Sin clientes",
-                message = "Aun no hay clientes visibles en la carga actual.",
             )
         } else {
             topClients.forEach { summary ->
@@ -936,14 +963,10 @@ private fun HighlightedTasksCard(
     categoriesById: Map<String, TaskCategory>,
 ) {
     PhoneCard(modifier = Modifier.fillMaxWidth()) {
-        CardHeader(
-            title = "Tareas destacadas",
-            subtitle = "Lo ultimo y lo pendiente para abrir desde el telefono.",
-        )
+        CardHeader(title = "Tareas destacadas")
         if (tasks.isEmpty()) {
             EmptyPhoneState(
                 title = "Sin tareas",
-                message = "Todavia no hay tareas cargadas en la app.",
             )
         } else {
             tasks.forEach { task ->
@@ -993,10 +1016,7 @@ private fun MobileTasksScreen(
     ) {
         item {
             PhoneCard(modifier = Modifier.fillMaxWidth()) {
-                CardHeader(
-                    title = "Vista de tareas",
-                    subtitle = "Consulta y filtra. La edicion sigue reservada al workspace desktop.",
-                )
+                CardHeader(title = "Tareas")
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -1029,7 +1049,6 @@ private fun MobileTasksScreen(
                 PhoneCard(modifier = Modifier.fillMaxWidth()) {
                     EmptyPhoneState(
                         title = "Sin tareas visibles",
-                        message = "Prueba otra busqueda o limpia la etiqueta seleccionada.",
                     )
                 }
             }
@@ -1290,10 +1309,7 @@ private fun MobileClientsScreen(
     ) {
         item {
             PhoneCard(modifier = Modifier.fillMaxWidth()) {
-                CardHeader(
-                    title = "Clientes",
-                    subtitle = "Busqueda y consulta rapida desde movil.",
-                )
+                CardHeader(title = "Clientes")
                 OutlinedTextField(
                     value = clientsState.query,
                     onValueChange = { onClientsEvent(ClientsUiEvent.SearchChanged(it)) },
@@ -1308,7 +1324,6 @@ private fun MobileClientsScreen(
                 PhoneCard(modifier = Modifier.fillMaxWidth()) {
                     EmptyPhoneState(
                         title = "Sin cliente seleccionado",
-                        message = "Selecciona un cliente para ver sus datos, horas y actividad reciente.",
                     )
                 }
             } else {
@@ -1323,7 +1338,7 @@ private fun MobileClientsScreen(
                 PhoneCard(modifier = Modifier.fillMaxWidth()) {
                     EmptyPhoneState(
                         title = "Sin clientes visibles",
-                        message = clientsState.errorMessage ?: "No hay resultados con la busqueda actual.",
+                        message = clientsState.errorMessage,
                     )
                 }
             }
@@ -1497,7 +1512,6 @@ private fun MobileLabelsScreen(
                 PhoneCard(modifier = Modifier.fillMaxWidth()) {
                     EmptyPhoneState(
                         title = "Sin etiquetas",
-                        message = "Aun no hay etiquetas disponibles para mostrar en movil.",
                     )
                 }
             } else {
@@ -1513,7 +1527,6 @@ private fun MobileLabelsScreen(
                 PhoneCard(modifier = Modifier.fillMaxWidth()) {
                     EmptyPhoneState(
                         title = "Nada que mostrar",
-                        message = "Las etiquetas apareceran aqui cuando existan en el sistema.",
                     )
                 }
             }
@@ -1547,7 +1560,6 @@ private fun SelectedLabelCard(
     ) {
         CardHeader(
             title = overview.category.name,
-            subtitle = "Etiqueta activa en modo lectura.",
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -1677,30 +1689,56 @@ private fun PhoneCard(
 @Composable
 private fun CardHeader(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stacked = trailing != null && maxWidth < 360.dp
+
+        if (stacked) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    subtitle?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                trailing.invoke()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    subtitle?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                trailing?.invoke()
+            }
         }
-        trailing?.invoke()
     }
 }
 
@@ -1841,7 +1879,7 @@ private fun ActionButton(
 @Composable
 private fun EmptyPhoneState(
     title: String,
-    message: String,
+    message: String? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1857,11 +1895,13 @@ private fun EmptyPhoneState(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            message?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

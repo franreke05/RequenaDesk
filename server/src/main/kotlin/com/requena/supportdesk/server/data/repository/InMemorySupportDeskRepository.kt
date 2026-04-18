@@ -64,12 +64,13 @@ class InMemorySupportDeskRepository(
         "client-2" to "user-admin-2",
     )
     private val labels = mutableListOf(
-        ServerTaskLabelSnapshot("label-1", "Hoy", "#6B7A5B", 1),
-        ServerTaskLabelSnapshot("label-2", "Seguimiento", "#A67C52", 1),
+        ServerTaskLabelSnapshot("label-1", "user-admin", "Hoy", "#6B7A5B", 1),
+        ServerTaskLabelSnapshot("label-2", "user-admin-2", "Seguimiento", "#A67C52", 1),
     )
     private val tasks = mutableListOf(
         ServerTaskSnapshot(
             id = "task-1",
+            ownerAdminId = "user-admin",
             title = "Revisar build de escritorio",
             description = "Validar arranque limpio",
             clientId = "client-1",
@@ -86,6 +87,7 @@ class InMemorySupportDeskRepository(
         ),
         ServerTaskSnapshot(
             id = "task-2",
+            ownerAdminId = "user-admin-2",
             title = "Enviar seguimiento",
             description = "Preparar siguiente iteracion",
             clientId = "client-2",
@@ -102,6 +104,7 @@ class InMemorySupportDeskRepository(
         ),
         ServerTaskSnapshot(
             id = "task-3",
+            ownerAdminId = "user-admin",
             title = "Planificar semana",
             description = "Ordenar prioridades internas",
             clientId = null,
@@ -125,6 +128,7 @@ class InMemorySupportDeskRepository(
     private val timeLogs = mutableListOf(
         ServerTimeLogSnapshot(
             id = "time-log-1",
+            ownerAdminId = "user-admin",
             taskId = "task-1",
             clientId = "client-1",
             authorId = "user-admin",
@@ -138,6 +142,7 @@ class InMemorySupportDeskRepository(
         ),
         ServerTimeLogSnapshot(
             id = "time-log-2",
+            ownerAdminId = "user-admin-2",
             taskId = "task-2",
             clientId = "client-2",
             authorId = "user-admin-2",
@@ -151,6 +156,7 @@ class InMemorySupportDeskRepository(
         ),
         ServerTimeLogSnapshot(
             id = "time-log-3",
+            ownerAdminId = "user-admin",
             taskId = "task-3",
             clientId = null,
             authorId = "user-admin",
@@ -235,8 +241,10 @@ class InMemorySupportDeskRepository(
     }
 
     override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot {
+        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         val created = ServerClientSnapshot(
             id = "client-created-${clients.size + 1}",
+            ownerAdminId = resolvedOwnerAdminId,
             companyName = request.companyName.ifBlank { "New client placeholder" },
             productName = request.productName.ifBlank { "Assigned product" },
             contactName = request.contactName.ifBlank { "Contacto" },
@@ -249,7 +257,7 @@ class InMemorySupportDeskRepository(
             monthlyLoggedMinutes = 0,
         )
         clients.add(0, created)
-        ownerAdminId?.let { clientOwners[created.id] = it }
+        clientOwners[created.id] = resolvedOwnerAdminId
         return created
     }
 
@@ -285,13 +293,14 @@ class InMemorySupportDeskRepository(
         }
     }
 
-    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = labels.map { label ->
-        label.copy(tasksCount = tasks.count { it.labelId == label.id && (ownerAdminId == null || taskOwners[it.id] == ownerAdminId) })
+    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = labels.map { label ->
+        label.copy(tasksCount = tasks.count { it.labelId == label.id })
     }
 
     override fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot {
         val label = ServerTaskLabelSnapshot(
             id = "label-${labels.size + 1}",
+            ownerAdminId = request.ownerAdminId.ifBlank { "user-admin" },
             name = request.name,
             colorHex = request.colorHex,
             tasksCount = 0,
@@ -328,15 +337,17 @@ class InMemorySupportDeskRepository(
         }
 
     override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot {
+        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         val label = labels.firstOrNull { it.id == request.labelId }
             ?: throw ServerNotFoundException("Label not found")
         val client = request.clientId?.let { clientId ->
             clients.firstOrNull { it.id == clientId }?.also {
-                requireClientOwnership(clientId, ownerAdminId)
+                requireClientOwnership(clientId, resolvedOwnerAdminId)
             } ?: throw ServerNotFoundException("Client not found")
         }
         val task = ServerTaskSnapshot(
             id = "task-${tasks.size + 1}",
+            ownerAdminId = resolvedOwnerAdminId,
             title = request.title,
             description = request.description,
             clientId = client?.id,
@@ -352,7 +363,7 @@ class InMemorySupportDeskRepository(
             updatedAt = "2026-04-16T10:00:00Z",
         )
         tasks.add(0, task)
-        taskOwners[task.id] = ownerAdminId ?: client?.id?.let(clientOwners::get) ?: "user-admin"
+        taskOwners[task.id] = resolvedOwnerAdminId
         return task
     }
 
@@ -403,12 +414,14 @@ class InMemorySupportDeskRepository(
         }
 
     override fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String?): ServerTimeLogSnapshot {
+        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         val task = tasks.firstOrNull { it.id == request.taskId }
             ?: throw ServerNotFoundException("Task not found")
-        requireTaskOwnership(task.id, ownerAdminId)
+        requireTaskOwnership(task.id, resolvedOwnerAdminId)
         val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
         val log = ServerTimeLogSnapshot(
             id = "time-log-${timeLogs.size + 1}",
+            ownerAdminId = resolvedOwnerAdminId,
             taskId = request.taskId,
             clientId = task.clientId,
             authorId = request.authorId,

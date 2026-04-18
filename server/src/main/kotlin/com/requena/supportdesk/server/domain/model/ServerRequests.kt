@@ -73,6 +73,7 @@ data class UpdateClientRequest(
 
 @Serializable
 data class CreateTaskLabelRequest(
+    val ownerAdminId: String = "",
     val name: String = "",
     val colorHex: String = "#6B7A5B",
 )

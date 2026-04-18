@@ -3,7 +3,6 @@ package com.requena.supportdesk.server.routes
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
-import com.requena.supportdesk.server.utils.adminOwnerId
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.labelJson
 import com.requena.supportdesk.server.utils.labelsJson
@@ -22,7 +21,7 @@ import io.ktor.server.routing.route
 fun Route.labelRoutes(service: SupportDeskService) {
     route("/admin") {
         get("/labels") {
-            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels(call.adminOwnerId()))))
+            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels())))
         }
         post("/labels") {
             val request = call.receiveOrDefault(CreateTaskLabelRequest())

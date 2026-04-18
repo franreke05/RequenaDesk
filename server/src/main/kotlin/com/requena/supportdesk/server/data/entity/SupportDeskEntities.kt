@@ -18,6 +18,7 @@ data class TicketEntity(
 
 data class ClientEntity(
     val id: String,
+    val ownerAdminId: String,
     val companyName: String,
     val productName: String,
     val email: String,
