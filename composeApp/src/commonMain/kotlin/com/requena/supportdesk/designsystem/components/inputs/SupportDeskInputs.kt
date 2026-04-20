@@ -1,11 +1,11 @@
 package com.requena.supportdesk.designsystem.components.inputs
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -53,26 +53,54 @@ fun <T> FilterBar(
     onSelected: (T?) -> Unit,
     modifier: Modifier = Modifier,
     allLabel: String = "All",
+    wrap: Boolean = false,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-    ) {
-        FilterChip(
-            selected = selected == null,
-            onClick = { onSelected(null) },
-            label = { Text("$label: $allLabel") },
-        )
-        options.forEach { option ->
+    if (wrap) {
+        FlowRow(
+            modifier = modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
             FilterChip(
-                selected = selected == option.value,
-                onClick = { onSelected(option.value) },
-                label = { Text(option.label) },
+                selected = selected == null,
+                onClick = { onSelected(null) },
+                label = { Text("$label: $allLabel") },
             )
+            options.forEach { option ->
+                FilterChip(
+                    selected = selected == option.value,
+                    onClick = { onSelected(option.value) },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+    } else {
+        LazyRow(
+            modifier = modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            item(key = "${label}_all") {
+                FilterChip(
+                    selected = selected == null,
+                    onClick = { onSelected(null) },
+                    label = { Text("$label: $allLabel") },
+                )
+            }
+            itemsIndexed(
+                items = options,
+                key = { index, option -> "${option.label}_$index" },
+            ) { _, option ->
+                FilterChip(
+                    selected = selected == option.value,
+                    onClick = { onSelected(option.value) },
+                    label = { Text(option.label) },
+                )
+            }
         }
     }
 }

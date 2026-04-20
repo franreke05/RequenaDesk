@@ -178,9 +178,11 @@ private fun CounterHeroCard(
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             FilterBar(
                 label = "Cliente activo",
-                options = listOf(FilterOption("all", "Todos")) + clients.map { FilterOption(it.id, it.companyName) },
-                selected = tasksState.selectedDashboardClientId ?: "all",
-                onSelected = { onTasksEvent(TasksUiEvent.SelectDashboardClient(it?.takeUnless { value -> value == "all" })) },
+                options = clients.map { FilterOption(it.id, it.companyName) },
+                selected = tasksState.selectedDashboardClientId,
+                onSelected = { onTasksEvent(TasksUiEvent.SelectDashboardClient(it)) },
+                allLabel = "Todos",
+                wrap = true,
             )
 
             selectedClient?.let {
@@ -201,9 +203,11 @@ private fun CounterHeroCard(
 
             FilterBar(
                 label = "Etiquetas",
-                options = listOf(FilterOption("all", "Todas")) + categories.map { FilterOption(it.id, it.name) },
-                selected = tasksState.selectedCategoryId ?: "all",
-                onSelected = { onTasksEvent(TasksUiEvent.SelectCategory(it?.takeUnless { value -> value == "all" })) },
+                options = categories.map { FilterOption(it.id, it.name) },
+                selected = tasksState.selectedCategoryId,
+                onSelected = { onTasksEvent(TasksUiEvent.SelectCategory(it)) },
+                allLabel = "Todas",
+                wrap = true,
             )
 
             if (tasks.isEmpty()) {

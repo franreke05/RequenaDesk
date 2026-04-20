@@ -90,9 +90,15 @@ compose.desktop {
         mainClass = "com.example.crmfreelance.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.requena.requenadesk"
+            targetFormats(TargetFormat.Exe)
+            packageName = "RequenaDesk"
             packageVersion = "1.0.0"
+
+            windows {
+                dirChooser = true
+                perUserInstall = true
+                menuGroup = "RequenaDesk"
+            }
         }
     }
 }
