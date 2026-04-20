@@ -1,0 +1,8 @@
+# Copy this file to `supportdesk.properties` next to the desktop executable
+# or place it in `%USERPROFILE%\\.supportdesk\\supportdesk.properties`.
+#
+# For a distributed desktop build, point this to your hosted Ktor backend.
+# Example:
+# supportdesk.baseUrl=https://crm.example.com
+
+supportdesk.baseUrl=https://your-hosted-backend.example.com
