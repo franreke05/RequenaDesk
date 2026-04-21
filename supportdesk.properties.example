@@ -5,4 +5,4 @@
 # Example:
 # supportdesk.baseUrl=https://crm.example.com
 
-supportdesk.baseUrl=https://your-public-ktor-backend.example.com
+supportdesk.baseUrl=https://crm.franciscorequena.cloud
