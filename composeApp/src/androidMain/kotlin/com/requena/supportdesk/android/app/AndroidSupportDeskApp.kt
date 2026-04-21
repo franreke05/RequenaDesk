@@ -53,6 +53,7 @@ fun AndroidSupportDeskApp() {
     val authState by module.authViewModel.state.collectAsState()
     val ticketsState by module.ticketsViewModel.state.collectAsState()
     val notificationsState by module.notificationsViewModel.state.collectAsState()
+    val tasksState by module.tasksViewModel.state.collectAsState()
 
     DisposableEffect(module) {
         onDispose { module.clear() }
@@ -161,6 +162,7 @@ fun AndroidSupportDeskApp() {
                                 )
                                 AppDestination.Notifications -> NotificationsScreen(
                                     state = notificationsState,
+                                    scheduledTasks = tasksState.tasks,
                                     onRegisterDevice = { module.notificationsViewModel.onEvent(NotificationsUiEvent.RegisterAdminDevice) },
                                 )
                                 AppDestination.Tasks,

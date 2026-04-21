@@ -11,7 +11,8 @@ class PostgresDemoBootstrapper(
             connection.autoCommit = false
             try {
                 ensureClient(connection)
-                ensureAdminUser(connection, adminPassword)
+                ensurePrimaryAdminUser(connection)
+                ensureSecondaryAdminUser(connection)
                 ensureClientUser(connection, clientPassword)
                 ensureTaskLabel(connection)
                 ensureTask(connection)
@@ -31,14 +32,15 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO clients (
-                id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+                id, owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
             )
             VALUES (
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 'Requena Demo Client',
                 'Requena Mobile Suite',
                 'Demo Client',
-                'client@requenadesk.local',
+                'client@orykai.local',
                 'ACTIVE',
                 'PRIORITY',
                 'TICKET'
@@ -48,14 +50,14 @@ class PostgresDemoBootstrapper(
         ).use { it.executeUpdate() }
     }
 
-    private fun ensureAdminUser(connection: Connection, password: String) {
+    private fun ensurePrimaryAdminUser(connection: Connection) {
         connection.prepareStatement(
             """
             INSERT INTO users (id, name, email, password_hash, role, is_active)
             VALUES (
                 CAST('22222222-2222-2222-2222-222222222222' AS uuid),
-                'Requena Admin',
-                'admin@requenadesk.local',
+                'Admin Requena',
+                'admin@orykai.dev',
                 ?,
                 'ADMIN',
                 TRUE
@@ -63,7 +65,27 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash(password))
+            it.setString(1, PasswordHasher.hash("Admin1requena"))
+            it.executeUpdate()
+        }
+    }
+
+    private fun ensureSecondaryAdminUser(connection: Connection) {
+        connection.prepareStatement(
+            """
+            INSERT INTO users (id, name, email, password_hash, role, is_active)
+            VALUES (
+                CAST('88888888-8888-8888-8888-888888888888' AS uuid),
+                'Admin Sanchez',
+                'admin2@orykai.dev',
+                ?,
+                'ADMIN',
+                TRUE
+            )
+            ON CONFLICT (email) DO NOTHING
+            """.trimIndent(),
+        ).use {
+            it.setString(1, PasswordHasher.hash("Admin2Sanchez"))
             it.executeUpdate()
         }
     }
@@ -76,7 +98,7 @@ class PostgresDemoBootstrapper(
                 CAST('33333333-3333-3333-3333-333333333333' AS uuid),
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
                 'Demo Client User',
-                'client.user@requenadesk.local',
+                'client.user@orykai.local',
                 ?,
                 'CLIENT',
                 TRUE
@@ -121,9 +143,10 @@ class PostgresDemoBootstrapper(
     private fun ensureTaskLabel(connection: Connection) {
         connection.prepareStatement(
             """
-            INSERT INTO task_labels (id, name, color_hex)
+            INSERT INTO task_labels (id, owner_admin_id, name, color_hex)
             VALUES (
                 CAST('55555555-5555-5555-5555-555555555555' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 'Hoy',
                 '#6B7A5B'
             )
@@ -136,16 +159,19 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO tasks (
-                id, client_id, label_id, title, description, completed, logged_minutes
+                id, client_id, owner_admin_id, label_id, title, description, due_date, completed, logged_minutes, logged_seconds
             )
             VALUES (
                 CAST('66666666-6666-6666-6666-666666666666' AS uuid),
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
+                CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 CAST('55555555-5555-5555-5555-555555555555' AS uuid),
                 'Demo task',
                 'Operational task to validate dashboard, timer and client linkage.',
+                CURRENT_DATE + INTERVAL '1 day',
                 FALSE,
-                45
+                45,
+                2700
             )
             ON CONFLICT (id) DO NOTHING
             """.trimIndent(),
@@ -156,7 +182,7 @@ class PostgresDemoBootstrapper(
         connection.prepareStatement(
             """
             INSERT INTO time_logs (
-                id, task_id, client_id, author_id, minutes, work_date, note, billable
+                id, task_id, client_id, author_id, minutes, seconds, work_date, note, billable
             )
             VALUES (
                 CAST('77777777-7777-7777-7777-777777777777' AS uuid),
@@ -164,6 +190,7 @@ class PostgresDemoBootstrapper(
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
                 CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 45,
+                2700,
                 CURRENT_DATE,
                 'Demo time log for admin dashboard',
                 TRUE

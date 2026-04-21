@@ -6,20 +6,32 @@ import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.security.ServerAuthSettings
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SupportDeskServiceTest {
+    private val tokenService = SupportDeskTokenService(
+        ServerAuthSettings(
+            secret = "supportdesk-test-secret-1234567890",
+            issuer = "test-suite",
+            audience = "test-clients",
+            accessTokenLifetimeMinutes = 60,
+            refreshTokenLifetimeDays = 30,
+        ),
+    )
 
     private val service = SupportDeskService(
         repository = InMemorySupportDeskRepository(InMemorySupportDeskDataSource()),
+        tokenService = tokenService,
     )
 
     @Test
     fun loginReturnsSession() {
-        val session = service.login(email = "admin@requenadesk.local", password = "secret")
+        val session = service.login(email = "admin@orykai.dev", password = "Admin1requena")
 
         assertNotNull(session)
         assertEquals("ADMIN", session.role)
@@ -29,7 +41,7 @@ class SupportDeskServiceTest {
 
     @Test
     fun refreshReturnsRotatedSession() {
-        val login = service.login(email = "admin@requenadesk.local", password = "secret")
+        val login = service.login(email = "admin@orykai.dev", password = "Admin1requena")
         val refreshed = service.refresh(RefreshSessionRequest(refreshToken = login!!.refreshToken))
 
         assertNotNull(refreshed)
@@ -39,7 +51,7 @@ class SupportDeskServiceTest {
 
     @Test
     fun logoutRevokesSession() {
-        val login = service.login(email = "admin@requenadesk.local", password = "secret")
+        val login = service.login(email = "admin@orykai.dev", password = "Admin1requena")
         val result = service.logout(LogoutRequest(refreshToken = login!!.refreshToken))
 
         assertTrue(result)

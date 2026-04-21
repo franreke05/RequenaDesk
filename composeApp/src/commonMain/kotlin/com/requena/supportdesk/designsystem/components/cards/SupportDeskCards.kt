@@ -28,6 +28,8 @@ fun SectionCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val resolvedTitle = title?.takeIf { it.isNotBlank() }
+    val resolvedSubtitle = subtitle?.takeIf { it.isNotBlank() }
     ElevatedCard(
         modifier = modifier.animateContentSize(),
         colors = CardDefaults.elevatedCardColors(
@@ -41,7 +43,7 @@ fun SectionCard(
                 .padding(spacing.lg),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            if (title != null || subtitle != null) {
+            if (resolvedTitle != null || resolvedSubtitle != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -50,10 +52,10 @@ fun SectionCard(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
                     ) {
-                        title?.let {
+                        resolvedTitle?.let {
                             Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         }
-                        subtitle?.let {
+                        resolvedSubtitle?.let {
                             Text(
                                 text = it,
                                 style = MaterialTheme.typography.bodyMedium,

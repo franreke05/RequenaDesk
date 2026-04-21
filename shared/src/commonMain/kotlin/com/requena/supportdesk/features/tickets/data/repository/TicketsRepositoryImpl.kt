@@ -6,6 +6,7 @@ import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.User
 import com.requena.supportdesk.core.model.UserRole
+import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.data.datasource.TicketsDataSource
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketMessageRequestDto
@@ -66,18 +67,20 @@ class TicketsRepositoryImpl(
     )
 
     override suspend fun replyTicket(ticketId: String, message: String): AppResult<TicketMessage> = runCatching {
+        val authorId = AdminSessionContext.currentUserId() ?: "unknown-user"
+        val authorName = AdminSessionContext.currentUser()?.name ?: "Admin"
         dataSource.replyTicket(
             ticketId = ticketId,
             request = CreateTicketMessageRequestDto(
-                authorId = "admin-assignee",
+                authorId = authorId,
                 body = message,
             ),
         )
         TicketMessage(
             id = "remote-reply-$ticketId",
             ticketId = ticketId,
-            authorId = "admin-assignee",
-            authorName = "Admin",
+            authorId = authorId,
+            authorName = authorName,
             body = message,
             createdAt = "now",
         )

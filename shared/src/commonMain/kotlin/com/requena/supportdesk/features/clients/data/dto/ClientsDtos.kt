@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ClientDto(
     val id: String,
+    val ownerAdminId: String,
     val companyName: String,
     val contactName: String = "",
     val email: String,

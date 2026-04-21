@@ -22,7 +22,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
@@ -54,7 +53,7 @@ fun AdminLoginScreen(
         ) {
             SectionCard(
                 modifier = Modifier.widthIn(max = 960.dp),
-                title = "RequenaDesk Admin",
+                title = "OryKai software Admin",
                 subtitle = "Agenda interna para organizar clientes, notas, tareas y registro de horas.",
             ) {
                 Row(
@@ -82,7 +81,7 @@ fun AdminLoginScreen(
             SectionCard(
                 modifier = Modifier.widthIn(max = 520.dp),
                 title = "Acceso admin",
-                subtitle = "Puedes usar el acceso real si el servidor esta activo o entrar con el entorno demo local.",
+                subtitle = "Accede con uno de los usuarios admin configurados en el servidor.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     OutlinedTextField(
@@ -111,11 +110,6 @@ fun AdminLoginScreen(
                     PrimaryButton(
                         text = if (state.isLoading) "Entrando..." else "Entrar",
                         onClick = { onEvent(AuthUiEvent.Submit) },
-                        fullWidth = true,
-                    )
-                    SecondaryButton(
-                        text = "Usar demo admin",
-                        onClick = { onEvent(AuthUiEvent.LoginAsAdminDemo) },
                         fullWidth = true,
                     )
                 }

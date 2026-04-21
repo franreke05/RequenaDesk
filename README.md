@@ -1,6 +1,6 @@
-# RequenaDesk
+# OryKai software
 
-RequenaDesk is a Kotlin Multiplatform CRM and ticketing product for freelance app support. The current MVP focuses on Desktop + Server, with Android lite for admin review and iOS prepared structurally for future notifications.
+OryKai software is a Kotlin Multiplatform CRM and ticketing product for freelance app support. The current MVP focuses on Desktop + Server, with Android lite for admin review and iOS prepared structurally for future notifications.
 
 This project targets Android, iOS, Desktop (JVM), Server.
 

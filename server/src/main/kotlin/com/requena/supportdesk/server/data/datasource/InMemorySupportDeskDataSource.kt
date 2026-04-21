@@ -44,6 +44,7 @@ class InMemorySupportDeskDataSource {
     fun clients(): List<ClientEntity> = listOf(
         ClientEntity(
             id = "client-1",
+            ownerAdminId = "user-admin",
             companyName = "Northwind Studio",
             productName = "Northwind Desk",
             email = "ana@northwind.dev",
@@ -54,6 +55,7 @@ class InMemorySupportDeskDataSource {
         ),
         ClientEntity(
             id = "client-2",
+            ownerAdminId = "user-admin-2",
             companyName = "Pixel Forge",
             productName = "Forge Flow",
             email = "david@pixelforge.dev",

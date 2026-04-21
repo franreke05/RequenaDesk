@@ -30,6 +30,7 @@ object SupportDeskMapper {
 
     fun client(entity: ClientEntity): ServerClientSnapshot = ServerClientSnapshot(
         id = entity.id,
+        ownerAdminId = entity.ownerAdminId,
         companyName = entity.companyName,
         productName = entity.productName,
         contactName = entity.companyName,

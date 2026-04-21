@@ -1,10 +1,11 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.ktor)
     application
 }
 
-group = "com.requena.requenadesk"
+group = "com.requena.orykaisoftware"
 version = "1.0.0"
 application {
     mainClass.set("com.example.crmfreelance.ApplicationKt")
@@ -15,6 +16,7 @@ application {
 
 dependencies {
     implementation(projects.shared)
+    implementation(libs.java.jwt)
     implementation(libs.logback)
     implementation(libs.postgresql)
     implementation(libs.ktor.serverCallLogging)

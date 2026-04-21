@@ -1,5 +1,6 @@
 package com.requena.supportdesk.features.tasks.data.datasource
 
+import com.requena.supportdesk.core.network.jsonRequestBody
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
@@ -17,8 +18,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 
 interface TasksDataSource {
     suspend fun getLabels(): List<TaskLabelDto>
@@ -47,14 +46,12 @@ class RemoteTasksDataSource(
 
     override suspend fun createTask(request: CreateTaskRequestDto): TaskDto =
         httpClient.post("${supportDeskBaseUrl()}/admin/tasks") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun updateTask(taskId: String, request: UpdateTaskRequestDto): TaskDto =
         httpClient.patch("${supportDeskBaseUrl()}/admin/tasks/$taskId") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun deleteTask(taskId: String) {
@@ -63,14 +60,12 @@ class RemoteTasksDataSource(
 
     override suspend fun createLabel(request: CreateTaskLabelRequestDto): TaskLabelDto =
         httpClient.post("${supportDeskBaseUrl()}/admin/labels") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun updateLabel(labelId: String, request: UpdateTaskLabelRequestDto): TaskLabelDto =
         httpClient.patch("${supportDeskBaseUrl()}/admin/labels/$labelId") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 
     override suspend fun deleteLabel(labelId: String) {
@@ -79,7 +74,6 @@ class RemoteTasksDataSource(
 
     override suspend fun createTimeLog(request: CreateTimeLogRequestDto): TaskLogDto =
         httpClient.post("${supportDeskBaseUrl()}/admin/time-logs") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+            setBody(jsonRequestBody(request))
         }.requireApiData()
 }

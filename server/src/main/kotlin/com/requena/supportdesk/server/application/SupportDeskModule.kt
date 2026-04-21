@@ -17,9 +17,10 @@ import com.requena.supportdesk.server.routes.labelRoutes
 import com.requena.supportdesk.server.routes.taskRoutes
 import com.requena.supportdesk.server.routes.ticketRoutes
 import com.requena.supportdesk.server.routes.timeLogRoutes
+import com.requena.supportdesk.server.security.SupportDeskTokenService
+import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.server.application.Application
-import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
@@ -32,29 +33,33 @@ fun Application.configureSupportDeskModule(
     configureMonitoring()
 
     val environment = ServerEnvironment.load()
-    val service = SupportDeskService(repository = repositoryOverride ?: supportDeskRepository(environment))
+    val tokenService = SupportDeskTokenService(environment.auth)
+    val service = SupportDeskService(
+        repository = repositoryOverride ?: supportDeskRepository(environment),
+        tokenService = tokenService,
+    )
 
     routing {
         get("/") {
-            call.respond(
-                successResponse(
+            call.respondJson(
+                body = successResponse(
                     path = "/",
                     data = buildJsonObject {
-                        put("service", "requenadesk-server")
+                        put("service", "orykai-software-server")
                         put("status", "running")
                     },
                 ),
             )
         }
         authRoutes(service)
-        ticketRoutes(service)
-        attachmentRoutes(service)
-        clientRoutes(service)
-        labelRoutes(service)
-        taskRoutes(service)
-        timeLogRoutes(service)
-        dashboardRoutes(service)
-        deviceRoutes(service)
+        ticketRoutes(service, tokenService)
+        attachmentRoutes(service, tokenService)
+        clientRoutes(service, tokenService)
+        labelRoutes(service, tokenService)
+        taskRoutes(service, tokenService)
+        timeLogRoutes(service, tokenService)
+        dashboardRoutes(service, tokenService)
+        deviceRoutes(service, tokenService)
     }
 }
 

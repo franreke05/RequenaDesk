@@ -48,6 +48,7 @@ class TasksRepositoryImpl(
                 description = input.description,
                 clientId = input.clientId,
                 labelId = input.categoryId,
+                dueDate = input.dueDate,
             ),
         ).let(TasksMapper::fromTaskDto)
     }.fold(
@@ -63,6 +64,7 @@ class TasksRepositoryImpl(
                 description = input.description,
                 clientId = input.clientId ?: "",
                 labelId = input.categoryId,
+                dueDate = input.dueDate ?: "",
                 completed = input.completed,
             ),
         ).let(TasksMapper::fromTaskDto)
@@ -83,6 +85,7 @@ class TasksRepositoryImpl(
             CreateTaskLabelRequestDto(
                 name = input.name,
                 colorHex = input.colorHex,
+                ownerAdminId = input.ownerAdminId,
             ),
         ).let(TasksMapper::fromLabelDto)
     }.fold(
@@ -117,6 +120,7 @@ class TasksRepositoryImpl(
                 authorId = input.authorId,
                 workDate = input.workDate,
                 minutes = input.minutes,
+                seconds = input.seconds,
                 note = input.note,
                 billable = input.billable,
             ),

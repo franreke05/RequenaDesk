@@ -5,6 +5,7 @@ data class TaskDraft(
     val description: String,
     val clientId: String?,
     val categoryId: String,
+    val dueDate: String? = null,
 )
 
 data class TaskUpdateInput(
@@ -12,12 +13,14 @@ data class TaskUpdateInput(
     val description: String,
     val clientId: String?,
     val categoryId: String,
+    val dueDate: String? = null,
     val completed: Boolean,
 )
 
 data class TaskLabelDraft(
     val name: String,
     val colorHex: String,
+    val ownerAdminId: String,
 )
 
 data class TaskTimeLogDraft(
@@ -25,6 +28,7 @@ data class TaskTimeLogDraft(
     val authorId: String,
     val workDate: String,
     val minutes: Int,
+    val seconds: Int = minutes * 60,
     val note: String,
     val billable: Boolean,
 )

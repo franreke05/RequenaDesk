@@ -9,6 +9,7 @@ data class WorkTask(
     val dueDate: String? = null,
     val completed: Boolean = false,
     val loggedMinutes: Int = 0,
+    val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
     val updatedAt: String,
 )

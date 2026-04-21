@@ -39,21 +39,21 @@ interface SupportDeskRepository {
     fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate
     fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate
     fun createAttachment(ticketId: String, request: UploadAttachmentRequest): ServerAttachmentCreated
-    fun getClients(): List<ServerClientSnapshot>
-    fun createClient(request: CreateClientRequest): ServerClientSnapshot
-    fun updateClient(clientId: String, request: UpdateClientRequest): ServerClientSnapshot
-    fun deleteClient(clientId: String)
-    fun getTaskLabels(): List<ServerTaskLabelSnapshot>
-    fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot
-    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest): ServerTaskLabelSnapshot
-    fun deleteTaskLabel(labelId: String)
-    fun getTasks(clientId: String? = null, labelId: String? = null): List<ServerTaskSnapshot>
-    fun createTask(request: CreateTaskRequest): ServerTaskSnapshot
-    fun updateTask(taskId: String, request: UpdateTaskRequest): ServerTaskSnapshot
-    fun deleteTask(taskId: String)
-    fun getTimeLogs(clientId: String? = null, taskId: String? = null): List<ServerTimeLogSnapshot>
-    fun createTimeLog(request: CreateTimeLogRequest): ServerTimeLogSnapshot
-    fun getDashboard(clientId: String? = null, labelId: String? = null): ServerDashboardSnapshot
+    fun getClients(ownerAdminId: String? = null): List<ServerClientSnapshot>
+    fun createClient(request: CreateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
+    fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
+    fun deleteClient(clientId: String, ownerAdminId: String? = null)
+    fun getTaskLabels(ownerAdminId: String? = null): List<ServerTaskLabelSnapshot>
+    fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
+    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
+    fun deleteTaskLabel(labelId: String, ownerAdminId: String? = null)
+    fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): List<ServerTaskSnapshot>
+    fun createTask(request: CreateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
+    fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
+    fun deleteTask(taskId: String, ownerAdminId: String? = null)
+    fun getTimeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null): List<ServerTimeLogSnapshot>
+    fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String? = null): ServerTimeLogSnapshot
+    fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot
     fun getAttachment(id: String): ServerAttachmentSnapshot?
     fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration
 }

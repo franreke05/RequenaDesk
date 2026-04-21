@@ -115,3 +115,23 @@ fun formatSupportDeskDuration(minutes: Int): String {
         "${hours} h ${remainingMinutes} m"
     }
 }
+
+fun formatSupportDeskPreciseDuration(totalSeconds: Int): String {
+    if (totalSeconds <= 0) return "0 s"
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return buildList {
+        if (hours > 0) add("${hours} h")
+        if (minutes > 0 || hours > 0) add("${minutes} m")
+        add("${seconds} s")
+    }.joinToString(" ")
+}
+
+fun formatSupportDeskClockDuration(totalSeconds: Int): String {
+    val safeSeconds = totalSeconds.coerceAtLeast(0)
+    val hours = safeSeconds / 3600
+    val minutes = (safeSeconds % 3600) / 60
+    val seconds = safeSeconds % 60
+    return "${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+}

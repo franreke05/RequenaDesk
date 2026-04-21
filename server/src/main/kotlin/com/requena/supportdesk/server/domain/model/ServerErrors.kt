@@ -7,3 +7,7 @@ class ServerNotFoundException(
 class ServerConflictException(
     override val message: String,
 ) : RuntimeException(message)
+
+class ServerValidationException(
+    override val message: String,
+) : RuntimeException(message)

@@ -10,10 +10,33 @@ import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondText
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+@PublishedApi
+internal val responseJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    explicitNulls = false
+}
+
+suspend fun ApplicationCall.respondJson(
+    status: HttpStatusCode = HttpStatusCode.OK,
+    body: JsonElement,
+) {
+    respondText(
+        text = responseJson.encodeToString(JsonElement.serializer(), body),
+        contentType = ContentType.Application.Json,
+        status = status,
+    )
+}
 
 fun successResponse(path: String, data: JsonElement) = buildJsonObject {
     put("status", "ok")
@@ -66,6 +89,7 @@ fun clientsJson(clients: List<ServerClientSnapshot>) = buildJsonArray {
 
 fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("id", client.id)
+    put("ownerAdminId", client.ownerAdminId)
     put("companyName", client.companyName)
     put("productName", client.productName)
     put("contactName", client.contactName)
@@ -99,6 +123,7 @@ fun labelsJson(labels: List<ServerTaskLabelSnapshot>) = buildJsonArray {
 
 fun labelJson(label: ServerTaskLabelSnapshot) = buildJsonObject {
     put("id", label.id)
+    put("ownerAdminId", label.ownerAdminId)
     put("name", label.name)
     put("colorHex", label.colorHex)
     put("tasksCount", label.tasksCount)
@@ -110,6 +135,7 @@ fun tasksJson(tasks: List<ServerTaskSnapshot>) = buildJsonArray {
 
 fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("id", task.id)
+    put("ownerAdminId", task.ownerAdminId)
     put("title", task.title)
     put("description", task.description)
     put("clientId", task.clientId)
@@ -117,8 +143,10 @@ fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("labelId", task.labelId)
     put("labelName", task.labelName)
     put("labelColorHex", task.labelColorHex)
+    put("dueDate", task.dueDate)
     put("completed", task.completed)
     put("loggedMinutes", task.loggedMinutes)
+    put("loggedSeconds", task.loggedSeconds)
     put("createdAt", task.createdAt)
     put("updatedAt", task.updatedAt)
 }
@@ -129,11 +157,13 @@ fun timeLogsJson(logs: List<ServerTimeLogSnapshot>) = buildJsonArray {
 
 fun timeLogJson(log: ServerTimeLogSnapshot) = buildJsonObject {
     put("id", log.id)
+    put("ownerAdminId", log.ownerAdminId)
     put("taskId", log.taskId)
     put("clientId", log.clientId)
     put("authorId", log.authorId)
     put("authorName", log.authorName)
     put("minutes", log.minutes)
+    put("seconds", log.seconds)
     put("workDate", log.workDate)
     put("note", log.note)
     put("billable", log.billable)

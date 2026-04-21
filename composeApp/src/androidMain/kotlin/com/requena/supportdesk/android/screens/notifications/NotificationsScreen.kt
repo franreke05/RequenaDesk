@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.requena.supportdesk.core.model.WorkTask
+import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
@@ -16,14 +18,17 @@ import com.requena.supportdesk.features.notifications.presentation.state.Notific
 @Composable
 fun NotificationsScreen(
     state: NotificationsUiState,
+    scheduledTasks: List<WorkTask>,
     onRegisterDevice: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val placeholderItems = listOf(
-        "SD-1001 · Northwind Desk · Waiting on admin.",
-        "SD-1002 · Forge Flow · Waiting on client confirmation.",
-        "Device registration is ready for a real push integration.",
-    )
+    val todayIsoDate = currentIsoDate()
+    val reminderItems = scheduledTasks
+        .filter { task ->
+            !task.completed && task.dueDate != null && task.dueDate >= todayIsoDate
+        }
+        .sortedBy { it.dueDate }
+        .take(6)
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -31,7 +36,7 @@ fun NotificationsScreen(
     ) {
         PageHeader(
             title = "Notifications",
-            subtitle = "Register the device now and keep a compact feed ready for future push wiring.",
+            subtitle = "Register the device and surface future scheduled tasks from the admin workspace.",
             eyebrow = "Admin alerts",
         )
         when {
@@ -53,12 +58,22 @@ fun NotificationsScreen(
                     )
                 }
                 SectionCard(
-                    title = "Latest alerts",
-                    subtitle = "Placeholder items to shape the mobile-lite notification feed.",
+                    title = "Upcoming reminders",
+                    subtitle = "Tasks scheduled from today onward are surfaced here for mobile follow-up.",
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        placeholderItems.forEach { item ->
-                            SectionCard(subtitle = item) {}
+                    if (reminderItems.isEmpty()) {
+                        EmptyState(
+                            title = "No future tasks",
+                            message = "Schedule tasks on future days and they will appear here.",
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            reminderItems.forEach { task ->
+                                SectionCard(
+                                    title = task.title,
+                                    subtitle = "Scheduled for ${task.dueDate.orEmpty()}",
+                                ) {}
+                            }
                         }
                     }
                 }

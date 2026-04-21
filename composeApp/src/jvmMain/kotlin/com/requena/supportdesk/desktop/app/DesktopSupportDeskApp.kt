@@ -131,7 +131,7 @@ fun DesktopSupportDeskApp() {
                 } else {
                     Row(modifier = Modifier.fillMaxSize()) {
                         AppSidebar(
-                            brandTitle = "RequenaDesk",
+                            brandTitle = "OryKai software",
                             brandSubtitle = if (navigation.role == UserRole.ADMIN) {
                                 "Admin workspace for freelance support."
                             } else {
@@ -225,7 +225,7 @@ fun DesktopSupportDeskApp() {
             }
             ConfirmDialog(
                 visible = showLogoutDialog,
-                title = "Sign out from RequenaDesk?",
+                title = "Sign out from OryKai software?",
                 message = "Your current desktop session will close and the app will return to the login screen.",
                 confirmText = "Sign out",
                 onConfirm = {

@@ -5,4 +5,6 @@ import com.requena.supportdesk.core.result.AppResult
 
 interface AuthRepository {
     suspend fun login(email: String, password: String): AppResult<User>
+    fun restoreSession(): User?
+    fun clearSession()
 }

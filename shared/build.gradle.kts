@@ -43,7 +43,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.requena.requenadesk.shared"
+    namespace = "com.requena.orykaisoftware.shared"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

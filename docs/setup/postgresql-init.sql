@@ -49,6 +49,7 @@ $$;
 
 CREATE TABLE IF NOT EXISTS clients (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_admin_id uuid NOT NULL,
     company_name varchar(180) NOT NULL,
     product_name varchar(180) NOT NULL,
     contact_name varchar(180) NOT NULL,
@@ -63,7 +64,9 @@ CREATE TABLE IF NOT EXISTS clients (
     CONSTRAINT clients_service_tier_check
         CHECK (service_tier IN ('STANDARD', 'PRIORITY', 'VIP')),
     CONSTRAINT clients_preferred_contact_channel_check
-        CHECK (preferred_contact_channel IN ('TICKET', 'EMAIL', 'WHATSAPP', 'CALL'))
+        CHECK (preferred_contact_channel IN ('TICKET', 'EMAIL', 'WHATSAPP', 'CALL')),
+    CONSTRAINT clients_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -90,6 +93,26 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     created_at timestamptz NOT NULL DEFAULT NOW(),
     UNIQUE (token_hash)
 );
+
+INSERT INTO users (id, name, email, password_hash, role, is_active)
+VALUES
+    (
+        CAST('22222222-2222-2222-2222-222222222222' AS uuid),
+        'Admin Requena',
+        'admin@orykai.dev',
+        '034557d76d96b8e111565708f922d70746230ea84d9fa5d9dacf9d9dceab718f',
+        'ADMIN',
+        TRUE
+    ),
+    (
+        CAST('88888888-8888-8888-8888-888888888888' AS uuid),
+        'Admin Sanchez',
+        'admin2@orykai.dev',
+        '8f16b049a84f05e9c73058f44d96a9a5e5c55d735cf62996a1841f22ede7997e',
+        'ADMIN',
+        TRUE
+    )
+ON CONFLICT (email) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS tickets (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -182,23 +205,32 @@ CREATE TABLE IF NOT EXISTS notification_devices (
 
 CREATE TABLE IF NOT EXISTS task_labels (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_admin_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     name varchar(120) NOT NULL UNIQUE,
     color_hex varchar(7) NOT NULL,
     created_at timestamptz NOT NULL DEFAULT NOW(),
-    updated_at timestamptz NOT NULL DEFAULT NOW()
+    updated_at timestamptz NOT NULL DEFAULT NOW(),
+    CONSTRAINT task_labels_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id uuid REFERENCES clients(id) ON DELETE SET NULL,
+    owner_admin_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     label_id uuid NOT NULL REFERENCES task_labels(id) ON DELETE RESTRICT,
     title varchar(220) NOT NULL,
     description text NOT NULL DEFAULT '',
+    due_date date,
     completed boolean NOT NULL DEFAULT false,
     logged_minutes integer NOT NULL DEFAULT 0,
+    logged_seconds integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT NOW(),
     updated_at timestamptz NOT NULL DEFAULT NOW(),
-    CONSTRAINT tasks_logged_minutes_check CHECK (logged_minutes >= 0)
+    CONSTRAINT tasks_logged_minutes_check CHECK (logged_minutes >= 0),
+    CONSTRAINT tasks_logged_seconds_check CHECK (logged_seconds >= 0),
+    CONSTRAINT tasks_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
 );
 
 CREATE TABLE IF NOT EXISTS time_logs (
@@ -207,15 +239,91 @@ CREATE TABLE IF NOT EXISTS time_logs (
     client_id uuid REFERENCES clients(id) ON DELETE SET NULL,
     author_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     minutes integer NOT NULL,
+    seconds integer NOT NULL DEFAULT 0,
     work_date date NOT NULL,
     note text NOT NULL DEFAULT '',
     billable boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT NOW(),
-    CONSTRAINT time_logs_minutes_check CHECK (minutes > 0)
+    CONSTRAINT time_logs_minutes_check CHECK (minutes >= 0),
+    CONSTRAINT time_logs_seconds_check CHECK (seconds > 0)
 );
+
+ALTER TABLE clients
+    ADD COLUMN IF NOT EXISTS owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT;
+
+ALTER TABLE clients
+    ALTER COLUMN owner_admin_id SET NOT NULL;
+
+ALTER TABLE task_labels
+    ADD COLUMN IF NOT EXISTS owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT;
+
+ALTER TABLE task_labels
+    ALTER COLUMN owner_admin_id SET NOT NULL;
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT;
+
+ALTER TABLE tasks
+    ALTER COLUMN owner_admin_id SET NOT NULL;
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS logged_seconds integer NOT NULL DEFAULT 0;
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS due_date date;
+
+ALTER TABLE time_logs
+    ADD COLUMN IF NOT EXISTS seconds integer NOT NULL DEFAULT 0;
+
+UPDATE time_logs
+SET seconds = CASE
+    WHEN seconds <= 0 THEN minutes * 60
+    ELSE seconds
+END;
+
+UPDATE tasks
+SET logged_seconds = CASE
+    WHEN logged_seconds <= 0 THEN logged_minutes * 60
+    ELSE logged_seconds
+END;
+
+UPDATE tasks
+SET logged_minutes = logged_seconds / 60;
+
+UPDATE clients
+SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
+WHERE owner_admin_id IS NULL;
+
+UPDATE task_labels
+SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
+WHERE owner_admin_id IS NULL;
+
+UPDATE tasks t
+SET owner_admin_id = c.owner_admin_id
+FROM clients c
+WHERE t.client_id = c.id
+  AND t.owner_admin_id IS NULL;
+
+UPDATE tasks
+SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
+WHERE owner_admin_id IS NULL;
+
+ALTER TABLE clients
+    ADD CONSTRAINT clients_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
+
+ALTER TABLE task_labels
+    ADD CONSTRAINT task_labels_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
+
+ALTER TABLE tasks
+    ADD CONSTRAINT tasks_owner_admin_check
+        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
 
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_clients_owner_admin_id ON clients(owner_admin_id);
+CREATE INDEX IF NOT EXISTS idx_task_labels_owner_admin_id ON task_labels(owner_admin_id);
 
 CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_requester_id ON tickets(requester_id);
@@ -248,6 +356,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_devices_user_id
 
 CREATE INDEX IF NOT EXISTS idx_task_labels_name ON task_labels(name);
 CREATE INDEX IF NOT EXISTS idx_tasks_client_id ON tasks(client_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_owner_admin_id ON tasks(owner_admin_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_label_id ON tasks(label_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed);
 CREATE INDEX IF NOT EXISTS idx_time_logs_task_id ON time_logs(task_id);
