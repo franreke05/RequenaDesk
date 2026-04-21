@@ -1,4 +1,4 @@
-rootProject.name = "RequenaDesk"
+rootProject.name = "OryKaiSoftware"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

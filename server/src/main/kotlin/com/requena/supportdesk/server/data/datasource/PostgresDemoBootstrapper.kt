@@ -40,7 +40,7 @@ class PostgresDemoBootstrapper(
                 'Requena Demo Client',
                 'Requena Mobile Suite',
                 'Demo Client',
-                'client@requenadesk.local',
+                'client@orykai.local',
                 'ACTIVE',
                 'PRIORITY',
                 'TICKET'
@@ -57,7 +57,7 @@ class PostgresDemoBootstrapper(
             VALUES (
                 CAST('22222222-2222-2222-2222-222222222222' AS uuid),
                 'Admin Requena',
-                'admin@requenadesk.dev',
+                'admin@orykai.dev',
                 ?,
                 'ADMIN',
                 TRUE
@@ -77,7 +77,7 @@ class PostgresDemoBootstrapper(
             VALUES (
                 CAST('88888888-8888-8888-8888-888888888888' AS uuid),
                 'Admin Sanchez',
-                'admin2@requenadesk.dev',
+                'admin2@orykai.dev',
                 ?,
                 'ADMIN',
                 TRUE
@@ -98,7 +98,7 @@ class PostgresDemoBootstrapper(
                 CAST('33333333-3333-3333-3333-333333333333' AS uuid),
                 CAST('11111111-1111-1111-1111-111111111111' AS uuid),
                 'Demo Client User',
-                'client.user@requenadesk.local',
+                'client.user@orykai.local',
                 ?,
                 'CLIENT',
                 TRUE

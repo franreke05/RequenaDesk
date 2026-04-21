@@ -31,7 +31,7 @@ class SupportDeskServiceTest {
 
     @Test
     fun loginReturnsSession() {
-        val session = service.login(email = "admin@requenadesk.dev", password = "Admin1requena")
+        val session = service.login(email = "admin@orykai.dev", password = "Admin1requena")
 
         assertNotNull(session)
         assertEquals("ADMIN", session.role)
@@ -41,7 +41,7 @@ class SupportDeskServiceTest {
 
     @Test
     fun refreshReturnsRotatedSession() {
-        val login = service.login(email = "admin@requenadesk.dev", password = "Admin1requena")
+        val login = service.login(email = "admin@orykai.dev", password = "Admin1requena")
         val refreshed = service.refresh(RefreshSessionRequest(refreshToken = login!!.refreshToken))
 
         assertNotNull(refreshed)
@@ -51,7 +51,7 @@ class SupportDeskServiceTest {
 
     @Test
     fun logoutRevokesSession() {
-        val login = service.login(email = "admin@requenadesk.dev", password = "Admin1requena")
+        val login = service.login(email = "admin@orykai.dev", password = "Admin1requena")
         val result = service.logout(LogoutRequest(refreshToken = login!!.refreshToken))
 
         assertTrue(result)

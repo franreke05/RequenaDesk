@@ -256,7 +256,7 @@ private fun MobileLoginScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
                 ) {
                     Text(
-                        text = "RequenaDesk Mobile",
+                        text = "OryKai software Mobile",
                         style = MaterialTheme.typography.displayMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )

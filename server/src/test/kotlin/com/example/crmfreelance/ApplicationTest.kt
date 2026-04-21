@@ -36,7 +36,7 @@ class ApplicationTest {
     }
 
     private suspend fun HttpClient.accessToken(
-        email: String = "admin@requenadesk.dev",
+        email: String = "admin@orykai.dev",
         password: String = "Admin1requena",
     ): String {
         val response = post("/auth/login") {
@@ -54,7 +54,7 @@ class ApplicationTest {
         }
         val response = client.get("/")
         assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(response.bodyAsText().contains("requenadesk-server"))
+        assertTrue(response.bodyAsText().contains("orykai-software-server"))
     }
 
     @Test
@@ -92,12 +92,12 @@ class ApplicationTest {
 
         val response = client.post("/auth/login") {
             contentType(ContentType.Application.Json)
-            setBody("""{"email":"admin@requenadesk.dev","password":"Admin1requena"}""")
+            setBody("""{"email":"admin@orykai.dev","password":"Admin1requena"}""")
         }
 
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("admin@requenadesk.dev"))
+        assertTrue(body.contains("admin@orykai.dev"))
         assertTrue(body.contains("refreshToken"))
         assertTrue(body.contains("accessToken"))
     }
@@ -173,7 +173,7 @@ class ApplicationTest {
     fun testCreateAndDeleteFreeLabel() = testApplication {
         application { testModule() }
         val partnerToken = client.accessToken(
-            email = "admin2@requenadesk.dev",
+            email = "admin2@orykai.dev",
             password = "Admin2Sanchez",
         )
 
@@ -332,7 +332,7 @@ class ApplicationTest {
         application { testModule() }
         val adminToken = client.accessToken()
         val partnerToken = client.accessToken(
-            email = "admin2@requenadesk.dev",
+            email = "admin2@orykai.dev",
             password = "Admin2Sanchez",
         )
 
@@ -418,7 +418,7 @@ class ApplicationTest {
         application { testModule() }
         val adminToken = client.accessToken()
         val partnerToken = client.accessToken(
-            email = "admin2@requenadesk.dev",
+            email = "admin2@orykai.dev",
             password = "Admin2Sanchez",
         )
 
@@ -443,7 +443,7 @@ class ApplicationTest {
 
         val loginResponse = client.post("/auth/login") {
             contentType(ContentType.Application.Json)
-            setBody("""{"email":"admin@requenadesk.dev","password":"Admin1requena"}""")
+            setBody("""{"email":"admin@orykai.dev","password":"Admin1requena"}""")
         }
         val refreshToken = extractField(loginResponse.bodyAsText(), "refreshToken")
 

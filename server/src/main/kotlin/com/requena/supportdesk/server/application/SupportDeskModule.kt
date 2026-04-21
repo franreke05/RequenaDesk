@@ -45,7 +45,7 @@ fun Application.configureSupportDeskModule(
                 body = successResponse(
                     path = "/",
                     data = buildJsonObject {
-                        put("service", "requenadesk-server")
+                        put("service", "orykai-software-server")
                         put("status", "running")
                     },
                 ),

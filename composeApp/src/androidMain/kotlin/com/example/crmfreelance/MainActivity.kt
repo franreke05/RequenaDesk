@@ -1,4 +1,4 @@
-package com.requena.requenadesk
+package com.requena.orykaisoftware
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity

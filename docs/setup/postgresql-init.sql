@@ -99,7 +99,7 @@ VALUES
     (
         CAST('22222222-2222-2222-2222-222222222222' AS uuid),
         'Admin Requena',
-        'admin@requenadesk.dev',
+        'admin@orykai.dev',
         '034557d76d96b8e111565708f922d70746230ea84d9fa5d9dacf9d9dceab718f',
         'ADMIN',
         TRUE
@@ -107,7 +107,7 @@ VALUES
     (
         CAST('88888888-8888-8888-8888-888888888888' AS uuid),
         'Admin Sanchez',
-        'admin2@requenadesk.dev',
+        'admin2@orykai.dev',
         '8f16b049a84f05e9c73058f44d96a9a5e5c55d735cf62996a1841f22ede7997e',
         'ADMIN',
         TRUE

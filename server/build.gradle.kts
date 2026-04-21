@@ -5,7 +5,7 @@ plugins {
     application
 }
 
-group = "com.requena.requenadesk"
+group = "com.requena.orykaisoftware"
 version = "1.0.0"
 application {
     mainClass.set("com.example.crmfreelance.ApplicationKt")

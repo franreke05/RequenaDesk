@@ -9,7 +9,7 @@ import io.ktor.http.auth.parseAuthorizationHeader
 import io.ktor.server.application.ApplicationCall
 
 private const val bearerScheme = "Bearer"
-private const val bearerRealm = "RequenaDesk"
+private const val bearerRealm = "OryKai software"
 
 suspend fun ApplicationCall.requireAuthenticatedIdentity(
     tokenService: SupportDeskTokenService,

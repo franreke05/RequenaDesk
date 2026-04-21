@@ -8,8 +8,8 @@ object SecurityConfig {
     const val accessTokenLifetimeMinutesKey = "SUPPORTDESK_ACCESS_TOKEN_LIFETIME_MINUTES"
     const val refreshTokenLifetimeDaysKey = "SUPPORTDESK_REFRESH_TOKEN_LIFETIME_DAYS"
 
-    const val defaultIssuer = "requenadesk-server"
-    const val defaultAudience = "requenadesk-clients"
+    const val defaultIssuer = "orykai-software-server"
+    const val defaultAudience = "orykai-software-clients"
     const val defaultAccessTokenLifetimeMinutes = 480L
     const val defaultRefreshTokenLifetimeDays = 30L
     const val minimumSecretLength = 32

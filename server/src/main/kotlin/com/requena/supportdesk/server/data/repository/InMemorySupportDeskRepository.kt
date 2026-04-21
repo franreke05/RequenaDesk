@@ -48,13 +48,13 @@ class InMemorySupportDeskRepository(
         LocalAdminAccount(
             userId = "user-admin",
             name = "Admin Requena",
-            email = "admin@requenadesk.dev",
+            email = "admin@orykai.dev",
             password = "Admin1requena",
         ),
         LocalAdminAccount(
             userId = "user-admin-2",
             name = "Admin Sanchez",
-            email = "admin2@requenadesk.dev",
+            email = "admin2@orykai.dev",
             password = "Admin2Sanchez",
         ),
     )

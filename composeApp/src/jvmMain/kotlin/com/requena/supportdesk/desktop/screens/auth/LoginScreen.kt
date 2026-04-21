@@ -50,7 +50,7 @@ fun LoginScreen(
         ) {
             SectionCard(
                 modifier = Modifier.width(420.dp),
-                title = "RequenaDesk",
+                title = "OryKai software",
                 subtitle = "A clean desktop CRM for freelance support. One workspace, two roles, less friction.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {

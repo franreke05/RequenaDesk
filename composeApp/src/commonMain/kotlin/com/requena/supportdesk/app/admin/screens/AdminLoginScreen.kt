@@ -53,7 +53,7 @@ fun AdminLoginScreen(
         ) {
             SectionCard(
                 modifier = Modifier.widthIn(max = 960.dp),
-                title = "RequenaDesk Admin",
+                title = "OryKai software Admin",
                 subtitle = "Agenda interna para organizar clientes, notas, tareas y registro de horas.",
             ) {
                 Row(

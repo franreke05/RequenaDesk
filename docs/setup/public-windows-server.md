@@ -1,4 +1,4 @@
-# Publicar RequenaDesk en un PC Windows
+# Publicar OryKai software en un PC Windows
 
 Esta guia deja Ktor accesible desde internet de forma mas segura:
 

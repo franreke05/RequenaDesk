@@ -42,7 +42,7 @@ fun LoginScreen(
         }
         SectionCard(
             modifier = Modifier.align(Alignment.Center),
-            title = "RequenaDesk admin",
+            title = "OryKai software admin",
             subtitle = "Sign in with one of the configured admin accounts.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {

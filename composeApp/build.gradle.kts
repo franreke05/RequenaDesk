@@ -55,11 +55,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.requena.requenadesk"
+    namespace = "com.requena.orykaisoftware"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.requena.requenadesk"
+        applicationId = "com.requena.orykaisoftware"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -91,14 +91,14 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Exe)
-            packageName = "RequenaDesk"
+            packageName = "OryKai software"
             packageVersion = "1.0.0"
 
             windows {
                 dirChooser = true
                 perUserInstall = true
-                menuGroup = "RequenaDesk"
-                iconFile.set(project.file("src/jvmMain/resources/icons/requenadesk-icon.ico"))
+                menuGroup = "OryKai software"
+                iconFile.set(project.file("src/jvmMain/resources/icons/orykai-software-icon.ico"))
             }
         }
     }

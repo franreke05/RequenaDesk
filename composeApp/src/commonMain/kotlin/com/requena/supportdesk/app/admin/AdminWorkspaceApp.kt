@@ -163,7 +163,7 @@ fun AdminWorkspaceApp() {
             if (layoutMode == AdminLayoutMode.EXPANDED) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     AppSidebar(
-                        brandTitle = "RequenaDesk",
+                        brandTitle = "OryKai software",
                         brandSubtitle = "Agenda compartida para clientes, tareas y horas.",
                         items = navItems,
                         selected = selectedNav,
@@ -382,7 +382,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Agenda"
-    AppDestination.Login -> "RequenaDesk Admin"
+    AppDestination.Login -> "OryKai software Admin"
 }
 
 private fun subtitleFor(destination: AppDestination): String? = when (destination) {
