@@ -1,0 +1,13 @@
+# Copy this file to `supportdesk.properties` on the machine that runs Ktor.
+# Do not send this file to desktop clients.
+
+SUPPORTDESK_AUTH_SECRET=<generate-a-long-random-secret>
+SUPABASE_DATABASE_URL=postgresql://<user>:<password>@<host>:6543/postgres?sslmode=require
+
+# Keep Ktor private; Caddy exposes HTTPS on 80/443.
+SUPPORTDESK_SERVER_HOST=127.0.0.1
+SUPPORTDESK_SERVER_PORT=8080
+
+# Use your real public domain.
+SUPPORTDESK_AUTH_ISSUER=<your-public-domain>
+SUPPORTDESK_AUTH_AUDIENCE=<your-public-domain>

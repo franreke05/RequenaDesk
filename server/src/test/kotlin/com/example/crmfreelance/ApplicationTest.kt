@@ -3,7 +3,7 @@ package com.example.crmfreelance
 import com.requena.supportdesk.server.application.configureSupportDeskModule
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.repository.InMemorySupportDeskRepository
-import com.requena.supportdesk.server.utils.ADMIN_USER_ID_HEADER
+import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -13,6 +13,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
@@ -23,14 +24,27 @@ import kotlin.test.assertTrue
 
 class ApplicationTest {
 
-    private fun HttpRequestBuilder.asAdmin(ownerId: String = "user-admin") {
-        header(ADMIN_USER_ID_HEADER, ownerId)
+    private fun HttpRequestBuilder.bearer(token: String) {
+        header(HttpHeaders.Authorization, "Bearer $token")
     }
 
     private fun io.ktor.server.application.Application.testModule() {
+        System.setProperty(TEST_AUTH_SECRET_KEY, TEST_AUTH_SECRET)
         configureSupportDeskModule(
             repositoryOverride = InMemorySupportDeskRepository(InMemorySupportDeskDataSource()),
         )
+    }
+
+    private suspend fun HttpClient.accessToken(
+        email: String = "admin@requenadesk.dev",
+        password: String = "Admin1requena",
+    ): String {
+        val response = post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"$email","password":"$password"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        return extractField(response.bodyAsText(), "accessToken")
     }
 
     @Test
@@ -44,19 +58,29 @@ class ApplicationTest {
     }
 
     @Test
-    fun testTicketsRoute() = testApplication {
+    fun testTicketsRouteRequiresBearerToken() = testApplication {
         application { testModule() }
-        val response = client.get("/tickets")
+
+        val unauthorized = client.get("/tickets")
+        assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
+
+        val response = client.get("/tickets") {
+            bearer(client.accessToken())
+        }
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("SD-1001"))
         assertTrue(response.bodyAsText().contains("waitingOn"))
     }
 
     @Test
-    fun testDashboardRoute() = testApplication {
+    fun testDashboardRouteRequiresBearerToken() = testApplication {
         application { testModule() }
+
+        val unauthorized = client.get("/admin/dashboard")
+        assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
+
         val response = client.get("/admin/dashboard") {
-            asAdmin()
+            bearer(client.accessToken())
         }
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("openTickets"))
@@ -75,13 +99,15 @@ class ApplicationTest {
         val body = response.bodyAsText()
         assertTrue(body.contains("admin@requenadesk.dev"))
         assertTrue(body.contains("refreshToken"))
+        assertTrue(body.contains("accessToken"))
     }
 
     @Test
     fun testClientsRouteIncludesNewFields() = testApplication {
         application { testModule() }
+
         val response = client.get("/admin/clients") {
-            asAdmin()
+            bearer(client.accessToken())
         }
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("productName"))
@@ -91,14 +117,15 @@ class ApplicationTest {
     @Test
     fun testDeleteTaskRemovesTaskFromList() = testApplication {
         application { testModule() }
+        val token = client.accessToken()
 
         val deleteResponse = client.delete("/admin/tasks/task-1") {
-            asAdmin()
+            bearer(token)
         }
         assertEquals(HttpStatusCode.OK, deleteResponse.status)
 
         val tasksResponse = client.get("/admin/tasks") {
-            asAdmin()
+            bearer(token)
         }
         assertEquals(HttpStatusCode.OK, tasksResponse.status)
         val body = tasksResponse.bodyAsText()
@@ -111,7 +138,7 @@ class ApplicationTest {
         application { testModule() }
 
         val response = client.delete("/admin/clients/client-1") {
-            asAdmin()
+            bearer(client.accessToken())
         }
 
         assertEquals(HttpStatusCode.Conflict, response.status)
@@ -122,7 +149,9 @@ class ApplicationTest {
     fun testDeleteLabelReturnsConflictWhenLabelIsInUse() = testApplication {
         application { testModule() }
 
-        val response = client.delete("/admin/labels/label-1")
+        val response = client.delete("/admin/labels/label-1") {
+            bearer(client.accessToken())
+        }
 
         assertEquals(HttpStatusCode.Conflict, response.status)
         assertTrue(response.bodyAsText().contains("cannot be deleted"))
@@ -133,7 +162,7 @@ class ApplicationTest {
         application { testModule() }
 
         val response = client.delete("/admin/tasks/task-missing") {
-            asAdmin()
+            bearer(client.accessToken())
         }
 
         assertEquals(HttpStatusCode.NotFound, response.status)
@@ -143,32 +172,41 @@ class ApplicationTest {
     @Test
     fun testCreateAndDeleteFreeLabel() = testApplication {
         application { testModule() }
+        val partnerToken = client.accessToken(
+            email = "admin2@requenadesk.dev",
+            password = "Admin2Sanchez",
+        )
 
         val createResponse = client.post("/admin/labels") {
+            bearer(partnerToken)
             contentType(ContentType.Application.Json)
-            setBody("""{"ownerAdminId":"user-admin-2","name":"Backlog","colorHex":"#445566"}""")
+            setBody("""{"ownerAdminId":"user-admin","name":"Backlog","colorHex":"#445566"}""")
         }
         assertEquals(HttpStatusCode.Created, createResponse.status)
         val createdBody = createResponse.bodyAsText()
         assertTrue(createdBody.contains("Backlog"))
         assertTrue(createdBody.contains("\"ownerAdminId\":\"user-admin-2\""))
 
-        val idRegex = """"id":"([^"]+)"""".toRegex()
-        val labelId = requireNotNull(idRegex.find(createdBody)?.groupValues?.get(1))
+        val labelId = extractField(createdBody, "id")
 
-        val deleteResponse = client.delete("/admin/labels/$labelId")
+        val deleteResponse = client.delete("/admin/labels/$labelId") {
+            bearer(partnerToken)
+        }
         assertEquals(HttpStatusCode.OK, deleteResponse.status)
 
-        val labelsResponse = client.get("/admin/labels")
+        val labelsResponse = client.get("/admin/labels") {
+            bearer(partnerToken)
+        }
         assertTrue(!labelsResponse.bodyAsText().contains(labelId))
     }
 
     @Test
     fun testCreateAndDeleteFreeClient() = testApplication {
         application { testModule() }
+        val token = client.accessToken()
 
         val createResponse = client.post("/admin/clients") {
-            asAdmin()
+            bearer(token)
             contentType(ContentType.Application.Json)
             setBody(
                 """
@@ -186,16 +224,15 @@ class ApplicationTest {
         }
         assertEquals(HttpStatusCode.Created, createResponse.status)
         val createdBody = createResponse.bodyAsText()
-        val idRegex = """"id":"([^"]+)"""".toRegex()
-        val clientId = requireNotNull(idRegex.find(createdBody)?.groupValues?.get(1))
+        val clientId = extractField(createdBody, "id")
 
         val deleteResponse = client.delete("/admin/clients/$clientId") {
-            asAdmin()
+            bearer(token)
         }
         assertEquals(HttpStatusCode.OK, deleteResponse.status)
 
         val clientsResponse = client.get("/admin/clients") {
-            asAdmin()
+            bearer(token)
         }
         assertTrue(!clientsResponse.bodyAsText().contains(clientId))
     }
@@ -206,7 +243,7 @@ class ApplicationTest {
         val futureDate = LocalDate.now().plusDays(2).toString()
 
         val response = client.post("/admin/tasks") {
-            asAdmin()
+            bearer(client.accessToken())
             contentType(ContentType.Application.Json)
             setBody(
                 """
@@ -230,13 +267,13 @@ class ApplicationTest {
         val pastDate = LocalDate.now().minusDays(1).toString()
 
         val response = client.post("/admin/time-logs") {
-            asAdmin()
+            bearer(client.accessToken())
             contentType(ContentType.Application.Json)
             setBody(
                 """
                 {
                   "taskId":"task-1",
-                  "authorId":"user-admin",
+                  "authorId":"another-user",
                   "workDate":"$pastDate",
                   "minutes":15,
                   "seconds":900,
@@ -256,7 +293,7 @@ class ApplicationTest {
         application { testModule() }
 
         val response = client.patch("/admin/clients/client-missing") {
-            asAdmin()
+            bearer(client.accessToken())
             contentType(ContentType.Application.Json)
             setBody("""{"companyName":"Renamed"}""")
         }
@@ -266,104 +303,62 @@ class ApplicationTest {
     }
 
     @Test
-    fun testAdminReadRoutesRequireOwnerHeader() = testApplication {
+    fun testProtectedRoutesRequireBearerToken() = testApplication {
         application { testModule() }
 
         val clientsResponse = client.get("/admin/clients")
         val tasksResponse = client.get("/admin/tasks")
         val timeLogsResponse = client.get("/admin/time-logs")
         val dashboardResponse = client.get("/admin/dashboard")
+        val labelsResponse = client.get("/admin/labels")
+        val attachmentsResponse = client.get("/attachments/attachment-1")
+        val devicesResponse = client.post("/devices/register") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-admin","token":"device-token","platform":"ANDROID"}""")
+        }
 
-        assertEquals(HttpStatusCode.BadRequest, clientsResponse.status)
-        assertEquals(HttpStatusCode.BadRequest, tasksResponse.status)
-        assertEquals(HttpStatusCode.BadRequest, timeLogsResponse.status)
-        assertEquals(HttpStatusCode.BadRequest, dashboardResponse.status)
-        assertTrue(clientsResponse.bodyAsText().contains(ADMIN_USER_ID_HEADER))
+        assertEquals(HttpStatusCode.Unauthorized, clientsResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, tasksResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, timeLogsResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, dashboardResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, labelsResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, attachmentsResponse.status)
+        assertEquals(HttpStatusCode.Unauthorized, devicesResponse.status)
+        assertTrue(clientsResponse.bodyAsText().contains("bearer token"))
     }
 
     @Test
-    fun testAdminWriteRoutesRequireOwnerHeader() = testApplication {
+    fun testAdminRoutesFilterByAuthenticatedAdmin() = testApplication {
         application { testModule() }
-        val futureDate = LocalDate.now().plusDays(1).toString()
-
-        val createClientResponse = client.post("/admin/clients") {
-            contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "companyName":"Headerless Client",
-                  "productName":"Headerless Product",
-                  "contactName":"Headerless Contact",
-                  "email":"headerless@example.com",
-                  "accountStatus":"ACTIVE",
-                  "serviceTier":"STANDARD",
-                  "preferredContactChannel":"TICKET"
-                }
-                """.trimIndent(),
-            )
-        }
-        val createTaskResponse = client.post("/admin/tasks") {
-            contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "title":"Headerless Task",
-                  "description":"Debe fallar sin owner",
-                  "labelId":"label-1",
-                  "dueDate":"$futureDate"
-                }
-                """.trimIndent(),
-            )
-        }
-        val createTimeLogResponse = client.post("/admin/time-logs") {
-            contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "taskId":"task-1",
-                  "authorId":"user-admin",
-                  "workDate":"${LocalDate.now()}",
-                  "minutes":15,
-                  "seconds":900,
-                  "note":"Debe fallar sin owner",
-                  "billable":true
-                }
-                """.trimIndent(),
-            )
-        }
-
-        assertEquals(HttpStatusCode.BadRequest, createClientResponse.status)
-        assertEquals(HttpStatusCode.BadRequest, createTaskResponse.status)
-        assertEquals(HttpStatusCode.BadRequest, createTimeLogResponse.status)
-    }
-
-    @Test
-    fun testAdminRoutesFilterByOwnerHeader() = testApplication {
-        application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(
+            email = "admin2@requenadesk.dev",
+            password = "Admin2Sanchez",
+        )
 
         val adminClients = client.get("/admin/clients") {
-            asAdmin("user-admin")
+            bearer(adminToken)
         }.bodyAsText()
         val partnerClients = client.get("/admin/clients") {
-            asAdmin("user-admin-2")
+            bearer(partnerToken)
         }.bodyAsText()
         val adminTasks = client.get("/admin/tasks") {
-            asAdmin("user-admin")
+            bearer(adminToken)
         }.bodyAsText()
         val partnerTasks = client.get("/admin/tasks") {
-            asAdmin("user-admin-2")
+            bearer(partnerToken)
         }.bodyAsText()
         val adminLogs = client.get("/admin/time-logs") {
-            asAdmin("user-admin")
+            bearer(adminToken)
         }.bodyAsText()
         val partnerLogs = client.get("/admin/time-logs") {
-            asAdmin("user-admin-2")
+            bearer(partnerToken)
         }.bodyAsText()
         val adminDashboard = client.get("/admin/dashboard") {
-            asAdmin("user-admin")
+            bearer(adminToken)
         }.bodyAsText()
         val partnerDashboard = client.get("/admin/dashboard") {
-            asAdmin("user-admin-2")
+            bearer(partnerToken)
         }.bodyAsText()
 
         assertTrue(adminClients.contains("client-1"))
@@ -392,34 +387,84 @@ class ApplicationTest {
     }
 
     @Test
-    fun testTimeLogsRouteIncludesOwnerAdminId() = testApplication {
+    fun testTimeLogsRouteUsesAuthenticatedAuthor() = testApplication {
         application { testModule() }
+        val token = client.accessToken()
 
-        val response = client.get("/admin/time-logs") {
-            asAdmin()
+        val response = client.post("/admin/time-logs") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "taskId":"task-1",
+                  "authorId":"spoofed-user",
+                  "workDate":"${LocalDate.now()}",
+                  "minutes":15,
+                  "seconds":900,
+                  "note":"Tiempo real",
+                  "billable":true
+                }
+                """.trimIndent(),
+            )
         }
 
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(response.bodyAsText().contains("\"ownerAdminId\":\"user-admin\""))
+        assertEquals(HttpStatusCode.Created, response.status)
+        assertTrue(response.bodyAsText().contains("\"authorId\":\"user-admin\""))
     }
 
     @Test
-    fun testLabelsRouteDoesNotFilterByOwnerHeader() = testApplication {
+    fun testLabelsRouteFiltersByAuthenticatedAdmin() = testApplication {
         application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(
+            email = "admin2@requenadesk.dev",
+            password = "Admin2Sanchez",
+        )
 
         val adminResponse = client.get("/admin/labels") {
-            asAdmin("user-admin")
+            bearer(adminToken)
         }
         val partnerResponse = client.get("/admin/labels") {
-            asAdmin("user-admin-2")
+            bearer(partnerToken)
         }
 
         assertEquals(HttpStatusCode.OK, adminResponse.status)
         assertEquals(HttpStatusCode.OK, partnerResponse.status)
-        assertTrue(adminResponse.bodyAsText().contains("\"id\":\"label-2\""))
-        assertTrue(adminResponse.bodyAsText().contains("\"ownerAdminId\":\"user-admin-2\""))
-        assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-1\""))
+        assertTrue(adminResponse.bodyAsText().contains("\"id\":\"label-1\""))
+        assertTrue(!adminResponse.bodyAsText().contains("\"id\":\"label-2\""))
         assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-2\""))
+        assertTrue(!partnerResponse.bodyAsText().contains("\"id\":\"label-1\""))
     }
 
+    @Test
+    fun testRefreshRouteReturnsNewAccessToken() = testApplication {
+        application { testModule() }
+
+        val loginResponse = client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"admin@requenadesk.dev","password":"Admin1requena"}""")
+        }
+        val refreshToken = extractField(loginResponse.bodyAsText(), "refreshToken")
+
+        val refreshResponse = client.post("/auth/refresh") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"refreshToken":"$refreshToken"}""")
+        }
+
+        assertEquals(HttpStatusCode.OK, refreshResponse.status)
+        val refreshedBody = refreshResponse.bodyAsText()
+        assertTrue(extractField(refreshedBody, "accessToken").isNotBlank())
+        assertTrue(extractField(refreshedBody, "refreshToken").isNotBlank())
+    }
+
+    private fun extractField(body: String, fieldName: String): String =
+        requireNotNull(Regex(""""$fieldName":"([^"]+)"""").find(body)?.groupValues?.get(1)) {
+            "Missing field $fieldName in response: $body"
+        }
+
+    private companion object {
+        const val TEST_AUTH_SECRET_KEY = "SUPPORTDESK_AUTH_SECRET"
+        const val TEST_AUTH_SECRET = "supportdesk-test-secret-1234567890"
+    }
 }

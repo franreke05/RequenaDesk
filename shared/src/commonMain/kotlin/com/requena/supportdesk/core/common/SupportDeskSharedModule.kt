@@ -1,6 +1,7 @@
 package com.requena.supportdesk.core.common
 
 import com.requena.supportdesk.core.network.configuredSupportDeskHttpClient
+import com.requena.supportdesk.core.network.SupportDeskSessionManager
 import com.requena.supportdesk.features.auth.data.datasource.RemoteAuthDataSource
 import com.requena.supportdesk.features.auth.data.repository.AuthRepositoryImpl
 import com.requena.supportdesk.features.auth.data.session.AuthSessionStore
@@ -47,10 +48,11 @@ import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewMo
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
 object SupportDeskSharedModule {
-    private val httpClient = configuredSupportDeskHttpClient()
+    private val sessionManager = SupportDeskSessionManager(AuthSessionStore())
+    private val httpClient = configuredSupportDeskHttpClient(sessionManager)
     private val authRepository = AuthRepositoryImpl(
         dataSource = RemoteAuthDataSource(httpClient),
-        sessionStore = AuthSessionStore(),
+        sessionManager = sessionManager,
     )
     private val ticketsRepository = TicketsRepositoryImpl(RemoteTicketsDataSource(httpClient))
     private val clientsRepository = ClientsRepositoryImpl(RemoteClientsDataSource(httpClient))

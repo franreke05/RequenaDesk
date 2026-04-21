@@ -18,21 +18,21 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import java.time.Instant
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
-import java.util.UUID
 
 class SupportDeskService(
     private val repository: SupportDeskRepository,
+    private val tokenService: SupportDeskTokenService,
 ) {
     fun login(email: String, password: String): ServerSession? {
         val identity = repository.authenticate(email = email, password = password) ?: return null
-        val refreshToken = UUID.randomUUID().toString()
+        val refreshToken = tokenService.createRefreshToken()
         repository.storeRefreshToken(
             userId = identity.userId,
             refreshToken = refreshToken,
-            expiresAt = Instant.now().plus(30, ChronoUnit.DAYS),
+            expiresAt = tokenService.refreshTokenExpiresAt(Instant.now()),
         )
         return ServerSession(
             userId = identity.userId,
@@ -40,18 +40,18 @@ class SupportDeskService(
             email = identity.email,
             role = identity.role,
             clientId = identity.clientId,
-            accessToken = UUID.randomUUID().toString(),
+            accessToken = tokenService.createAccessToken(identity),
             refreshToken = refreshToken,
         )
     }
 
     fun refresh(request: RefreshSessionRequest): ServerSession? {
         if (request.refreshToken.isBlank()) return null
-        val replacementToken = UUID.randomUUID().toString()
+        val replacementToken = tokenService.createRefreshToken()
         val identity = repository.rotateRefreshToken(
             refreshToken = request.refreshToken,
             replacementRefreshToken = replacementToken,
-            expiresAt = Instant.now().plus(30, ChronoUnit.DAYS),
+            expiresAt = tokenService.refreshTokenExpiresAt(Instant.now()),
         ) ?: return null
         return ServerSession(
             userId = identity.userId,
@@ -59,7 +59,7 @@ class SupportDeskService(
             email = identity.email,
             role = identity.role,
             clientId = identity.clientId,
-            accessToken = UUID.randomUUID().toString(),
+            accessToken = tokenService.createAccessToken(identity),
             refreshToken = replacementToken,
         )
     }
@@ -98,13 +98,15 @@ class SupportDeskService(
 
     fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
 
-    fun taskLabels() = repository.getTaskLabels()
+    fun taskLabels(ownerAdminId: String? = null) = repository.getTaskLabels(ownerAdminId)
 
-    fun createdTaskLabel(request: CreateTaskLabelRequest) = repository.createTaskLabel(request)
+    fun createdTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null) =
+        repository.createTaskLabel(request, ownerAdminId)
 
-    fun updatedTaskLabel(labelId: String, request: UpdateTaskLabelRequest) = repository.updateTaskLabel(labelId, request)
+    fun updatedTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null) =
+        repository.updateTaskLabel(labelId, request, ownerAdminId)
 
-    fun deletedTaskLabel(labelId: String) = repository.deleteTaskLabel(labelId)
+    fun deletedTaskLabel(labelId: String, ownerAdminId: String? = null) = repository.deleteTaskLabel(labelId, ownerAdminId)
 
     fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
         repository.getTasks(clientId, labelId, ownerAdminId)

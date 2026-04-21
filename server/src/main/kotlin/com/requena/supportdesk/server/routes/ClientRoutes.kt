@@ -3,11 +3,12 @@ package com.requena.supportdesk.server.routes
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.clientJson
 import com.requena.supportdesk.server.utils.clientsJson
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.messageJson
-import com.requena.supportdesk.server.utils.requireAdminOwnerId
+import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -19,14 +20,14 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-fun Route.clientRoutes(service: SupportDeskService) {
+fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/clients") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@get
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
             call.respondJson(body = successResponse("/admin/clients", clientsJson(service.clients(ownerAdminId))))
         }
         post("/clients") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@post
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
             val request = call.receiveOrDefault(CreateClientRequest())
             if (
                 request.companyName.isBlank() ||
@@ -45,7 +46,7 @@ fun Route.clientRoutes(service: SupportDeskService) {
             )
         }
         patch("/clients/{clientId}") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@patch
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
             val clientId = call.parameters["clientId"].orEmpty()
             val request = call.receiveOrDefault(UpdateClientRequest())
             if (clientId.isBlank()) {
@@ -66,7 +67,7 @@ fun Route.clientRoutes(service: SupportDeskService) {
             )
         }
         delete("/clients/{clientId}") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@delete
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
             val clientId = call.parameters["clientId"].orEmpty()
             if (clientId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))

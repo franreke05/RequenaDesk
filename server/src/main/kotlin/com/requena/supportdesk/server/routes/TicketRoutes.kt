@@ -6,7 +6,9 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
+import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -21,17 +23,20 @@ import io.ktor.server.routing.route
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-fun Route.ticketRoutes(service: SupportDeskService) {
+fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/tickets") {
         get {
+            call.requireAdminIdentity(tokenService) ?: return@get
             call.respondJson(body = successResponse("/tickets", ticketsJson(service.tickets())))
         }
         get("/{id}") {
+            call.requireAdminIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
             val ticket = service.ticket(id) ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             call.respondJson(body = successResponse("/tickets/$id", ticketJson(ticket)))
         }
         post {
+            call.requireAdminIdentity(tokenService) ?: return@post
             val request = call.receiveOrDefault(CreateTicketRequest())
             if (
                 request.clientId.isBlank() ||
@@ -46,8 +51,9 @@ fun Route.ticketRoutes(service: SupportDeskService) {
             call.respondJson(HttpStatusCode.Created, successResponse("/tickets", ticketJson(service.createdTicket(request))))
         }
         post("/{id}/messages") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@post
             val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = call.receiveOrDefault(CreateTicketMessageRequest())
+            val request = call.receiveOrDefault(CreateTicketMessageRequest()).copy(authorId = identity.userId)
             if (request.authorId.isBlank() || request.body.isBlank()) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket message payload"))
             }
@@ -65,6 +71,7 @@ fun Route.ticketRoutes(service: SupportDeskService) {
             )
         }
         patch("/{id}/status") {
+            call.requireAdminIdentity(tokenService) ?: return@patch
             val id = call.parameters["id"] ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
             val request = call.receiveOrDefault(UpdateTicketStatusRequest())
             if (request.status !in allowedStatuses) {
@@ -83,6 +90,7 @@ fun Route.ticketRoutes(service: SupportDeskService) {
             )
         }
         patch("/{id}/priority") {
+            call.requireAdminIdentity(tokenService) ?: return@patch
             val id = call.parameters["id"] ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
             val request = call.receiveOrDefault(UpdateTicketPriorityRequest())
             if (request.priority !in allowedPriorities) {
@@ -101,8 +109,9 @@ fun Route.ticketRoutes(service: SupportDeskService) {
             )
         }
         post("/{id}/attachments") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@post
             val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = call.receiveOrDefault(UploadAttachmentRequest())
+            val request = call.receiveOrDefault(UploadAttachmentRequest()).copy(uploadedBy = identity.userId)
             if (
                 request.uploadedBy.isBlank() ||
                 request.fileName.isBlank() ||

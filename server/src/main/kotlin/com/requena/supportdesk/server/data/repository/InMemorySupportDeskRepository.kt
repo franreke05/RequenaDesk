@@ -31,6 +31,7 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
+import com.requena.supportdesk.server.security.PasswordHasher
 import java.time.Instant
 
 class InMemorySupportDeskRepository(
@@ -125,6 +126,7 @@ class InMemorySupportDeskRepository(
         "task-2" to "user-admin-2",
         "task-3" to "user-admin",
     )
+    private val refreshTokens = mutableMapOf<String, String>()
     private val timeLogs = mutableListOf(
         ServerTimeLogSnapshot(
             id = "time-log-1",
@@ -182,14 +184,19 @@ class InMemorySupportDeskRepository(
             )
         }
 
-    override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) = Unit
+    override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
+        refreshTokens[PasswordHasher.hash(refreshToken)] = userId
+    }
 
     override fun rotateRefreshToken(
         refreshToken: String,
         replacementRefreshToken: String,
         expiresAt: Instant,
-    ): ServerAuthIdentity? = adminAccounts.firstOrNull()?.let { account ->
-        ServerAuthIdentity(
+    ): ServerAuthIdentity? {
+        val userId = refreshTokens.remove(PasswordHasher.hash(refreshToken)) ?: return null
+        refreshTokens[PasswordHasher.hash(replacementRefreshToken)] = userId
+        val account = adminAccounts.firstOrNull { it.userId == userId } ?: return null
+        return ServerAuthIdentity(
             userId = account.userId,
             name = account.name,
             email = account.email,
@@ -197,7 +204,8 @@ class InMemorySupportDeskRepository(
         )
     }
 
-    override fun revokeRefreshToken(refreshToken: String): Boolean = true
+    override fun revokeRefreshToken(refreshToken: String): Boolean =
+        refreshTokens.remove(PasswordHasher.hash(refreshToken)) != null
 
     override fun getTickets(): List<ServerTicketSnapshot> = dataSource.tickets().map(SupportDeskMapper::ticket)
 
@@ -293,14 +301,16 @@ class InMemorySupportDeskRepository(
         }
     }
 
-    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = labels.map { label ->
-        label.copy(tasksCount = tasks.count { it.labelId == label.id })
-    }
+    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = labels
+        .filter { ownerAdminId == null || it.ownerAdminId == ownerAdminId }
+        .map { label ->
+            label.copy(tasksCount = tasks.count { it.labelId == label.id && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) })
+        }
 
-    override fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot {
+    override fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String?): ServerTaskLabelSnapshot {
         val label = ServerTaskLabelSnapshot(
             id = "label-${labels.size + 1}",
-            ownerAdminId = request.ownerAdminId.ifBlank { "user-admin" },
+            ownerAdminId = ownerAdminId ?: request.ownerAdminId.ifBlank { "user-admin" },
             name = request.name,
             colorHex = request.colorHex,
             tasksCount = 0,
@@ -309,8 +319,8 @@ class InMemorySupportDeskRepository(
         return label
     }
 
-    override fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest): ServerTaskLabelSnapshot {
-        val index = requireLabelIndex(labelId)
+    override fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String?): ServerTaskLabelSnapshot {
+        val index = requireLabelIndex(labelId, ownerAdminId)
         val current = labels[index]
         val updated = current.copy(
             name = request.name ?: current.name,
@@ -321,12 +331,12 @@ class InMemorySupportDeskRepository(
         return updated
     }
 
-    override fun deleteTaskLabel(labelId: String) {
-        requireLabelIndex(labelId)
-        if (tasks.any { it.labelId == labelId }) {
+    override fun deleteTaskLabel(labelId: String, ownerAdminId: String?) {
+        requireLabelIndex(labelId, ownerAdminId)
+        if (tasks.any { it.labelId == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) }) {
             throw ServerConflictException("Label is in use by tasks and cannot be deleted")
         }
-        labels.removeAll { it.id == labelId }
+        labels.removeAll { it.id == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) }
     }
 
     override fun getTasks(clientId: String?, labelId: String?, ownerAdminId: String?): List<ServerTaskSnapshot> =
@@ -338,7 +348,7 @@ class InMemorySupportDeskRepository(
 
     override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
-        val label = labels.firstOrNull { it.id == request.labelId }
+        val label = labels.firstOrNull { it.id == request.labelId && it.ownerAdminId == resolvedOwnerAdminId }
             ?: throw ServerNotFoundException("Label not found")
         val client = request.clientId?.let { clientId ->
             clients.firstOrNull { it.id == clientId }?.also {
@@ -380,7 +390,7 @@ class InMemorySupportDeskRepository(
                 requireClientOwnership(clientId, ownerAdminId)
             } ?: throw ServerNotFoundException("Client not found")
         }
-        val label = labels.firstOrNull { it.id == (request.labelId ?: current.labelId) }
+        val label = labels.firstOrNull { it.id == (request.labelId ?: current.labelId) && it.ownerAdminId == current.ownerAdminId }
             ?: throw ServerNotFoundException("Label not found")
         val updated = current.copy(
             title = request.title ?: current.title,
@@ -479,7 +489,9 @@ class InMemorySupportDeskRepository(
     }
         .takeIf { it >= 0 } ?: throw ServerNotFoundException("Client not found")
 
-    private fun requireLabelIndex(labelId: String): Int = labels.indexOfFirst { it.id == labelId }
+    private fun requireLabelIndex(labelId: String, ownerAdminId: String? = null): Int = labels.indexOfFirst {
+        it.id == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId)
+    }
         .takeIf { it >= 0 } ?: throw ServerNotFoundException("Label not found")
 
     private fun requireTaskIndex(taskId: String, ownerAdminId: String? = null): Int = tasks.indexOfFirst {

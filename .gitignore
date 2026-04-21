@@ -22,3 +22,20 @@ captures
 node_modules/
 
 .ai
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+supportdesk.properties
+**/supportdesk.properties
+
+# Runtime logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.jvm.args
+Caddyfile

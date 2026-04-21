@@ -72,6 +72,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
+        val refreshTokenHash = PasswordHasher.hash(refreshToken)
         dataSource.withConnection { connection ->
             connection.prepareStatement(
                 """
@@ -80,7 +81,7 @@ class PostgresSupportDeskRepository(
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, userId)
-                statement.setString(2, refreshToken)
+                statement.setString(2, refreshTokenHash)
                 statement.bindInstant(3, expiresAt)
                 statement.executeUpdate()
             }
@@ -92,6 +93,8 @@ class PostgresSupportDeskRepository(
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? = dataSource.withConnection { connection ->
+        val refreshTokenHash = PasswordHasher.hash(refreshToken)
+        val replacementRefreshTokenHash = PasswordHasher.hash(replacementRefreshToken)
         connection.autoCommit = false
         try {
             val identity = connection.prepareStatement(
@@ -106,7 +109,7 @@ class PostgresSupportDeskRepository(
                 LIMIT 1
                 """.trimIndent(),
             ).use { statement ->
-                statement.setString(1, refreshToken)
+                statement.setString(1, refreshTokenHash)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) {
                         ServerAuthIdentity(
@@ -128,7 +131,7 @@ class PostgresSupportDeskRepository(
             connection.prepareStatement(
                 "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
             ).use { statement ->
-                statement.setString(1, refreshToken)
+                statement.setString(1, refreshTokenHash)
                 statement.executeUpdate()
             }
 
@@ -139,7 +142,7 @@ class PostgresSupportDeskRepository(
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, identity.userId)
-                statement.setString(2, replacementRefreshToken)
+                statement.setString(2, replacementRefreshTokenHash)
                 statement.bindInstant(3, expiresAt)
                 statement.executeUpdate()
             }
@@ -155,10 +158,11 @@ class PostgresSupportDeskRepository(
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean = dataSource.withConnection { connection ->
+        val refreshTokenHash = PasswordHasher.hash(refreshToken)
         connection.prepareStatement(
             "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
         ).use { statement ->
-            statement.setString(1, refreshToken)
+            statement.setString(1, refreshTokenHash)
             statement.executeUpdate() > 0
         }
     }
@@ -540,16 +544,22 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTaskLabels(): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
+    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT tl.id::text AS id, tl.owner_admin_id::text AS owner_admin_id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
             FROM task_labels tl
             LEFT JOIN tasks t ON t.label_id = tl.id
+                             AND (? IS NULL OR t.owner_admin_id::text = ?)
+            WHERE (? IS NULL OR tl.owner_admin_id::text = ?)
             GROUP BY tl.id, tl.owner_admin_id, tl.name, tl.color_hex
             ORDER BY tl.name ASC
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
+            statement.setString(4, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -568,8 +578,13 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
-        val resolvedOwnerAdminId = request.ownerAdminId.takeIf { it.isNotBlank() } ?: DEFAULT_ADMIN_OWNER_ID
+    override fun createTaskLabel(
+        request: CreateTaskLabelRequest,
+        ownerAdminId: String?,
+    ): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+        val resolvedOwnerAdminId = ownerAdminId
+            ?: request.ownerAdminId.takeIf { it.isNotBlank() }
+            ?: DEFAULT_ADMIN_OWNER_ID
         connection.prepareStatement(
             """
             INSERT INTO task_labels (owner_admin_id, name, color_hex)
@@ -593,19 +608,27 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+    override fun updateTaskLabel(
+        labelId: String,
+        request: UpdateTaskLabelRequest,
+        ownerAdminId: String?,
+    ): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
+        requireLabelExists(connection, labelId, ownerAdminId)
         connection.prepareStatement(
             """
             UPDATE task_labels
             SET name = COALESCE(NULLIF(?, ''), name),
                 color_hex = COALESCE(NULLIF(?, ''), color_hex)
             WHERE id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
             RETURNING id::text, owner_admin_id::text, name, color_hex
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.name)
             statement.setString(2, request.colorHex?.let(::normalizeHex))
             statement.setString(3, labelId)
+            statement.setString(4, ownerAdminId)
+            statement.setString(5, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Label not found")
@@ -615,22 +638,24 @@ class PostgresSupportDeskRepository(
                     ownerAdminId = resultSet.getString("owner_admin_id"),
                     name = resultSet.getString("name"),
                     colorHex = resultSet.getString("color_hex"),
-                    tasksCount = countTasksForLabel(connection, labelId),
+                    tasksCount = countTasksForLabel(connection, labelId, ownerAdminId),
                 )
             }
         }
     }
 
-    override fun deleteTaskLabel(labelId: String) {
+    override fun deleteTaskLabel(labelId: String, ownerAdminId: String?) {
         dataSource.withConnection { connection ->
-            requireLabelExists(connection, labelId)
-            if (hasTasksForLabel(connection, labelId)) {
+            requireLabelExists(connection, labelId, ownerAdminId)
+            if (hasTasksForLabel(connection, labelId, ownerAdminId)) {
                 throw ServerConflictException("Label is in use by tasks and cannot be deleted")
             }
             connection.prepareStatement(
-                "DELETE FROM task_labels WHERE id::text = ?",
+                "DELETE FROM task_labels WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
             ).use { statement ->
                 statement.setString(1, labelId)
+                statement.setString(2, ownerAdminId)
+                statement.setString(3, ownerAdminId)
                 statement.executeUpdate()
             }
         }
@@ -681,7 +706,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
-        requireLabelExists(connection, request.labelId)
+        requireLabelExists(connection, request.labelId, ownerAdminId)
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOwnerAdminId) }
         connection.prepareStatement(
@@ -716,7 +741,7 @@ class PostgresSupportDeskRepository(
 
     override fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
         requireTaskExists(connection, taskId, ownerAdminId)
-        request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it) }
+        request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it, ownerAdminId) }
         request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, ownerAdminId) }
         connection.prepareStatement(
             """
@@ -1290,8 +1315,8 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    private fun requireLabelExists(connection: Connection, labelId: String) {
-        if (!recordExists(connection, "task_labels", labelId)) {
+    private fun requireLabelExists(connection: Connection, labelId: String, ownerAdminId: String? = null) {
+        if (!recordExists(connection, "task_labels", labelId, ownerAdminId)) {
             throw ServerNotFoundException("Label not found")
         }
     }
@@ -1326,19 +1351,28 @@ class PostgresSupportDeskRepository(
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
-    private fun hasTasksForLabel(connection: Connection, labelId: String): Boolean =
+    private fun hasTasksForLabel(connection: Connection, labelId: String, ownerAdminId: String? = null): Boolean =
         connection.prepareStatement(
-            "SELECT 1 FROM tasks WHERE label_id::text = ? LIMIT 1",
+            "SELECT 1 FROM tasks WHERE label_id::text = ? AND (? IS NULL OR owner_admin_id::text = ?) LIMIT 1",
         ).use { statement ->
             statement.setString(1, labelId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
-    private fun countTasksForLabel(connection: Connection, labelId: String): Int =
+    private fun countTasksForLabel(connection: Connection, labelId: String, ownerAdminId: String? = null): Int =
         connection.prepareStatement(
-            "SELECT COUNT(*)::integer AS tasks_count FROM tasks WHERE label_id::text = ?",
+            """
+            SELECT COUNT(*)::integer AS tasks_count
+            FROM tasks
+            WHERE label_id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
+            """.trimIndent(),
         ).use { statement ->
             statement.setString(1, labelId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("tasks_count")

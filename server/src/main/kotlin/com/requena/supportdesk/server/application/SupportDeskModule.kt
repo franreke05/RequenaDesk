@@ -17,6 +17,7 @@ import com.requena.supportdesk.server.routes.labelRoutes
 import com.requena.supportdesk.server.routes.taskRoutes
 import com.requena.supportdesk.server.routes.ticketRoutes
 import com.requena.supportdesk.server.routes.timeLogRoutes
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.server.application.Application
@@ -32,7 +33,11 @@ fun Application.configureSupportDeskModule(
     configureMonitoring()
 
     val environment = ServerEnvironment.load()
-    val service = SupportDeskService(repository = repositoryOverride ?: supportDeskRepository(environment))
+    val tokenService = SupportDeskTokenService(environment.auth)
+    val service = SupportDeskService(
+        repository = repositoryOverride ?: supportDeskRepository(environment),
+        tokenService = tokenService,
+    )
 
     routing {
         get("/") {
@@ -47,14 +52,14 @@ fun Application.configureSupportDeskModule(
             )
         }
         authRoutes(service)
-        ticketRoutes(service)
-        attachmentRoutes(service)
-        clientRoutes(service)
-        labelRoutes(service)
-        taskRoutes(service)
-        timeLogRoutes(service)
-        dashboardRoutes(service)
-        deviceRoutes(service)
+        ticketRoutes(service, tokenService)
+        attachmentRoutes(service, tokenService)
+        clientRoutes(service, tokenService)
+        labelRoutes(service, tokenService)
+        taskRoutes(service, tokenService)
+        timeLogRoutes(service, tokenService)
+        dashboardRoutes(service, tokenService)
+        deviceRoutes(service, tokenService)
     }
 }
 

@@ -43,10 +43,10 @@ interface SupportDeskRepository {
     fun createClient(request: CreateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
     fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
     fun deleteClient(clientId: String, ownerAdminId: String? = null)
-    fun getTaskLabels(): List<ServerTaskLabelSnapshot>
-    fun createTaskLabel(request: CreateTaskLabelRequest): ServerTaskLabelSnapshot
-    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest): ServerTaskLabelSnapshot
-    fun deleteTaskLabel(labelId: String)
+    fun getTaskLabels(ownerAdminId: String? = null): List<ServerTaskLabelSnapshot>
+    fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
+    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
+    fun deleteTaskLabel(labelId: String, ownerAdminId: String? = null)
     fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): List<ServerTaskSnapshot>
     fun createTask(request: CreateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
     fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot

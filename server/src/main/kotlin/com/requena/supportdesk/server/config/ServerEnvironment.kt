@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.config
 
+import com.requena.supportdesk.server.security.SecurityConfig
+import com.requena.supportdesk.server.security.ServerAuthSettings
 import java.net.URI
 
 data class DatabaseSettings(
@@ -10,6 +12,7 @@ data class DatabaseSettings(
 
 data class ServerEnvironment(
     val database: DatabaseSettings?,
+    val auth: ServerAuthSettings,
     val bootstrapDemoData: Boolean,
     val bootstrapAdminPassword: String,
     val bootstrapClientPassword: String,
@@ -17,13 +20,17 @@ data class ServerEnvironment(
     companion object {
         fun load(
             environment: Map<String, String> = System.getenv(),
-            properties: Map<String, String> = System.getProperties().stringPropertyNames().associateWith(System::getProperty),
+            properties: Map<String, String> = defaultServerProperties(),
         ): ServerEnvironment = ServerEnvironment(
             database = resolveDatabaseSettings(environment, properties),
+            auth = resolveAuthSettings(environment, properties),
             bootstrapDemoData = value("SUPPORTDESK_BOOTSTRAP_DEMO_DATA", environment, properties)?.toBooleanStrictOrNull() == true,
             bootstrapAdminPassword = value("SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD", environment, properties) ?: "Admin1234!",
             bootstrapClientPassword = value("SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD", environment, properties) ?: "Client1234!",
         )
+
+        private fun defaultServerProperties(): Map<String, String> =
+            loadServerProperties() + System.getProperties().stringPropertyNames().associateWith(System::getProperty)
 
         private fun resolveDatabaseSettings(
             environment: Map<String, String>,
@@ -55,6 +62,38 @@ data class ServerEnvironment(
             } else {
                 null
             }
+        }
+
+        private fun resolveAuthSettings(
+            environment: Map<String, String>,
+            properties: Map<String, String>,
+        ): ServerAuthSettings {
+            val secret = value(SecurityConfig.authSecretKey, environment, properties)
+                ?: value(SecurityConfig.legacyJwtSecretKey, environment, properties)
+                ?: error(
+                    "${SecurityConfig.authSecretKey} is required. Generate a long random secret before exposing the server to the internet.",
+                )
+
+            require(secret.length >= SecurityConfig.minimumSecretLength) {
+                "${SecurityConfig.authSecretKey} must contain at least ${SecurityConfig.minimumSecretLength} characters."
+            }
+
+            val accessTokenLifetimeMinutes = value(SecurityConfig.accessTokenLifetimeMinutesKey, environment, properties)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+                ?: SecurityConfig.defaultAccessTokenLifetimeMinutes
+            val refreshTokenLifetimeDays = value(SecurityConfig.refreshTokenLifetimeDaysKey, environment, properties)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+                ?: SecurityConfig.defaultRefreshTokenLifetimeDays
+
+            return ServerAuthSettings(
+                secret = secret,
+                issuer = value(SecurityConfig.authIssuerKey, environment, properties) ?: SecurityConfig.defaultIssuer,
+                audience = value(SecurityConfig.authAudienceKey, environment, properties) ?: SecurityConfig.defaultAudience,
+                accessTokenLifetimeMinutes = accessTokenLifetimeMinutes,
+                refreshTokenLifetimeDays = refreshTokenLifetimeDays,
+            )
         }
 
         private fun value(

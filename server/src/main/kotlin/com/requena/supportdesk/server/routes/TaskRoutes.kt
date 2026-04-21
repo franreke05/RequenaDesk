@@ -3,9 +3,10 @@ package com.requena.supportdesk.server.routes
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.messageJson
-import com.requena.supportdesk.server.utils.requireAdminOwnerId
+import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -19,10 +20,10 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-fun Route.taskRoutes(service: SupportDeskService) {
+fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/tasks") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@get
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
             val clientId = call.request.queryParameters["clientId"]
             val labelId = call.request.queryParameters["labelId"]
             call.respondJson(
@@ -30,7 +31,7 @@ fun Route.taskRoutes(service: SupportDeskService) {
             )
         }
         post("/tasks") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@post
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
             val request = call.receiveOrDefault(CreateTaskRequest())
             if (request.title.isBlank() || request.labelId.isBlank()) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task title and label are required"))
@@ -41,7 +42,7 @@ fun Route.taskRoutes(service: SupportDeskService) {
             )
         }
         patch("/tasks/{taskId}") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@patch
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
             val taskId = call.parameters["taskId"].orEmpty()
             if (taskId.isBlank()) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
@@ -52,7 +53,7 @@ fun Route.taskRoutes(service: SupportDeskService) {
             )
         }
         delete("/tasks/{taskId}") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@delete
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
             val taskId = call.parameters["taskId"].orEmpty()
             if (taskId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))

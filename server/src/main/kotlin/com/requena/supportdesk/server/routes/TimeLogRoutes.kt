@@ -2,8 +2,9 @@ package com.requena.supportdesk.server.routes
 
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
-import com.requena.supportdesk.server.utils.requireAdminOwnerId
+import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -15,10 +16,10 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-fun Route.timeLogRoutes(service: SupportDeskService) {
+fun Route.timeLogRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/time-logs") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@get
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
             val clientId = call.request.queryParameters["clientId"]
             val taskId = call.request.queryParameters["taskId"]
             call.respondJson(
@@ -26,8 +27,9 @@ fun Route.timeLogRoutes(service: SupportDeskService) {
             )
         }
         post("/time-logs") {
-            val ownerAdminId = call.requireAdminOwnerId() ?: return@post
-            val request = call.receiveOrDefault(CreateTimeLogRequest())
+            val identity = call.requireAdminIdentity(tokenService) ?: return@post
+            val ownerAdminId = identity.userId
+            val request = call.receiveOrDefault(CreateTimeLogRequest()).copy(authorId = identity.userId)
             val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
             if (request.taskId.isBlank() || request.authorId.isBlank() || request.workDate.isBlank() || resolvedSeconds <= 0) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task, author, date and time are required"))
