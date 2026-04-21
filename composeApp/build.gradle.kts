@@ -98,6 +98,7 @@ compose.desktop {
                 dirChooser = true
                 perUserInstall = true
                 menuGroup = "RequenaDesk"
+                iconFile.set(project.file("src/jvmMain/resources/icons/requenadesk-icon.ico"))
             }
         }
     }
