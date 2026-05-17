@@ -38,6 +38,7 @@ import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.NetworkLogPanel
 import com.requena.supportdesk.designsystem.components.navigation.AdminBottomBar
 import com.requena.supportdesk.designsystem.components.navigation.AdminNavigationRail
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
@@ -463,6 +464,8 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
         }
+
+        NetworkLogPanel(modifier = Modifier.fillMaxWidth())
     }
 }
 

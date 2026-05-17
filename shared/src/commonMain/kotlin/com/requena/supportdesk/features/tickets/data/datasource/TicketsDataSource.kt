@@ -3,6 +3,7 @@ package com.requena.supportdesk.features.tickets.data.datasource
 import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.network.jsonRequestBody
+import com.requena.supportdesk.core.network.NetworkLogger
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
@@ -36,10 +37,10 @@ class RemoteTicketsDataSource(
     override suspend fun getTickets(): List<TicketDto> {
         val url = "${supportDeskBaseUrl()}${ticketsPath()}"
         return try {
-            println("[DEBUG] GET $url")
+            NetworkLogger.addLog("[DEBUG] GET $url")
             httpClient.get(url).requireApiData()
         } catch (e: Exception) {
-            println("[ERROR] getTickets failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] getTickets failed: ${e.message} at $url")
             throw e
         }
     }
@@ -47,10 +48,10 @@ class RemoteTicketsDataSource(
     override suspend fun getTicket(id: String): TicketDto? {
         val url = "${supportDeskBaseUrl()}${ticketsPath()}/$id"
         return try {
-            println("[DEBUG] GET $url")
+            NetworkLogger.addLog("[DEBUG] GET $url")
             httpClient.get(url).requireApiData()
         } catch (e: Exception) {
-            println("[ERROR] getTicket($id) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] getTicket($id) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -63,7 +64,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireApiData()
         } catch (e: Exception) {
-            println("[ERROR] createTicket failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] createTicket failed: ${e.message} at $url")
             throw e
         }
     }
@@ -76,7 +77,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireSuccess()
         } catch (e: Exception) {
-            println("[ERROR] replyTicket($ticketId) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] replyTicket($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -89,7 +90,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireSuccess()
         } catch (e: Exception) {
-            println("[ERROR] changeStatus($ticketId) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] changeStatus($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -102,7 +103,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireSuccess()
         } catch (e: Exception) {
-            println("[ERROR] changePriority($ticketId) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] changePriority($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -115,7 +116,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireApiData()
         } catch (e: Exception) {
-            println("[ERROR] acceptClose($ticketId) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] acceptClose($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -128,7 +129,7 @@ class RemoteTicketsDataSource(
                 setBody(jsonRequestBody(request))
             }.requireApiData()
         } catch (e: Exception) {
-            println("[ERROR] rateTicket($ticketId) failed: ${e.message} at $url")
+            NetworkLogger.addLog("[ERROR] rateTicket($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
