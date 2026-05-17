@@ -76,6 +76,7 @@ fun UserRole.displayName(): String = when (this) {
 fun AppDestination.displayTitle(): String = when (this) {
     AppDestination.Login -> "Acceso Admin"
     AppDestination.Dashboard -> "Dashboard"
+    AppDestination.Boards -> "Tableros Kanban"
     AppDestination.Tasks -> "Tareas"
     AppDestination.Labels -> "Etiquetas"
     AppDestination.Tickets -> "Agenda"
@@ -88,6 +89,7 @@ fun AppDestination.displayTitle(): String = when (this) {
 fun AppDestination.displaySubtitle(): String = when (this) {
     AppDestination.Login -> "Workspace solo admin para operar clientes."
     AppDestination.Dashboard -> "Tiempo central, cliente activo y ruedas mensuales."
+    AppDestination.Boards -> "Vista visual tipo Kanban para organizar y seguir tickets."
     AppDestination.Tasks -> "Trabajo operativo con cliente opcional y etiquetas."
     AppDestination.Labels -> "Colores y grupos para ordenar tareas."
     AppDestination.Tickets -> "Ruta legacy retirada de la navegacion principal."

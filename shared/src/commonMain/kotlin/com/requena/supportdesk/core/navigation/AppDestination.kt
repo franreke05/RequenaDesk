@@ -38,4 +38,8 @@ sealed interface AppDestination {
     object Notifications : AppDestination {
         override val route: String = "notifications"
     }
+
+    object Boards : AppDestination {
+        override val route: String = "boards"
+    }
 }

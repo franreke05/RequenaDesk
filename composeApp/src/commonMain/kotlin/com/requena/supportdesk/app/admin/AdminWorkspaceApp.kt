@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.app.admin.screens.AdminBoardsScreen
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
 import com.requena.supportdesk.app.admin.screens.AdminCreateTicketScreen
 import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
@@ -77,6 +78,11 @@ fun AdminWorkspaceApp() {
         module.ticketsViewModel.state.collectAsState().value
     } else {
         TicketsUiState()
+    }
+    val boardsState = if (isAdmin) {
+        module.boardsViewModel.state.collectAsState().value
+    } else {
+        com.requena.supportdesk.features.boards.presentation.state.BoardsUiState()
     }
 
     DisposableEffect(module) {
@@ -182,6 +188,11 @@ fun AdminWorkspaceApp() {
                         supportingText = "Tiempo, calendario y ruedas",
                     ),
                     NavigationItemSpec(
+                        key = AppDestination.Boards,
+                        title = "Tableros",
+                        supportingText = "Vista Kanban de tickets",
+                    ),
+                    NavigationItemSpec(
                         key = AppDestination.Clients,
                         title = "Clientes",
                         supportingText = "Directorio y ficha rápida",
@@ -233,6 +244,7 @@ fun AdminWorkspaceApp() {
                         clientsState = clientsState,
                         tasksState = tasksState,
                         ticketsState = ticketsState,
+                        boardsState = boardsState,
                         module = module,
                         modifier = Modifier.weight(1f),
                     )
@@ -257,6 +269,7 @@ fun AdminWorkspaceApp() {
                                 clientsState = clientsState,
                                 tasksState = tasksState,
                                 ticketsState = ticketsState,
+                                boardsState = boardsState,
                                 module = module,
                                 modifier = Modifier.weight(1f),
                             )
@@ -273,6 +286,7 @@ fun AdminWorkspaceApp() {
                             clientsState = clientsState,
                             tasksState = tasksState,
                             ticketsState = ticketsState,
+                            boardsState = boardsState,
                             module = module,
                             modifier = Modifier.weight(1f),
                         )
@@ -300,6 +314,7 @@ private fun AdminContentArea(
     clientsState: com.requena.supportdesk.features.clients.presentation.state.ClientsUiState,
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
     ticketsState: com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState,
+    boardsState: com.requena.supportdesk.features.boards.presentation.state.BoardsUiState,
     module: AdminAppModule,
     modifier: Modifier = Modifier,
 ) {
@@ -378,6 +393,12 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
 
+            AppDestination.Boards -> AdminBoardsScreen(
+                state = boardsState,
+                onEvent = module.boardsViewModel::onEvent,
+                modifier = Modifier.weight(1f),
+            )
+
             AppDestination.Tickets -> AdminTicketsScreen(
                 layoutMode = layoutMode,
                 state = ticketsState,
@@ -440,6 +461,7 @@ private fun AdminContentArea(
 
 private fun navDestinationFor(destination: AppDestination): AppDestination = when (destination) {
     AppDestination.Dashboard -> AppDestination.Dashboard
+    AppDestination.Boards -> AppDestination.Boards
     AppDestination.Clients -> AppDestination.Clients
     AppDestination.Tasks -> AppDestination.Tasks
     AppDestination.Labels,
@@ -452,6 +474,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
 
 private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Dashboard -> "Dashboard"
+    AppDestination.Boards -> "Tableros Kanban"
     AppDestination.Clients -> "Clientes"
     AppDestination.Tasks -> "Tareas"
     AppDestination.Labels,
@@ -464,6 +487,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
 
 private fun subtitleFor(destination: AppDestination): String? = when (destination) {
     AppDestination.Dashboard -> null
+    AppDestination.Boards -> "Vista Kanban de tickets, columnas personalizables y flujo de trabajo."
     AppDestination.Clients -> "Consulta clientes y enlaza contexto sin mezclar trabajo."
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
     AppDestination.Labels,

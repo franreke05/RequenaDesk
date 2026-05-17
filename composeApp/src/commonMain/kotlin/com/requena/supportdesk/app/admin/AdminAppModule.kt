@@ -2,6 +2,7 @@ package com.requena.supportdesk.app.admin
 
 import com.requena.supportdesk.core.common.SupportDeskSharedModule
 import com.requena.supportdesk.features.auth.presentation.viewmodel.AuthViewModel
+import com.requena.supportdesk.features.boards.presentation.viewmodel.BoardsViewModel
 import com.requena.supportdesk.features.clients.presentation.viewmodel.ClientsViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
@@ -11,6 +12,7 @@ class AdminAppModule {
     private val clientsViewModelDelegate = lazy { SupportDeskSharedModule.createClientsViewModel() }
     private val tasksViewModelDelegate = lazy { SupportDeskSharedModule.createTasksViewModel() }
     private val ticketsViewModelDelegate = lazy { SupportDeskSharedModule.createTicketsViewModel() }
+    private val boardsViewModelDelegate = lazy { BoardsViewModel() }
 
     val clientsViewModel: ClientsViewModel
         get() = clientsViewModelDelegate.value
@@ -20,6 +22,9 @@ class AdminAppModule {
 
     val ticketsViewModel: TicketsViewModel
         get() = ticketsViewModelDelegate.value
+
+    val boardsViewModel: BoardsViewModel
+        get() = boardsViewModelDelegate.value
 
     fun clear() {
         authViewModel.clear()
@@ -31,6 +36,9 @@ class AdminAppModule {
         }
         if (ticketsViewModelDelegate.isInitialized()) {
             ticketsViewModelDelegate.value.clear()
+        }
+        if (boardsViewModelDelegate.isInitialized()) {
+            boardsViewModelDelegate.value.clear()
         }
     }
 }
