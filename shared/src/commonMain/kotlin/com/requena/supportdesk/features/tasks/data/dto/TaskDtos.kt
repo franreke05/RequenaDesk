@@ -24,6 +24,7 @@ data class TaskDto(
     val labelColorHex: String,
     val dueDate: String? = null,
     val completed: Boolean,
+    val status: String = if (completed) "DONE" else "TODO",
     val loggedMinutes: Int,
     val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
@@ -63,6 +64,7 @@ data class UpdateTaskRequestDto(
     val labelId: String? = null,
     val dueDate: String? = null,
     val completed: Boolean? = null,
+    val status: String? = null,
 )
 
 @Serializable

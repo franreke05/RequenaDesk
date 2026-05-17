@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -59,6 +60,7 @@ fun AdminClientsScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = state.selectedClient
+    var showCreateClient by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -70,7 +72,26 @@ fun AdminClientsScreen(
             placeholder = "Buscar cliente, producto, contacto o correo",
         )
 
-        CompactCreateClientCard(onEvent = onEvent)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            SecondaryButton(text = "Nuevo cliente", onClick = { showCreateClient = true })
+        }
+
+        if (showCreateClient) {
+            CreateClientDialog(
+                onDismiss = { showCreateClient = false },
+                onCreate = { companyName, productName, contactName, email ->
+                    onEvent(
+                        ClientsUiEvent.CreateClient(
+                            companyName = companyName,
+                            productName = productName,
+                            contactName = contactName,
+                            email = email,
+                        ),
+                    )
+                    showCreateClient = false
+                },
+            )
+        }
 
         when {
             state.isLoading && state.clients.isEmpty() -> LoadingState(itemCount = 4)
@@ -136,79 +157,64 @@ fun AdminClientsScreen(
 }
 
 @Composable
-private fun CompactCreateClientCard(
-    onEvent: (ClientsUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+private fun CreateClientDialog(
+    onDismiss: () -> Unit,
+    onCreate: (companyName: String, productName: String, contactName: String, email: String) -> Unit,
 ) {
     var companyName by rememberSaveable { mutableStateOf("") }
     var productName by rememberSaveable { mutableStateOf("") }
     var contactName by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
+    val canCreate = companyName.isNotBlank() && productName.isNotBlank() && contactName.isNotBlank() && email.isNotBlank()
 
-    SectionCard(
-        modifier = modifier,
-        title = "Nuevo cliente",
-        subtitle = "Alta minima para dejarlo disponible y asociarlo a tareas.",
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo cliente") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = companyName,
                     onValueChange = { companyName = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Empresa") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = productName,
                     onValueChange = { productName = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Producto") },
                     singleLine = true,
                 )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
                 OutlinedTextField(
                     value = contactName,
                     onValueChange = { contactName = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Contacto") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email") },
                     singleLine = true,
                 )
             }
+        },
+        confirmButton = {
             PrimaryButton(
                 text = "Crear cliente",
                 onClick = {
-                    onEvent(
-                        ClientsUiEvent.CreateClient(
-                            companyName = companyName,
-                            productName = productName,
-                            contactName = contactName,
-                            email = email,
-                        ),
-                    )
-                    companyName = ""
-                    productName = ""
-                    contactName = ""
-                    email = ""
+                    onCreate(companyName, productName, contactName, email)
                 },
-                enabled = companyName.isNotBlank() && productName.isNotBlank() && contactName.isNotBlank() && email.isNotBlank(),
+                enabled = canCreate,
             )
-        }
-    }
+        },
+        dismissButton = {
+            SecondaryButton(text = "Cancelar", onClick = onDismiss)
+        },
+    )
 }
 
 @Composable

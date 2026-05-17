@@ -15,6 +15,7 @@ data class TaskUpdateInput(
     val categoryId: String,
     val dueDate: String? = null,
     val completed: Boolean,
+    val status: String? = null,
 )
 
 data class TaskLabelDraft(

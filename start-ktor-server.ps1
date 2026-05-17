@@ -101,7 +101,7 @@ Assert-DatabaseConfig
 
 $serverHost = Get-EnvValue "SUPPORTDESK_SERVER_HOST"
 if (-not $serverHost) {
-    $serverHost = "127.0.0.1"
+    $serverHost = "0.0.0.0"
 }
 
 $serverPort = Get-EnvValue "SUPPORTDESK_SERVER_PORT"
@@ -109,10 +109,14 @@ if (-not $serverPort) {
     $serverPort = "8080"
 }
 
+$env:SUPPORTDESK_SERVER_HOST = $serverHost
+$env:SUPPORTDESK_SERVER_PORT = $serverPort
+
 Write-Host "Iniciando servidor Ktor..."
 Write-Host "Host interno: $serverHost"
 Write-Host "Puerto interno: $serverPort"
 Write-Host "Backend esperado por el proxy: http://$serverHost`:$serverPort"
+Write-Host "Android emulator: http://10.0.2.2`:$serverPort"
 
 $gradleArgs = @(":server:run")
 if ($Development) {

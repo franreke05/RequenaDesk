@@ -25,7 +25,8 @@ fun NotificationsScreen(
     val todayIsoDate = currentIsoDate()
     val reminderItems = scheduledTasks
         .filter { task ->
-            !task.completed && task.dueDate != null && task.dueDate >= todayIsoDate
+            val dueDate = task.dueDate
+            !task.completed && dueDate != null && dueDate >= todayIsoDate
         }
         .sortedBy { it.dueDate }
         .take(6)

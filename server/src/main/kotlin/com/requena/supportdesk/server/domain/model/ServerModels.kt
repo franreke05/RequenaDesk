@@ -20,6 +20,7 @@ data class ServerAuthIdentity(
 
 data class ServerTicketSnapshot(
     val id: String,
+    val clientId: String = "",
     val ticketNumber: String,
     val subject: String,
     val description: String,
@@ -32,6 +33,27 @@ data class ServerTicketSnapshot(
     val priority: String,
     val waitingOn: String,
     val resolutionSummary: String? = null,
+    val requesterId: String = "",
+    val requesterName: String = "",
+    val requesterEmail: String = "",
+    val assigneeId: String? = null,
+    val assigneeName: String? = null,
+    val createdAt: String = "",
+    val updatedAt: String = "",
+    val messages: List<ServerTicketMessageSnapshot> = emptyList(),
+    val clientAcceptedCloseAt: String? = null,
+    val adminAcceptedCloseAt: String? = null,
+    val archivedAt: String? = null,
+    val satisfactionRating: Int? = null,
+)
+
+data class ServerTicketMessageSnapshot(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val body: String,
+    val createdAt: String,
 )
 
 data class ServerClientSnapshot(
@@ -84,6 +106,7 @@ data class ServerTaskSnapshot(
     val labelColorHex: String,
     val dueDate: String? = null,
     val completed: Boolean,
+    val status: String = if (completed) "DONE" else "TODO",
     val loggedMinutes: Int,
     val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
@@ -120,6 +143,17 @@ data class ServerDeviceRegistration(
     val id: String,
     val userId: String,
     val platform: String,
+)
+
+data class ServerNotificationAlertSnapshot(
+    val id: String,
+    val userId: String,
+    val ticketId: String? = null,
+    val type: String,
+    val title: String,
+    val body: String,
+    val readAt: String? = null,
+    val createdAt: String,
 )
 
 data class ServerTicketMessageCreated(

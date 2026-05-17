@@ -8,6 +8,7 @@ data class WorkTask(
     val description: String = "",
     val dueDate: String? = null,
     val completed: Boolean = false,
+    val status: WorkTaskStatus = if (completed) WorkTaskStatus.DONE else WorkTaskStatus.TODO,
     val loggedMinutes: Int = 0,
     val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,

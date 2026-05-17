@@ -50,6 +50,29 @@ data class UpdateTicketPriorityRequest(
 )
 
 @Serializable
+data class ClientAccessCodeClaimRequest(
+    val code: String = "",
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+)
+
+@Serializable
+data class ClientAccessCodeCreateRequest(
+    val expiresInDays: Int = 14,
+)
+
+@Serializable
+data class TicketCloseAcceptanceRequest(
+    val resolutionSummary: String? = null,
+)
+
+@Serializable
+data class TicketSatisfactionRequest(
+    val rating: Int = 0,
+)
+
+@Serializable
 data class CreateClientRequest(
     val companyName: String = "",
     val productName: String = "",
@@ -101,6 +124,7 @@ data class UpdateTaskRequest(
     val labelId: String? = null,
     val dueDate: String? = null,
     val completed: Boolean? = null,
+    val status: String? = null,
 )
 
 @Serializable

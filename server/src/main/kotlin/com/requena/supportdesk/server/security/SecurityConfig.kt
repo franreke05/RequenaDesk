@@ -10,7 +10,7 @@ object SecurityConfig {
 
     const val defaultIssuer = "orykai-software-server"
     const val defaultAudience = "orykai-software-clients"
-    const val defaultAccessTokenLifetimeMinutes = 480L
+    const val defaultAccessTokenLifetimeMinutes = 15L
     const val defaultRefreshTokenLifetimeDays = 30L
     const val minimumSecretLength = 32
 }

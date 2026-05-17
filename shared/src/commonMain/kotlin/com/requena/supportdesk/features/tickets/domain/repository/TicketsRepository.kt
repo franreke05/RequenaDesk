@@ -15,4 +15,6 @@ interface TicketsRepository {
     suspend fun replyTicket(ticketId: String, message: String): AppResult<TicketMessage>
     suspend fun changeStatus(ticketId: String, status: TicketStatus): AppResult<Ticket>
     suspend fun changePriority(ticketId: String, priority: TicketPriority): AppResult<Ticket>
+    suspend fun acceptClose(ticketId: String, resolutionSummary: String? = null): AppResult<Ticket>
+    suspend fun rateTicket(ticketId: String, rating: Int): AppResult<Ticket>
 }

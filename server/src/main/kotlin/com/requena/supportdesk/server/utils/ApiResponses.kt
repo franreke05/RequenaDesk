@@ -5,6 +5,7 @@ import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
+import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapshot
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
@@ -69,6 +70,7 @@ fun ticketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {
 
 fun ticketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
     put("id", ticket.id)
+    put("clientId", ticket.clientId)
     put("ticketNumber", ticket.ticketNumber)
     put("subject", ticket.subject)
     put("description", ticket.description)
@@ -81,6 +83,31 @@ fun ticketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
     put("priority", ticket.priority)
     put("waitingOn", ticket.waitingOn)
     put("resolutionSummary", ticket.resolutionSummary)
+    put("requesterId", ticket.requesterId)
+    put("requesterName", ticket.requesterName)
+    put("requesterEmail", ticket.requesterEmail)
+    put("assigneeId", ticket.assigneeId)
+    put("assigneeName", ticket.assigneeName)
+    put("createdAt", ticket.createdAt)
+    put("updatedAt", ticket.updatedAt)
+    put("messages", buildJsonArray {
+        ticket.messages.forEach { message ->
+            add(
+                buildJsonObject {
+                    put("id", message.id)
+                    put("ticketId", message.ticketId)
+                    put("authorId", message.authorId)
+                    put("authorName", message.authorName)
+                    put("body", message.body)
+                    put("createdAt", message.createdAt)
+                },
+            )
+        }
+    })
+    put("clientAcceptedCloseAt", ticket.clientAcceptedCloseAt)
+    put("adminAcceptedCloseAt", ticket.adminAcceptedCloseAt)
+    put("archivedAt", ticket.archivedAt)
+    put("satisfactionRating", ticket.satisfactionRating)
 }
 
 fun clientsJson(clients: List<ServerClientSnapshot>) = buildJsonArray {
@@ -145,6 +172,7 @@ fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("labelColorHex", task.labelColorHex)
     put("dueDate", task.dueDate)
     put("completed", task.completed)
+    put("status", task.status)
     put("loggedMinutes", task.loggedMinutes)
     put("loggedSeconds", task.loggedSeconds)
     put("createdAt", task.createdAt)
@@ -191,4 +219,19 @@ fun deviceJson(device: ServerDeviceRegistration) = buildJsonObject {
     put("id", device.id)
     put("userId", device.userId)
     put("platform", device.platform)
+}
+
+fun alertsJson(alerts: List<ServerNotificationAlertSnapshot>) = buildJsonArray {
+    alerts.forEach { add(alertJson(it)) }
+}
+
+fun alertJson(alert: ServerNotificationAlertSnapshot) = buildJsonObject {
+    put("id", alert.id)
+    put("userId", alert.userId)
+    put("ticketId", alert.ticketId)
+    put("type", alert.type)
+    put("title", alert.title)
+    put("body", alert.body)
+    put("readAt", alert.readAt)
+    put("createdAt", alert.createdAt)
 }

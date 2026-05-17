@@ -1,5 +1,6 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.LoginRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
@@ -10,17 +11,12 @@ import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.sessionJson
 import com.requena.supportdesk.server.utils.successResponse
-import io.ktor.http.parseQueryString
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.request.receiveNullable
-import io.ktor.utils.io.charsets.Charsets
-import io.ktor.utils.io.core.readText
-import io.ktor.utils.io.readRemaining
-import kotlinx.serialization.json.Json
 
 fun Route.authRoutes(service: SupportDeskService) {
     route("/auth") {
@@ -47,45 +43,19 @@ fun Route.authRoutes(service: SupportDeskService) {
             call.respondJson(HttpStatusCode.OK, successResponse("/auth/logout", messageJson("Logout completed.")))
         }
     }
-}
-
-private val authRequestJson = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-    explicitNulls = false
+    route("/client/auth") {
+        post("/claim-code") {
+            val request = call.receiveOrDefault(ClientAccessCodeClaimRequest())
+            val session = service.claimClientAccessCode(request)
+                ?: return@post call.respondJson(HttpStatusCode.Unauthorized, errorResponse("Invalid or expired client invitation code"))
+            call.respondJson(body = successResponse("/client/auth/claim-code", sessionJson(session)))
+        }
+    }
 }
 
 private suspend fun RoutingCall.receiveLoginRequest(): LoginRequest {
     runCatching { receiveNullable<LoginRequest>() }
         .getOrNull()
         ?.let { return it }
-
-    val rawBody = runCatching {
-        request.receiveChannel().readRemaining().readText(Charsets.UTF_8)
-    }.getOrDefault("").trim()
-
-    val normalizedBodies = listOf(
-        rawBody,
-        rawBody.removeSurrounding("'"),
-        rawBody.removeSurrounding("\""),
-        rawBody.removeSurrounding("\"").replace("\\\"", "\""),
-    ).distinct().filter { it.isNotBlank() }
-
-    normalizedBodies.forEach { body ->
-        runCatching { authRequestJson.decodeFromString<LoginRequest>(body) }
-            .getOrNull()
-            ?.let { return it }
-
-        val form = parseQueryString(body)
-        val email = form["email"].orEmpty()
-        val password = form["password"].orEmpty()
-        if (email.isNotBlank() || password.isNotBlank()) {
-            return LoginRequest(email = email, password = password)
-        }
-    }
-
-    return LoginRequest(
-        email = request.queryParameters["email"].orEmpty(),
-        password = request.queryParameters["password"].orEmpty(),
-    )
+    return LoginRequest()
 }

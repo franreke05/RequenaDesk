@@ -1,6 +1,7 @@
 package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
+import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
@@ -17,10 +18,12 @@ import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
+import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
+import com.requena.supportdesk.server.domain.model.ServerTicketMessageSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -38,6 +41,7 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 class PostgresSupportDeskRepository(
     private val dataSource: PostgresSupportDeskDataSource,
@@ -46,19 +50,23 @@ class PostgresSupportDeskRepository(
     override fun authenticate(email: String, password: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id
+            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id, password_hash
             FROM users
-            WHERE email = ? AND password_hash = ? AND is_active = TRUE
+            WHERE email = ? AND is_active = TRUE
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, email)
-            statement.setString(2, PasswordHasher.hash(password))
+            statement.setString(1, email.trim())
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) {
-                    updateLastLogin(connection, resultSet.getString("user_id"))
+                val storedHash = if (resultSet.next()) resultSet.getString("password_hash") else null
+                if (storedHash != null && PasswordHasher.verifyPassword(password, storedHash)) {
+                    val userId = resultSet.getString("user_id")
+                    if (PasswordHasher.isLegacyPasswordHash(storedHash)) {
+                        updatePasswordHash(connection, userId, PasswordHasher.hashPassword(password))
+                    }
+                    updateLastLogin(connection, userId)
                     ServerAuthIdentity(
-                        userId = resultSet.getString("user_id"),
+                        userId = userId,
                         name = resultSet.getString("name"),
                         email = resultSet.getString("email"),
                         role = resultSet.getString("role"),
@@ -72,7 +80,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
         dataSource.withConnection { connection ->
             connection.prepareStatement(
                 """
@@ -88,13 +96,108 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    override fun claimClientAccessCode(request: ClientAccessCodeClaimRequest): ServerAuthIdentity? = dataSource.withConnection { connection ->
+        val codeHash = PasswordHasher.hashToken(request.code.trim().uppercase())
+        connection.autoCommit = false
+        try {
+            val access = connection.prepareStatement(
+                """
+                SELECT cac.id::text AS code_id, cac.client_id::text AS client_id, c.company_name, c.email::text AS client_email
+                FROM client_access_codes cac
+                JOIN clients c ON c.id = cac.client_id
+                WHERE cac.code_hash = ?
+                  AND cac.used_at IS NULL
+                  AND cac.expires_at > NOW()
+                LIMIT 1
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, codeHash)
+                statement.executeQuery().use { resultSet ->
+                    if (resultSet.next()) {
+                        Triple(resultSet.getString("code_id"), resultSet.getString("client_id"), resultSet.getString("client_email"))
+                    } else {
+                        null
+                    }
+                }
+            } ?: run {
+                connection.rollback()
+                return@withConnection null
+            }
+
+            val clientName = request.name.trim().ifBlank { "Cliente" }
+            val clientEmail = request.email.trim().ifBlank { access.third }
+            val passwordHash = PasswordHasher.hashPassword(request.password)
+            val identity = connection.prepareStatement(
+                """
+                INSERT INTO users (client_id, name, email, password_hash, role, is_active)
+                VALUES (CAST(? AS uuid), ?, ?, ?, 'CLIENT', TRUE)
+                ON CONFLICT (email) DO UPDATE
+                SET client_id = EXCLUDED.client_id,
+                    name = EXCLUDED.name,
+                    password_hash = EXCLUDED.password_hash,
+                    role = 'CLIENT',
+                    is_active = TRUE
+                RETURNING id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, access.second)
+                statement.setString(2, clientName)
+                statement.setString(3, clientEmail)
+                statement.setString(4, passwordHash)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    ServerAuthIdentity(
+                        userId = resultSet.getString("user_id"),
+                        name = resultSet.getString("name"),
+                        email = resultSet.getString("email"),
+                        role = resultSet.getString("role"),
+                        clientId = resultSet.getString("client_id"),
+                    )
+                }
+            }
+
+            connection.prepareStatement(
+                "UPDATE client_access_codes SET used_at = NOW() WHERE id::text = ?",
+            ).use { statement ->
+                statement.setString(1, access.first)
+                statement.executeUpdate()
+            }
+            connection.commit()
+            identity
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun createClientAccessCode(clientId: String, ownerAdminId: String, expiresInDays: Int): String = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val code = "ORY-${UUID.randomUUID().toString().replace("-", "").take(12).uppercase()}"
+        connection.prepareStatement(
+            """
+            INSERT INTO client_access_codes (client_id, owner_admin_id, code_hash, expires_at, created_by)
+            VALUES (CAST(? AS uuid), CAST(? AS uuid), ?, NOW() + (?::text || ' days')::interval, CAST(? AS uuid))
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, PasswordHasher.hashToken(code))
+            statement.setInt(4, expiresInDays.coerceIn(1, 60))
+            statement.setString(5, ownerAdminId)
+            statement.executeUpdate()
+        }
+        code
+    }
+
     override fun rotateRefreshToken(
         refreshToken: String,
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? = dataSource.withConnection { connection ->
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
-        val replacementRefreshTokenHash = PasswordHasher.hash(replacementRefreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
+        val replacementRefreshTokenHash = PasswordHasher.hashToken(replacementRefreshToken)
         connection.autoCommit = false
         try {
             val identity = connection.prepareStatement(
@@ -124,7 +227,11 @@ class PostgresSupportDeskRepository(
                     }
                 }
             } ?: run {
-                connection.rollback()
+                if (revokeRefreshTokenFamilyOnReuse(connection, refreshTokenHash)) {
+                    connection.commit()
+                } else {
+                    connection.rollback()
+                }
                 return@withConnection null
             }
 
@@ -158,7 +265,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean = dataSource.withConnection { connection ->
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
         connection.prepareStatement(
             "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
         ).use { statement ->
@@ -167,76 +274,197 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTickets(): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
+    private fun revokeRefreshTokenFamilyOnReuse(connection: Connection, refreshTokenHash: String): Boolean {
+        val userId = connection.prepareStatement(
+            "SELECT user_id::text AS user_id FROM refresh_tokens WHERE token_hash = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, refreshTokenHash)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("user_id") else null
+            }
+        } ?: return false
+
+        connection.prepareStatement(
+            "UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id::text = ?",
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeUpdate()
+        }
+        return true
+    }
+
+    override fun getTickets(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
-                   app_version, client_reference, status, priority, waiting_on, resolution_summary
-            FROM tickets
-            ORDER BY updated_at DESC, created_at DESC
+            SELECT
+                t.id::text,
+                t.client_id::text AS client_id,
+                t.ticket_number,
+                t.subject,
+                t.description,
+                t.category,
+                t.affected_app,
+                t.platform,
+                t.app_version,
+                t.client_reference,
+                t.status,
+                t.priority,
+                t.waiting_on,
+                t.resolution_summary,
+                t.requester_id::text AS requester_id,
+                requester.name AS requester_name,
+                requester.email::text AS requester_email,
+                t.assignee_id::text AS assignee_id,
+                assignee.name AS assignee_name,
+                t.created_at,
+                t.updated_at,
+                t.client_accepted_close_at,
+                t.admin_accepted_close_at,
+                t.archived_at,
+                t.satisfaction_rating
+            FROM tickets t
+            JOIN clients c ON c.id = t.client_id
+            JOIN users requester ON requester.id = t.requester_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            WHERE (? IS NULL OR c.owner_admin_id::text = ?)
+              AND (? IS NULL OR t.client_id::text = ?)
+            ORDER BY t.updated_at DESC, t.created_at DESC
+            LIMIT ? OFFSET ?
             """.trimIndent(),
         ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, clientId)
+            statement.setString(4, clientId)
+            statement.setInt(5, limit.coerceIn(1, 200))
+            statement.setInt(6, offset.coerceAtLeast(0))
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
-                        add(ticketSnapshot(resultSet))
+                        add(ticketSnapshot(connection, resultSet))
                     }
                 }
             }
         }
     }
 
-    override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.withConnection { connection ->
+    override fun countClientTicketsCreatedOn(clientId: String, datePrefix: String): Int = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
-                   app_version, client_reference, status, priority, waiting_on, resolution_summary
+            SELECT COUNT(*)::integer AS ticket_count
             FROM tickets
-            WHERE id::text = ? OR ticket_number = ?
+            WHERE client_id::text = ?
+              AND created_at >= CAST(? AS date)
+              AND created_at < CAST(? AS date) + INTERVAL '1 day'
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, datePrefix)
+            statement.setString(3, datePrefix)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt("ticket_count")
+            }
+        }
+    }
+
+    override fun getTicket(id: String, ownerAdminId: String?, clientId: String?): ServerTicketSnapshot? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT
+                t.id::text,
+                t.client_id::text AS client_id,
+                t.ticket_number,
+                t.subject,
+                t.description,
+                t.category,
+                t.affected_app,
+                t.platform,
+                t.app_version,
+                t.client_reference,
+                t.status,
+                t.priority,
+                t.waiting_on,
+                t.resolution_summary,
+                t.requester_id::text AS requester_id,
+                requester.name AS requester_name,
+                requester.email::text AS requester_email,
+                t.assignee_id::text AS assignee_id,
+                assignee.name AS assignee_name,
+                t.created_at,
+                t.updated_at,
+                t.client_accepted_close_at,
+                t.admin_accepted_close_at,
+                t.archived_at,
+                t.satisfaction_rating
+            FROM tickets t
+            JOIN clients c ON c.id = t.client_id
+            JOIN users requester ON requester.id = t.requester_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            WHERE (t.id::text = ? OR t.ticket_number = ?)
+              AND (? IS NULL OR c.owner_admin_id::text = ?)
+              AND (? IS NULL OR t.client_id::text = ?)
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, id)
             statement.setString(2, id)
+            statement.setString(3, ownerAdminId)
+            statement.setString(4, ownerAdminId)
+            statement.setString(5, clientId)
+            statement.setString(6, clientId)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) ticketSnapshot(resultSet) else null
+                if (resultSet.next()) ticketSnapshot(connection, resultSet) else null
             }
         }
     }
 
-    override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = dataSource.withConnection { connection ->
-        val requesterId = request.requesterId ?: findRequesterId(connection, request.clientId)
+    override fun createTicket(request: CreateTicketRequest, ownerAdminId: String?, requesterId: String?): ServerTicketSnapshot = dataSource.withConnection { connection ->
+        if (ownerAdminId != null) {
+            requireClientExists(connection, request.clientId, ownerAdminId)
+        }
+        val resolvedOwnerAdminId = ownerAdminId ?: ownerAdminIdForClient(connection, request.clientId)
+        val resolvedRequesterId = requesterId ?: request.requesterId ?: findRequesterId(connection, request.clientId)
         val affectedApp = request.affectedApp.ifBlank { findAffectedApp(connection, request.clientId) }
 
         connection.prepareStatement(
             """
             INSERT INTO tickets (
-                client_id, requester_id, subject, description, category, affected_app,
+                client_id, requester_id, assignee_id, subject, description, category, affected_app,
                 platform, app_version, steps_to_reproduce, client_reference, status, priority, waiting_on
             )
             VALUES (
-                CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'ADMIN'
+                CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'ADMIN'
             )
             RETURNING id::text, ticket_number, subject, description, category, affected_app, platform,
                       app_version, client_reference, status, priority, waiting_on, resolution_summary
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.clientId)
-            statement.setString(2, requesterId)
-            statement.setString(3, request.subject)
-            statement.setString(4, request.description)
-            statement.setString(5, request.category)
-            statement.setString(6, affectedApp)
-            statement.setString(7, request.platform)
-            statement.setString(8, request.appVersion)
-            statement.setString(9, request.stepsToReproduce)
-            statement.setString(10, request.clientReference)
-            statement.setString(11, request.priority)
+            statement.setString(2, resolvedRequesterId)
+            statement.setString(3, resolvedOwnerAdminId)
+            statement.setString(4, request.subject)
+            statement.setString(5, request.description)
+            statement.setString(6, request.category)
+            statement.setString(7, affectedApp)
+            statement.setString(8, request.platform)
+            statement.setString(9, request.appVersion)
+            statement.setString(10, request.stepsToReproduce)
+            statement.setString(11, request.clientReference)
+            statement.setString(12, request.priority)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
-                val ticket = ticketSnapshot(resultSet)
-                insertEvent(connection, ticket.id, requesterId, "TICKET_CREATED", "Ticket created")
-                ticket
+                val ticketId = resultSet.getString("id")
+                insertEvent(connection, ticketId, resolvedRequesterId, "TICKET_CREATED", "Ticket created")
+                insertAlert(
+                    connection = connection,
+                    userId = resolvedOwnerAdminId,
+                    ticketId = ticketId,
+                    type = "NEW_TICKET",
+                    title = "Nuevo ticket",
+                    body = request.subject,
+                )
+                getTicket(ticketId, ownerAdminId, null) ?: throw ServerNotFoundException("Ticket not found")
             }
         }
     }
@@ -256,6 +484,7 @@ class PostgresSupportDeskRepository(
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     insertEvent(connection, ticketId, request.authorId, "MESSAGE_ADDED", "Reply added to ticket")
+                    insertTicketMessageAlerts(connection, ticketId, request.authorId)
                     ServerTicketMessageCreated(ticketId = ticketId, messageId = resultSet.getString("id"))
                 }
             }
@@ -318,6 +547,9 @@ class PostgresSupportDeskRepository(
 
     override fun createAttachment(ticketId: String, request: UploadAttachmentRequest): ServerAttachmentCreated =
         dataSource.withConnection { connection ->
+            request.messageId?.takeIf { it.isNotBlank() }?.let { messageId ->
+                requireTicketMessageExists(connection, ticketId, messageId)
+            }
             connection.prepareStatement(
                 """
                 INSERT INTO attachments (
@@ -349,6 +581,67 @@ class PostgresSupportDeskRepository(
                 }
             }
         }
+
+    override fun acceptTicketClose(ticketId: String, actorId: String, actorRole: String, resolutionSummary: String?): ServerTicketSnapshot =
+        dataSource.withConnection { connection ->
+            connection.prepareStatement(
+                """
+                UPDATE tickets
+                SET admin_accepted_close_at = CASE WHEN ? = 'ADMIN' THEN COALESCE(admin_accepted_close_at, NOW()) ELSE admin_accepted_close_at END,
+                    client_accepted_close_at = CASE WHEN ? = 'CLIENT' THEN COALESCE(client_accepted_close_at, NOW()) ELSE client_accepted_close_at END,
+                    resolution_summary = COALESCE(?, resolution_summary),
+                    status = CASE
+                        WHEN (? = 'ADMIN' AND client_accepted_close_at IS NOT NULL)
+                          OR (? = 'CLIENT' AND admin_accepted_close_at IS NOT NULL)
+                        THEN 'CLOSED'
+                        ELSE 'RESOLVED'
+                    END,
+                    archived_at = CASE
+                        WHEN (? = 'ADMIN' AND client_accepted_close_at IS NOT NULL)
+                          OR (? = 'CLIENT' AND admin_accepted_close_at IS NOT NULL)
+                        THEN COALESCE(archived_at, NOW())
+                        ELSE archived_at
+                    END
+                WHERE id::text = ?
+                RETURNING id::text
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, actorRole)
+                statement.setString(2, actorRole)
+                statement.setString(3, resolutionSummary)
+                statement.setString(4, actorRole)
+                statement.setString(5, actorRole)
+                statement.setString(6, actorRole)
+                statement.setString(7, actorRole)
+                statement.setString(8, ticketId)
+                statement.executeQuery().use { resultSet ->
+                    if (!resultSet.next()) throw ServerNotFoundException("Ticket not found")
+                }
+            }
+            insertEvent(connection, ticketId, actorId, "CLOSE_ACCEPTED", "$actorRole accepted ticket closure")
+            getTicket(ticketId, null, null) ?: throw ServerNotFoundException("Ticket not found")
+        }
+
+    override fun rateTicket(ticketId: String, clientId: String, rating: Int): ServerTicketSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE tickets
+            SET satisfaction_rating = ?,
+                updated_at = NOW()
+            WHERE id::text = ?
+              AND client_id::text = ?
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setInt(1, rating.coerceIn(1, 5))
+            statement.setString(2, ticketId)
+            statement.setString(3, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) throw ServerNotFoundException("Ticket not found")
+            }
+        }
+        getTicket(ticketId, null, clientId) ?: throw ServerNotFoundException("Ticket not found")
+    }
 
     override fun getClients(ownerAdminId: String?): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
@@ -676,6 +969,7 @@ class PostgresSupportDeskRepository(
                 tl.color_hex,
                 t.due_date::text AS due_date,
                 t.completed,
+                t.status,
                 t.logged_minutes,
                 t.logged_seconds,
                 t.created_at,
@@ -711,8 +1005,8 @@ class PostgresSupportDeskRepository(
         request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOwnerAdminId) }
         connection.prepareStatement(
             """
-            INSERT INTO tasks (title, description, client_id, owner_admin_id, label_id, due_date, completed, logged_minutes, logged_seconds)
-            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
+            INSERT INTO tasks (title, description, client_id, owner_admin_id, label_id, due_date, completed, status, logged_minutes, logged_seconds)
+            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 'TODO', 0, 0)
             RETURNING
                 id::text AS id,
                 title,
@@ -722,6 +1016,7 @@ class PostgresSupportDeskRepository(
                 created_at,
                 updated_at,
                 completed,
+                status,
                 logged_minutes,
                 logged_seconds
             """.trimIndent(),
@@ -760,7 +1055,8 @@ class PostgresSupportDeskRepository(
                     WHEN ? = '' THEN NULL
                     ELSE CAST(? AS date)
                 END,
-                completed = COALESCE(?, completed)
+                completed = COALESCE(?, completed),
+                status = COALESCE(NULLIF(?, ''), CASE WHEN COALESCE(?, completed) = TRUE THEN 'DONE' ELSE status END)
             WHERE id::text = ?
               AND (? IS NULL OR owner_admin_id::text = ?)
             RETURNING
@@ -772,6 +1068,7 @@ class PostgresSupportDeskRepository(
                 created_at,
                 updated_at,
                 completed,
+                status,
                 logged_minutes,
                 logged_seconds
             """.trimIndent(),
@@ -795,9 +1092,15 @@ class PostgresSupportDeskRepository(
             } else {
                 statement.setBoolean(12, request.completed)
             }
-            statement.setString(13, taskId)
-            statement.setString(14, ownerAdminId)
-            statement.setString(15, ownerAdminId)
+            statement.setString(13, request.status)
+            if (request.completed == null) {
+                statement.setNull(14, java.sql.Types.BOOLEAN)
+            } else {
+                statement.setBoolean(14, request.completed)
+            }
+            statement.setString(15, taskId)
+            statement.setString(16, ownerAdminId)
+            statement.setString(17, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Task not found")
@@ -823,7 +1126,7 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
+    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?, limit: Int, offset: Int): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -846,6 +1149,7 @@ class PostgresSupportDeskRepository(
               AND (? IS NULL OR tl.task_id::text = ?)
               AND (? IS NULL OR t.owner_admin_id::text = ?)
             ORDER BY tl.work_date DESC, tl.created_at DESC
+            LIMIT ? OFFSET ?
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
@@ -854,6 +1158,8 @@ class PostgresSupportDeskRepository(
             statement.setString(4, taskId)
             statement.setString(5, ownerAdminId)
             statement.setString(6, ownerAdminId)
+            statement.setInt(7, limit.coerceIn(1, 200))
+            statement.setInt(8, offset.coerceAtLeast(0))
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -1060,16 +1366,21 @@ class PostgresSupportDeskRepository(
         )
     }
 
-    override fun getAttachment(id: String): ServerAttachmentSnapshot? = dataSource.withConnection { connection ->
+    override fun getAttachment(id: String, ownerAdminId: String?): ServerAttachmentSnapshot? = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text, file_name, content_type
-            FROM attachments
-            WHERE id::text = ?
+            SELECT a.id::text, a.file_name, a.content_type
+            FROM attachments a
+            JOIN tickets t ON t.id = a.ticket_id
+            JOIN clients c ON c.id = t.client_id
+            WHERE a.id::text = ?
+              AND (? IS NULL OR c.owner_admin_id::text = ?)
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, id)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) {
                     ServerAttachmentSnapshot(
@@ -1110,11 +1421,62 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    override fun getAlerts(userId: String, limit: Int, offset: Int): List<ServerNotificationAlertSnapshot> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text, user_id::text, ticket_id::text, type, title, body, read_at, created_at
+            FROM notification_alerts
+            WHERE user_id::text = ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setInt(2, limit.coerceIn(1, 100))
+            statement.setInt(3, offset.coerceAtLeast(0))
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(alertSnapshot(resultSet))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun markAlertRead(alertId: String, userId: String): ServerNotificationAlertSnapshot? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE notification_alerts
+            SET read_at = COALESCE(read_at, NOW())
+            WHERE id::text = ?
+              AND user_id::text = ?
+            RETURNING id::text, user_id::text, ticket_id::text, type, title, body, read_at, created_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, alertId)
+            statement.setString(2, userId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) alertSnapshot(resultSet) else null
+            }
+        }
+    }
+
     private fun updateLastLogin(connection: Connection, userId: String) {
         connection.prepareStatement(
             "UPDATE users SET last_login_at = NOW() WHERE id::text = ?",
         ).use { statement ->
             statement.setString(1, userId)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun updatePasswordHash(connection: Connection, userId: String, passwordHash: String) {
+        connection.prepareStatement(
+            "UPDATE users SET password_hash = ? WHERE id::text = ?",
+        ).use { statement ->
+            statement.setString(1, passwordHash)
+            statement.setString(2, userId)
             statement.executeUpdate()
         }
     }
@@ -1150,6 +1512,21 @@ class PostgresSupportDeskRepository(
             }
         }
 
+    private fun ownerAdminIdForClient(connection: Connection, clientId: String): String =
+        connection.prepareStatement(
+            """
+            SELECT owner_admin_id::text
+            FROM clients
+            WHERE id = CAST(? AS uuid)
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("owner_admin_id") else error("Client not found: $clientId")
+            }
+        }
+
     private fun insertEvent(connection: Connection, ticketId: String, actorId: String, type: String, description: String) {
         connection.prepareStatement(
             """
@@ -1165,8 +1542,83 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    private fun ticketSnapshot(resultSet: ResultSet): ServerTicketSnapshot = ServerTicketSnapshot(
+    private fun insertTicketMessageAlerts(connection: Connection, ticketId: String, authorId: String) {
+        connection.prepareStatement(
+            """
+            SELECT
+                t.subject,
+                c.owner_admin_id::text AS owner_admin_id,
+                requester.id::text AS requester_id
+            FROM tickets t
+            JOIN clients c ON c.id = t.client_id
+            JOIN users requester ON requester.id = t.requester_id
+            WHERE t.id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) return
+                val subject = resultSet.getString("subject")
+                val ownerAdminId = resultSet.getString("owner_admin_id")
+                val requesterId = resultSet.getString("requester_id")
+                val recipients = listOf(ownerAdminId, requesterId)
+                    .filter { it.isNotBlank() && it != authorId }
+                    .distinct()
+                recipients.forEach { recipientId ->
+                    insertAlert(
+                        connection = connection,
+                        userId = recipientId,
+                        ticketId = ticketId,
+                        type = "NEW_MESSAGE",
+                        title = "Nuevo mensaje",
+                        body = subject,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun insertAlert(
+        connection: Connection,
+        userId: String,
+        ticketId: String,
+        type: String,
+        title: String,
+        body: String,
+    ) {
+        connection.prepareStatement(
+            """
+            INSERT INTO notification_alerts (user_id, ticket_id, type, title, body)
+            VALUES (CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, ticketId)
+            statement.setString(3, type)
+            statement.setString(4, title)
+            statement.setString(5, body)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun alertSnapshot(resultSet: ResultSet): ServerNotificationAlertSnapshot =
+        ServerNotificationAlertSnapshot(
+            id = resultSet.getString("id"),
+            userId = resultSet.getString("user_id"),
+            ticketId = resultSet.getString("ticket_id"),
+            type = resultSet.getString("type"),
+            title = resultSet.getString("title"),
+            body = resultSet.getString("body"),
+            readAt = formatNullableTimestamp(resultSet.getObject("read_at")),
+            createdAt = formatTimestamp(resultSet.getObject("created_at")),
+        )
+
+    private fun ticketSnapshot(connection: Connection, resultSet: ResultSet): ServerTicketSnapshot {
+        val ticketId = resultSet.getString("id")
+        return ServerTicketSnapshot(
         id = resultSet.getString("id"),
+        clientId = resultSet.getString("client_id") ?: "",
         ticketNumber = resultSet.getString("ticket_number"),
         subject = resultSet.getString("subject"),
         description = resultSet.getString("description"),
@@ -1179,7 +1631,50 @@ class PostgresSupportDeskRepository(
         priority = resultSet.getString("priority"),
         waitingOn = resultSet.getString("waiting_on"),
         resolutionSummary = resultSet.getString("resolution_summary"),
-    )
+        requesterId = resultSet.getString("requester_id") ?: "",
+        requesterName = resultSet.getString("requester_name") ?: "",
+        requesterEmail = resultSet.getString("requester_email") ?: "",
+        assigneeId = resultSet.getString("assignee_id"),
+        assigneeName = resultSet.getString("assignee_name"),
+        createdAt = formatTimestamp(resultSet.getObject("created_at")),
+        updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+        messages = ticketMessages(connection, ticketId),
+        clientAcceptedCloseAt = formatNullableTimestamp(resultSet.getObject("client_accepted_close_at")),
+        adminAcceptedCloseAt = formatNullableTimestamp(resultSet.getObject("admin_accepted_close_at")),
+        archivedAt = formatNullableTimestamp(resultSet.getObject("archived_at")),
+        satisfactionRating = resultSet.getObject("satisfaction_rating")?.let { resultSet.getInt("satisfaction_rating") },
+        )
+    }
+
+    private fun ticketMessages(connection: Connection, ticketId: String): List<ServerTicketMessageSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT tm.id::text AS id, tm.ticket_id::text AS ticket_id, tm.author_id::text AS author_id,
+                   u.name AS author_name, tm.body, tm.created_at
+            FROM ticket_messages tm
+            JOIN users u ON u.id = tm.author_id
+            WHERE tm.ticket_id::text = ?
+            ORDER BY tm.created_at ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerTicketMessageSnapshot(
+                                id = resultSet.getString("id"),
+                                ticketId = resultSet.getString("ticket_id"),
+                                authorId = resultSet.getString("author_id"),
+                                authorName = resultSet.getString("author_name"),
+                                body = resultSet.getString("body"),
+                                createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
 
     private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
         id = resultSet.getString("id"),
@@ -1193,6 +1688,7 @@ class PostgresSupportDeskRepository(
         labelColorHex = resultSet.getString("color_hex"),
         dueDate = resultSet.getString("due_date"),
         completed = resultSet.getBoolean("completed"),
+        status = resultSet.getString("status") ?: if (resultSet.getBoolean("completed")) "DONE" else "TODO",
         loggedMinutes = resultSet.getInt("logged_minutes"),
         loggedSeconds = resultSet.getInt("logged_seconds"),
         createdAt = formatTimestamp(resultSet.getObject("created_at")),
@@ -1215,6 +1711,7 @@ class PostgresSupportDeskRepository(
                 tl.color_hex,
                 t.due_date::text AS due_date,
                 t.completed,
+                t.status,
                 t.logged_minutes,
                 t.logged_seconds,
                 t.created_at,
@@ -1327,6 +1824,25 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    private fun requireTicketMessageExists(connection: Connection, ticketId: String, messageId: String) {
+        val exists = connection.prepareStatement(
+            """
+            SELECT 1
+            FROM ticket_messages
+            WHERE id::text = ?
+              AND ticket_id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, messageId)
+            statement.setString(2, ticketId)
+            statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+        if (!exists) {
+            throw ServerNotFoundException("Ticket message not found")
+        }
+    }
+
     private fun recordExists(connection: Connection, tableName: String, id: String, ownerAdminId: String? = null): Boolean =
         connection.prepareStatement(
             """
@@ -1398,6 +1914,9 @@ class PostgresSupportDeskRepository(
         }
         return DateTimeFormatter.ISO_INSTANT.format(instant)
     }
+
+    private fun formatNullableTimestamp(value: Any?): String? =
+        formatTimestamp(value).takeIf { it.isNotBlank() }
 
     private companion object {
         const val DEFAULT_ADMIN_OWNER_ID = "22222222-2222-2222-2222-222222222222"

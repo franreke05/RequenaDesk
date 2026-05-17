@@ -103,6 +103,223 @@ class ApplicationTest {
     }
 
     @Test
+    fun testLoginRouteRejectsCredentialsInQueryParams() = testApplication {
+        application { testModule() }
+
+        val response = client.post("/auth/login?email=admin@orykai.dev&password=Admin1requena")
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertTrue(response.bodyAsText().contains("Email and password are required"))
+    }
+
+    @Test
+    fun testClientRoutesAreScopedToAuthenticatedClient() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
+
+        val forbiddenAdmin = client.get("/admin/clients") {
+            bearer(clientToken)
+        }
+        val ownTickets = client.get("/client/tickets") {
+            bearer(clientToken)
+        }
+        val spoofedCreate = client.post("/client/tickets") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "clientId":"client-2",
+                  "subject":"Scope check",
+                  "description":"Client cannot pick another client id.",
+                  "category":"QUESTION",
+                  "platform":"DESKTOP"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.Forbidden, forbiddenAdmin.status)
+        assertEquals(HttpStatusCode.OK, ownTickets.status)
+        assertTrue(ownTickets.bodyAsText().contains("ticket-1"))
+        assertTrue(!ownTickets.bodyAsText().contains("ticket-2"))
+        assertEquals(HttpStatusCode.Created, spoofedCreate.status)
+        assertTrue(spoofedCreate.bodyAsText().contains("\"clientId\":\"client-1\""))
+    }
+
+    @Test
+    fun testAdminTicketRoutesFilterByAuthenticatedAdmin() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(email = "admin2@orykai.dev", password = "Admin2Sanchez")
+
+        val adminTickets = client.get("/admin/tickets") {
+            bearer(adminToken)
+        }.bodyAsText()
+        val partnerTickets = client.get("/admin/tickets") {
+            bearer(partnerToken)
+        }.bodyAsText()
+        val adminReadsPartnerTicket = client.get("/admin/tickets/ticket-2") {
+            bearer(adminToken)
+        }
+
+        assertTrue(adminTickets.contains("\"id\":\"ticket-1\""))
+        assertTrue(!adminTickets.contains("\"id\":\"ticket-2\""))
+        assertTrue(partnerTickets.contains("\"id\":\"ticket-2\""))
+        assertTrue(!partnerTickets.contains("\"id\":\"ticket-1\""))
+        assertEquals(HttpStatusCode.NotFound, adminReadsPartnerTicket.status)
+    }
+
+    @Test
+    fun testTicketMessagesAreScopedAndUseAuthenticatedAuthor() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(email = "admin2@orykai.dev", password = "Admin2Sanchez")
+        val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
+
+        val partnerPostsAdminTicket = client.post("/admin/tickets/ticket-1/messages") {
+            bearer(partnerToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"body":"cross tenant admin message"}""")
+        }
+        val clientPostsOtherTicket = client.post("/client/tickets/ticket-2/messages") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"authorId":"client-user-2","body":"cross tenant client message"}""")
+        }
+        val clientPostsOwnTicket = client.post("/client/tickets/ticket-1/messages") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"authorId":"client-user-2","body":"own scoped message"}""")
+        }
+        val ownTicket = client.get("/client/tickets/ticket-1") {
+            bearer(clientToken)
+        }.bodyAsText()
+
+        assertEquals(HttpStatusCode.NotFound, partnerPostsAdminTicket.status)
+        assertEquals(HttpStatusCode.NotFound, clientPostsOtherTicket.status)
+        assertEquals(HttpStatusCode.OK, clientPostsOwnTicket.status)
+        assertTrue(ownTicket.contains("own scoped message"))
+        assertTrue(ownTicket.contains("\"authorId\":\"client-user-1\""))
+        assertTrue(!ownTicket.contains("\"authorId\":\"client-user-2\""))
+    }
+
+    @Test
+    fun testClientDailyTicketLimitIsEnforced() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
+
+        repeat(15) { index ->
+            val response = client.post("/client/tickets") {
+                bearer(clientToken)
+                contentType(ContentType.Application.Json)
+                setBody(
+                    """
+                    {
+                      "subject":"Daily limit ${index + 1}",
+                      "description":"Ticket within daily quota.",
+                      "category":"QUESTION",
+                      "platform":"DESKTOP"
+                    }
+                    """.trimIndent(),
+                )
+            }
+            assertEquals(HttpStatusCode.Created, response.status)
+        }
+
+        val rejected = client.post("/client/tickets") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "subject":"Daily limit overflow",
+                  "description":"This ticket should be rejected.",
+                  "category":"QUESTION",
+                  "platform":"DESKTOP"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.BadRequest, rejected.status)
+        assertTrue(rejected.bodyAsText().contains("Daily ticket limit reached"))
+    }
+
+    @Test
+    fun testDoubleCloseAcceptanceIsIdempotentAndScoped() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
+
+        val adminAccept = client.post("/admin/tickets/ticket-1/accept-close") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"resolutionSummary":"Fixed"}""")
+        }
+        val clientAccept = client.post("/client/tickets/ticket-1/accept-close") {
+            bearer(clientToken)
+        }
+        val clientAcceptAgain = client.post("/client/tickets/ticket-1/accept-close") {
+            bearer(clientToken)
+        }
+
+        assertEquals(HttpStatusCode.OK, adminAccept.status)
+        assertTrue(adminAccept.bodyAsText().contains("\"status\":\"RESOLVED\""))
+        assertEquals(HttpStatusCode.OK, clientAccept.status)
+        assertTrue(clientAccept.bodyAsText().contains("\"status\":\"CLOSED\""))
+        assertTrue(clientAccept.bodyAsText().contains("archivedAt"))
+        assertEquals(HttpStatusCode.OK, clientAcceptAgain.status)
+        assertTrue(clientAcceptAgain.bodyAsText().contains("\"status\":\"CLOSED\""))
+    }
+
+    @Test
+    fun testDeviceRegistrationUsesAuthenticatedUserId() = testApplication {
+        application { testModule() }
+        val token = client.accessToken()
+
+        val response = client.post("/devices/register") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"spoofed-user","token":"device-token-v2","platform":"ANDROID"}""")
+        }
+
+        assertEquals(HttpStatusCode.Created, response.status)
+        assertTrue(response.bodyAsText().contains("\"userId\":\"user-admin\""))
+        assertTrue(!response.bodyAsText().contains("spoofed-user"))
+    }
+
+    @Test
+    fun testClientTicketCreationAddsAdminAlert() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
+        val adminToken = client.accessToken()
+
+        val createResponse = client.post("/client/tickets") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "subject":"Alert check",
+                  "description":"Admin should receive a polling alert.",
+                  "category":"QUESTION",
+                  "platform":"DESKTOP"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+
+        val alertsResponse = client.get("/alerts") {
+            bearer(adminToken)
+        }
+        assertEquals(HttpStatusCode.OK, alertsResponse.status)
+        assertTrue(alertsResponse.bodyAsText().contains("NEW_TICKET"))
+        assertTrue(alertsResponse.bodyAsText().contains("Alert check"))
+    }
+
+    @Test
     fun testClientsRouteIncludesNewFields() = testApplication {
         application { testModule() }
 

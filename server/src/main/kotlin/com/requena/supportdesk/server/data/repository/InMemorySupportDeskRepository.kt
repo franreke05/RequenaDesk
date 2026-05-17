@@ -3,6 +3,7 @@ package com.requena.supportdesk.server.data.repository
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.mapper.SupportDeskMapper
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -18,9 +19,11 @@ import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
+import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
+import com.requena.supportdesk.server.domain.model.ServerTicketMessageSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
@@ -33,12 +36,21 @@ import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import java.time.Instant
+import java.time.LocalDate
 
 class InMemorySupportDeskRepository(
     private val dataSource: InMemorySupportDeskDataSource,
 ) : SupportDeskRepository {
     private data class LocalAdminAccount(
         val userId: String,
+        val name: String,
+        val email: String,
+        val password: String,
+    )
+
+    private data class LocalClientAccount(
+        val userId: String,
+        val clientId: String,
         val name: String,
         val email: String,
         val password: String,
@@ -58,6 +70,22 @@ class InMemorySupportDeskRepository(
             password = "Admin2Sanchez",
         ),
     )
+    private val clientAccounts = mutableListOf(
+        LocalClientAccount(
+            userId = "client-user-1",
+            clientId = "client-1",
+            name = "Ana Northwind",
+            email = "ana@northwind.dev",
+            password = "Client1234!",
+        ),
+        LocalClientAccount(
+            userId = "client-user-2",
+            clientId = "client-2",
+            name = "David Pixel",
+            email = "david@pixelforge.dev",
+            password = "Client1234!",
+        ),
+    )
 
     private val clients = dataSource.clients().map(SupportDeskMapper::client).toMutableList()
     private val clientOwners = mutableMapOf(
@@ -68,6 +96,45 @@ class InMemorySupportDeskRepository(
         ServerTaskLabelSnapshot("label-1", "user-admin", "Hoy", "#6B7A5B", 1),
         ServerTaskLabelSnapshot("label-2", "user-admin-2", "Seguimiento", "#A67C52", 1),
     )
+    private val ticketMessages = mutableMapOf(
+        "ticket-1" to mutableListOf(
+            ServerTicketMessageSnapshot(
+                id = "message-1",
+                ticketId = "ticket-1",
+                authorId = "client-user-1",
+                authorName = "Ana Northwind",
+                body = "La app se queda en blanco al arrancar.",
+                createdAt = "2026-04-15T09:00:00Z",
+            ),
+        ),
+        "ticket-2" to mutableListOf(
+            ServerTicketMessageSnapshot(
+                id = "message-2",
+                ticketId = "ticket-2",
+                authorId = "user-admin-2",
+                authorName = "Admin Sanchez",
+                body = "Necesito confirmar el formato exacto del campo.",
+                createdAt = "2026-04-15T10:00:00Z",
+            ),
+        ),
+    )
+    private val tickets = dataSource.tickets().mapIndexed { index, entity ->
+        val clientId = if (index == 0) "client-1" else "client-2"
+        val ownerId = clientOwners[clientId]
+        val requester = clientAccounts.firstOrNull { it.clientId == clientId }
+        SupportDeskMapper.ticket(entity).copy(
+            clientId = clientId,
+            requesterId = requester?.userId.orEmpty(),
+            requesterName = requester?.name.orEmpty(),
+            requesterEmail = requester?.email.orEmpty(),
+            assigneeId = ownerId,
+            assigneeName = adminAccounts.firstOrNull { it.userId == ownerId }?.name,
+            createdAt = "2026-04-15T08:00:00Z",
+            updatedAt = "2026-04-15T10:00:00Z",
+            messages = ticketMessages[entity.id].orEmpty(),
+        )
+    }.toMutableList()
+    private val clientAccessCodes = mutableMapOf<String, Pair<String, String>>()
     private val tasks = mutableListOf(
         ServerTaskSnapshot(
             id = "task-1",
@@ -171,21 +238,72 @@ class InMemorySupportDeskRepository(
             createdAt = "2026-04-14T09:10:00Z",
         ),
     )
+    private val alerts = mutableListOf(
+        ServerNotificationAlertSnapshot(
+            id = "alert-1",
+            userId = "user-admin",
+            ticketId = "ticket-1",
+            type = "NEW_TICKET",
+            title = "Nuevo ticket",
+            body = "Northwind Studio espera triage.",
+            createdAt = "2026-04-15T09:00:00Z",
+        ),
+    )
 
-    override fun authenticate(email: String, password: String): ServerAuthIdentity? =
+    override fun authenticate(email: String, password: String): ServerAuthIdentity? {
         adminAccounts.firstOrNull { account ->
             account.email.equals(email.trim(), ignoreCase = true) && account.password == password
         }?.let { account ->
-            ServerAuthIdentity(
+            return ServerAuthIdentity(
                 userId = account.userId,
                 name = account.name,
                 email = account.email,
                 role = "ADMIN",
             )
         }
+        clientAccounts.firstOrNull { account ->
+            account.email.equals(email.trim(), ignoreCase = true) && account.password == password
+        }?.let { account ->
+            return ServerAuthIdentity(
+                userId = account.userId,
+                name = account.name,
+                email = account.email,
+                role = "CLIENT",
+                clientId = account.clientId,
+            )
+        }
+        return null
+    }
+
+    override fun claimClientAccessCode(request: ClientAccessCodeClaimRequest): ServerAuthIdentity? {
+        val (clientId, ownerAdminId) = clientAccessCodes.remove(request.code.trim().uppercase()) ?: return null
+        val client = clients.firstOrNull { it.id == clientId && clientOwners[it.id] == ownerAdminId } ?: return null
+        val account = LocalClientAccount(
+            userId = "client-user-${clientAccounts.size + 1}",
+            clientId = client.id,
+            name = request.name.ifBlank { client.contactName.ifBlank { client.companyName } },
+            email = request.email.ifBlank { client.email },
+            password = request.password,
+        )
+        clientAccounts.add(account)
+        return ServerAuthIdentity(
+            userId = account.userId,
+            name = account.name,
+            email = account.email,
+            role = "CLIENT",
+            clientId = account.clientId,
+        )
+    }
+
+    override fun createClientAccessCode(clientId: String, ownerAdminId: String, expiresInDays: Int): String {
+        requireClientOwnership(clientId, ownerAdminId)
+        val code = "ORY-${clientId.takeLast(3).uppercase()}-${clientAccessCodes.size + 1}".uppercase()
+        clientAccessCodes[code] = clientId to ownerAdminId
+        return code
+    }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
-        refreshTokens[PasswordHasher.hash(refreshToken)] = userId
+        refreshTokens[PasswordHasher.hashToken(refreshToken)] = userId
     }
 
     override fun rotateRefreshToken(
@@ -193,48 +311,175 @@ class InMemorySupportDeskRepository(
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? {
-        val userId = refreshTokens.remove(PasswordHasher.hash(refreshToken)) ?: return null
-        refreshTokens[PasswordHasher.hash(replacementRefreshToken)] = userId
-        val account = adminAccounts.firstOrNull { it.userId == userId } ?: return null
-        return ServerAuthIdentity(
-            userId = account.userId,
-            name = account.name,
-            email = account.email,
-            role = "ADMIN",
-        )
+        val userId = refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) ?: return null
+        refreshTokens[PasswordHasher.hashToken(replacementRefreshToken)] = userId
+        adminAccounts.firstOrNull { it.userId == userId }?.let { account ->
+            return ServerAuthIdentity(
+                userId = account.userId,
+                name = account.name,
+                email = account.email,
+                role = "ADMIN",
+            )
+        }
+        clientAccounts.firstOrNull { it.userId == userId }?.let { account ->
+            return ServerAuthIdentity(
+                userId = account.userId,
+                name = account.name,
+                email = account.email,
+                role = "CLIENT",
+                clientId = account.clientId,
+            )
+        }
+        return null
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean =
-        refreshTokens.remove(PasswordHasher.hash(refreshToken)) != null
+        refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) != null
 
-    override fun getTickets(): List<ServerTicketSnapshot> = dataSource.tickets().map(SupportDeskMapper::ticket)
+    override fun getTickets(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<ServerTicketSnapshot> = tickets
+        .filter { ticket ->
+            (ownerAdminId == null || clientOwners[ticket.clientId] == ownerAdminId) &&
+                (clientId == null || ticket.clientId == clientId)
+        }
+        .drop(offset.coerceAtLeast(0))
+        .take(limit.coerceIn(1, 200))
+        .map { it.copy(messages = ticketMessages[it.id].orEmpty()) }
 
-    override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.ticket(id)?.let(SupportDeskMapper::ticket)
+    override fun countClientTicketsCreatedOn(clientId: String, datePrefix: String): Int =
+        tickets.count { it.clientId == clientId && it.createdAt.startsWith(datePrefix) }
 
-    override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = ServerTicketSnapshot(
-        id = "ticket-created",
-        ticketNumber = "RDS-999999",
-        subject = request.subject.ifBlank { "Nuevo ticket" },
-        description = request.description.ifBlank { "Ticket creado en modo local." },
-        category = request.category,
-        affectedApp = request.affectedApp.ifBlank { "Assigned product" },
-        platform = request.platform,
-        appVersion = request.appVersion,
-        clientReference = request.clientReference,
-        status = "OPEN",
-        priority = request.priority,
-        waitingOn = "ADMIN",
-        resolutionSummary = null,
-    )
+    override fun getTicket(id: String, ownerAdminId: String?, clientId: String?): ServerTicketSnapshot? = tickets
+        .firstOrNull { ticket ->
+            (ticket.id == id || ticket.ticketNumber == id) &&
+                (ownerAdminId == null || clientOwners[ticket.clientId] == ownerAdminId) &&
+                (clientId == null || ticket.clientId == clientId)
+        }
+        ?.let { it.copy(messages = ticketMessages[it.id].orEmpty()) }
 
-    override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated =
-        ServerTicketMessageCreated(ticketId = ticketId, messageId = "message-1")
+    override fun createTicket(request: CreateTicketRequest, ownerAdminId: String?, requesterId: String?): ServerTicketSnapshot {
+        if (ownerAdminId != null) requireClientOwnership(request.clientId, ownerAdminId)
+        val owner = clientOwners[request.clientId]
+        val requester = requesterId?.let { id -> clientAccounts.firstOrNull { it.userId == id } }
+            ?: clientAccounts.firstOrNull { it.clientId == request.clientId }
+        val ticket = ServerTicketSnapshot(
+            id = "ticket-${tickets.size + 1}",
+            clientId = request.clientId,
+            ticketNumber = "RDS-${(1000 + tickets.size + 1)}",
+            subject = request.subject.ifBlank { "Nuevo ticket" },
+            description = request.description.ifBlank { "Ticket creado en modo local." },
+            category = request.category,
+            affectedApp = request.affectedApp.ifBlank { clients.firstOrNull { it.id == request.clientId }?.productName ?: "Assigned product" },
+            platform = request.platform,
+            appVersion = request.appVersion,
+            clientReference = request.clientReference,
+            status = "OPEN",
+            priority = request.priority,
+            waitingOn = "ADMIN",
+            requesterId = requester?.userId.orEmpty(),
+            requesterName = requester?.name.orEmpty(),
+            requesterEmail = requester?.email.orEmpty(),
+            assigneeId = owner,
+            assigneeName = adminAccounts.firstOrNull { it.userId == owner }?.name,
+            createdAt = "${LocalDate.now()}T10:00:00Z",
+            updatedAt = "${LocalDate.now()}T10:00:00Z",
+        )
+        tickets.add(0, ticket)
+        owner?.let { ownerId ->
+            alerts.add(
+                0,
+                ServerNotificationAlertSnapshot(
+                    id = "alert-${alerts.size + 1}",
+                    userId = ownerId,
+                    ticketId = ticket.id,
+                    type = "NEW_TICKET",
+                    title = "Nuevo ticket",
+                    body = ticket.subject,
+                    createdAt = ticket.createdAt,
+                ),
+            )
+        }
+        return ticket
+    }
 
-    override fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate =
-        ServerTicketFieldUpdate(ticketId = ticketId, value = request.status)
+    override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated {
+        val ticket = getTicket(ticketId, null, null) ?: throw ServerNotFoundException("Ticket not found")
+        val authorName = adminAccounts.firstOrNull { it.userId == request.authorId }?.name
+            ?: clientAccounts.firstOrNull { it.userId == request.authorId }?.name
+            ?: "Usuario"
+        val message = ServerTicketMessageSnapshot(
+            id = "message-${ticketMessages.values.sumOf { it.size } + 1}",
+            ticketId = ticket.id,
+            authorId = request.authorId,
+            authorName = authorName,
+            body = request.body,
+            createdAt = "2026-04-16T10:00:00Z",
+        )
+        ticketMessages.getOrPut(ticket.id) { mutableListOf() }.add(message)
+        val index = tickets.indexOfFirst { it.id == ticket.id }
+        if (index >= 0) tickets[index] = tickets[index].copy(updatedAt = message.createdAt)
+        listOfNotNull(clientOwners[ticket.clientId], ticket.requesterId)
+            .filter { it.isNotBlank() && it != request.authorId }
+            .distinct()
+            .forEach { recipientId ->
+                alerts.add(
+                    0,
+                    ServerNotificationAlertSnapshot(
+                        id = "alert-${alerts.size + 1}",
+                        userId = recipientId,
+                        ticketId = ticket.id,
+                        type = "NEW_MESSAGE",
+                        title = "Nuevo mensaje",
+                        body = ticket.subject,
+                        createdAt = message.createdAt,
+                    ),
+                )
+            }
+        return ServerTicketMessageCreated(ticketId = ticket.id, messageId = message.id)
+    }
 
-    override fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate =
-        ServerTicketFieldUpdate(ticketId = ticketId, value = request.priority)
+    override fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate {
+        val index = tickets.indexOfFirst { it.id == ticketId || it.ticketNumber == ticketId }
+        if (index < 0) throw ServerNotFoundException("Ticket not found")
+        tickets[index] = tickets[index].copy(
+            status = request.status,
+            waitingOn = if (request.status == "PENDING_CLIENT") "CLIENT" else "ADMIN",
+            updatedAt = "2026-04-16T10:00:00Z",
+        )
+        return ServerTicketFieldUpdate(ticketId = tickets[index].id, value = request.status)
+    }
+
+    override fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate {
+        val index = tickets.indexOfFirst { it.id == ticketId || it.ticketNumber == ticketId }
+        if (index < 0) throw ServerNotFoundException("Ticket not found")
+        tickets[index] = tickets[index].copy(priority = request.priority, updatedAt = "2026-04-16T10:00:00Z")
+        return ServerTicketFieldUpdate(ticketId = tickets[index].id, value = request.priority)
+    }
+
+    override fun acceptTicketClose(ticketId: String, actorId: String, actorRole: String, resolutionSummary: String?): ServerTicketSnapshot {
+        val index = tickets.indexOfFirst { it.id == ticketId || it.ticketNumber == ticketId }
+        if (index < 0) throw ServerNotFoundException("Ticket not found")
+        val current = tickets[index]
+        val acceptedAt = "2026-04-16T10:00:00Z"
+        val updated = when (actorRole) {
+            "CLIENT" -> current.copy(clientAcceptedCloseAt = acceptedAt)
+            else -> current.copy(adminAcceptedCloseAt = acceptedAt, resolutionSummary = resolutionSummary ?: current.resolutionSummary)
+        }.let { candidate ->
+            if (candidate.clientAcceptedCloseAt != null && candidate.adminAcceptedCloseAt != null) {
+                candidate.copy(status = "CLOSED", archivedAt = acceptedAt, waitingOn = "ADMIN")
+            } else {
+                candidate.copy(status = "RESOLVED")
+            }
+        }.copy(updatedAt = acceptedAt)
+        tickets[index] = updated
+        return updated.copy(messages = ticketMessages[updated.id].orEmpty())
+    }
+
+    override fun rateTicket(ticketId: String, clientId: String, rating: Int): ServerTicketSnapshot {
+        val index = tickets.indexOfFirst { (it.id == ticketId || it.ticketNumber == ticketId) && it.clientId == clientId }
+        if (index < 0) throw ServerNotFoundException("Ticket not found")
+        tickets[index] = tickets[index].copy(satisfactionRating = rating.coerceIn(1, 5), updatedAt = "2026-04-16T10:00:00Z")
+        return tickets[index]
+    }
 
     override fun createAttachment(ticketId: String, request: UploadAttachmentRequest): ServerAttachmentCreated =
         ServerAttachmentCreated(ticketId = ticketId, attachmentId = "attachment-1")
@@ -402,6 +647,7 @@ class InMemorySupportDeskRepository(
             labelColorHex = label.colorHex,
             dueDate = request.dueDate?.let { it.takeIf(String::isNotBlank) } ?: if (request.dueDate == null) current.dueDate else null,
             completed = request.completed ?: current.completed,
+            status = request.status ?: if (request.completed == true) "DONE" else current.status,
             updatedAt = "2026-04-16T10:00:00Z",
         )
         tasks[index] = updated
@@ -415,13 +661,15 @@ class InMemorySupportDeskRepository(
         timeLogs.removeAll { it.taskId == taskId }
     }
 
-    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?): List<ServerTimeLogSnapshot> =
+    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?, limit: Int, offset: Int): List<ServerTimeLogSnapshot> =
         timeLogs.filter { log ->
             val taskOwner = taskOwners[log.taskId]
             (ownerAdminId == null || taskOwner == ownerAdminId) &&
             (clientId == null || log.clientId == clientId) &&
                 (taskId == null || log.taskId == taskId)
         }
+            .drop(offset.coerceAtLeast(0))
+            .take(limit.coerceIn(1, 200))
 
     override fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String?): ServerTimeLogSnapshot {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
@@ -476,13 +724,27 @@ class InMemorySupportDeskRepository(
         )
     }
 
-    override fun getAttachment(id: String): ServerAttachmentSnapshot? = dataSource.attachment(id)?.let(SupportDeskMapper::attachment)
+    override fun getAttachment(id: String, ownerAdminId: String?): ServerAttachmentSnapshot? =
+        dataSource.attachment(id)?.let(SupportDeskMapper::attachment)
 
     override fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration =
         SupportDeskMapper.device(dataSource.registerDevice()).copy(
             userId = request.userId,
             platform = request.platform,
         )
+
+    override fun getAlerts(userId: String, limit: Int, offset: Int): List<ServerNotificationAlertSnapshot> = alerts
+        .filter { it.userId == userId }
+        .drop(offset.coerceAtLeast(0))
+        .take(limit.coerceIn(1, 100))
+
+    override fun markAlertRead(alertId: String, userId: String): ServerNotificationAlertSnapshot? {
+        val index = alerts.indexOfFirst { it.id == alertId && it.userId == userId }
+        if (index < 0) return null
+        val updated = alerts[index].copy(readAt = alerts[index].readAt ?: "2026-04-16T10:00:00Z")
+        alerts[index] = updated
+        return updated
+    }
 
     private fun requireClientIndex(clientId: String, ownerAdminId: String? = null): Int = clients.indexOfFirst {
         it.id == clientId && (ownerAdminId == null || clientOwners[it.id] == ownerAdminId)

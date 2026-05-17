@@ -49,3 +49,18 @@ suspend fun ApplicationCall.requireAdminIdentity(
     )
     return null
 }
+
+suspend fun ApplicationCall.requireClientIdentity(
+    tokenService: SupportDeskTokenService,
+): ServerAuthIdentity? {
+    val identity = requireAuthenticatedIdentity(tokenService) ?: return null
+    if (identity.role == "CLIENT" && !identity.clientId.isNullOrBlank()) {
+        return identity
+    }
+
+    respondJson(
+        status = HttpStatusCode.Forbidden,
+        body = errorResponse("Client role is required"),
+    )
+    return null
+}

@@ -10,9 +10,9 @@ class PostgresDemoBootstrapper(
         dataSource.withConnection { connection ->
             connection.autoCommit = false
             try {
-                ensureClient(connection)
                 ensurePrimaryAdminUser(connection)
                 ensureSecondaryAdminUser(connection)
+                ensureClient(connection)
                 ensureClientUser(connection, clientPassword)
                 ensureTaskLabel(connection)
                 ensureTask(connection)
@@ -65,7 +65,7 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash("Admin1requena"))
+            it.setString(1, PasswordHasher.hashPassword("Admin1requena"))
             it.executeUpdate()
         }
     }
@@ -85,7 +85,7 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash("Admin2Sanchez"))
+            it.setString(1, PasswordHasher.hashPassword("Admin2Sanchez"))
             it.executeUpdate()
         }
     }
@@ -106,7 +106,7 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash(password))
+            it.setString(1, PasswordHasher.hashPassword(password))
             it.executeUpdate()
         }
     }

@@ -4,6 +4,7 @@ import com.requena.supportdesk.core.network.configuredSupportDeskHttpClient
 import com.requena.supportdesk.core.network.SupportDeskSessionManager
 import com.requena.supportdesk.features.auth.data.datasource.RemoteAuthDataSource
 import com.requena.supportdesk.features.auth.data.repository.AuthRepositoryImpl
+import com.requena.supportdesk.features.auth.domain.usecase.ClaimClientAccessUseCase
 import com.requena.supportdesk.features.auth.data.session.AuthSessionStore
 import com.requena.supportdesk.features.auth.domain.usecase.ClearSessionUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
@@ -40,10 +41,12 @@ import com.requena.supportdesk.features.tickets.data.datasource.RemoteTicketsDat
 import com.requena.supportdesk.features.tickets.data.repository.TicketsRepositoryImpl
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketStatusUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.RateTicketUseCase
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
@@ -61,6 +64,7 @@ object SupportDeskSharedModule {
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
 
     private val loginUseCase = LoginUseCase(authRepository)
+    private val claimClientAccessUseCase = ClaimClientAccessUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
     private val clearSessionUseCase = ClearSessionUseCase(authRepository)
     private val getTicketsUseCase = GetTicketsUseCase(ticketsRepository)
@@ -69,6 +73,8 @@ object SupportDeskSharedModule {
     private val replyTicketUseCase = ReplyTicketUseCase(ticketsRepository)
     private val changeTicketStatusUseCase = ChangeTicketStatusUseCase(ticketsRepository)
     private val changeTicketPriorityUseCase = ChangeTicketPriorityUseCase(ticketsRepository)
+    private val acceptTicketCloseUseCase = AcceptTicketCloseUseCase(ticketsRepository)
+    private val rateTicketUseCase = RateTicketUseCase(ticketsRepository)
     private val getClientsUseCase = GetClientsUseCase(clientsRepository)
     private val createClientUseCase = CreateClientUseCase(clientsRepository)
     private val updateClientUseCase = UpdateClientUseCase(clientsRepository)
@@ -88,6 +94,7 @@ object SupportDeskSharedModule {
 
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
+        claimClientAccessUseCase = claimClientAccessUseCase,
         restoreSessionUseCase = restoreSessionUseCase,
         clearSessionUseCase = clearSessionUseCase,
     )
@@ -99,6 +106,8 @@ object SupportDeskSharedModule {
         replyTicketUseCase = replyTicketUseCase,
         changeTicketStatusUseCase = changeTicketStatusUseCase,
         changeTicketPriorityUseCase = changeTicketPriorityUseCase,
+        acceptTicketCloseUseCase = acceptTicketCloseUseCase,
+        rateTicketUseCase = rateTicketUseCase,
     )
 
     fun createClientsViewModel(): ClientsViewModel = ClientsViewModel(

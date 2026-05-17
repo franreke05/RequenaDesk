@@ -11,6 +11,8 @@ import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.data.datasource.TicketsDataSource
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketMessageRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketRequestDto
+import com.requena.supportdesk.features.tickets.data.dto.TicketCloseAcceptanceRequestDto
+import com.requena.supportdesk.features.tickets.data.dto.TicketSatisfactionRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketPriorityRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketStatusRequestDto
 import com.requena.supportdesk.features.tickets.data.mapper.TicketsMapper
@@ -72,7 +74,6 @@ class TicketsRepositoryImpl(
         dataSource.replyTicket(
             ticketId = ticketId,
             request = CreateTicketMessageRequestDto(
-                authorId = authorId,
                 body = message,
             ),
         )
@@ -105,5 +106,19 @@ class TicketsRepositoryImpl(
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo cambiar la prioridad.", cause = it) },
+    )
+
+    override suspend fun acceptClose(ticketId: String, resolutionSummary: String?): AppResult<Ticket> = runCatching {
+        dataSource.acceptClose(ticketId, TicketCloseAcceptanceRequestDto(resolutionSummary)).let(TicketsMapper::fromDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo aceptar el cierre.", cause = it) },
+    )
+
+    override suspend fun rateTicket(ticketId: String, rating: Int): AppResult<Ticket> = runCatching {
+        dataSource.rateTicket(ticketId, TicketSatisfactionRequestDto(rating)).let(TicketsMapper::fromDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo guardar la satisfaccion.", cause = it) },
     )
 }

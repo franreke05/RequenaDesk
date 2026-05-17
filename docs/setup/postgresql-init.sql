@@ -64,9 +64,7 @@ CREATE TABLE IF NOT EXISTS clients (
     CONSTRAINT clients_service_tier_check
         CHECK (service_tier IN ('STANDARD', 'PRIORITY', 'VIP')),
     CONSTRAINT clients_preferred_contact_channel_check
-        CHECK (preferred_contact_channel IN ('TICKET', 'EMAIL', 'WHATSAPP', 'CALL')),
-    CONSTRAINT clients_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
+        CHECK (preferred_contact_channel IN ('TICKET', 'EMAIL', 'WHATSAPP', 'CALL'))
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -100,7 +98,7 @@ VALUES
         CAST('22222222-2222-2222-2222-222222222222' AS uuid),
         'Admin Requena',
         'admin@orykai.dev',
-        '034557d76d96b8e111565708f922d70746230ea84d9fa5d9dacf9d9dceab718f',
+        '$2a$12$ALDaVPTzXkBlzeGCWBUE0.XCgZXsA9.ZwhcwBuZN4a5tIfo3nZLqm',
         'ADMIN',
         TRUE
     ),
@@ -108,7 +106,7 @@ VALUES
         CAST('88888888-8888-8888-8888-888888888888' AS uuid),
         'Admin Sanchez',
         'admin2@orykai.dev',
-        '8f16b049a84f05e9c73058f44d96a9a5e5c55d735cf62996a1841f22ede7997e',
+        '$2a$12$AgZa9Xrdw3WalNWMbVJkSeccazOVue60vR7CoXvYmupVm7yZOFnke',
         'ADMIN',
         TRUE
     )
@@ -136,6 +134,10 @@ CREATE TABLE IF NOT EXISTS tickets (
     updated_at timestamptz NOT NULL DEFAULT NOW(),
     resolved_at timestamptz,
     closed_at timestamptz,
+    client_accepted_close_at timestamptz,
+    admin_accepted_close_at timestamptz,
+    archived_at timestamptz,
+    satisfaction_rating integer,
     CONSTRAINT tickets_category_check
         CHECK (category IN ('BUG', 'ACCESS', 'BILLING', 'CHANGE_REQUEST', 'QUESTION', 'OTHER')),
     CONSTRAINT tickets_platform_check
@@ -145,7 +147,20 @@ CREATE TABLE IF NOT EXISTS tickets (
     CONSTRAINT tickets_priority_check
         CHECK (priority IN ('LOW', 'MEDIUM', 'HIGH', 'URGENT')),
     CONSTRAINT tickets_waiting_on_check
-        CHECK (waiting_on IN ('CLIENT', 'ADMIN'))
+        CHECK (waiting_on IN ('CLIENT', 'ADMIN')),
+    CONSTRAINT tickets_satisfaction_rating_check
+        CHECK (satisfaction_rating IS NULL OR satisfaction_rating BETWEEN 1 AND 5)
+);
+
+CREATE TABLE IF NOT EXISTS client_access_codes (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    owner_admin_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    code_hash text NOT NULL UNIQUE,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    created_by uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS ticket_messages (
@@ -210,8 +225,7 @@ CREATE TABLE IF NOT EXISTS task_labels (
     color_hex varchar(7) NOT NULL,
     created_at timestamptz NOT NULL DEFAULT NOW(),
     updated_at timestamptz NOT NULL DEFAULT NOW(),
-    CONSTRAINT task_labels_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
+    CONSTRAINT task_labels_name_owner_unique UNIQUE (owner_admin_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -223,14 +237,28 @@ CREATE TABLE IF NOT EXISTS tasks (
     description text NOT NULL DEFAULT '',
     due_date date,
     completed boolean NOT NULL DEFAULT false,
+    status varchar(30) NOT NULL DEFAULT 'TODO',
     logged_minutes integer NOT NULL DEFAULT 0,
     logged_seconds integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT NOW(),
     updated_at timestamptz NOT NULL DEFAULT NOW(),
     CONSTRAINT tasks_logged_minutes_check CHECK (logged_minutes >= 0),
     CONSTRAINT tasks_logged_seconds_check CHECK (logged_seconds >= 0),
-    CONSTRAINT tasks_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'))
+    CONSTRAINT tasks_status_check
+        CHECK (status IN ('TODO', 'IN_PROGRESS', 'WAITING_CLIENT', 'REVIEW', 'DONE', 'ARCHIVED'))
+);
+
+CREATE TABLE IF NOT EXISTS notification_alerts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ticket_id uuid REFERENCES tickets(id) ON DELETE CASCADE,
+    type varchar(40) NOT NULL,
+    title varchar(180) NOT NULL,
+    body text NOT NULL DEFAULT '',
+    read_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    CONSTRAINT notification_alerts_type_check
+        CHECK (type IN ('NEW_TICKET', 'NEW_MESSAGE', 'TICKET_UPDATED', 'CLOSE_REQUESTED'))
 );
 
 CREATE TABLE IF NOT EXISTS time_logs (
@@ -272,6 +300,28 @@ ALTER TABLE tasks
 ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS due_date date;
 
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS status varchar(30) NOT NULL DEFAULT 'TODO';
+
+UPDATE tasks
+SET status = CASE
+    WHEN completed = TRUE AND status <> 'ARCHIVED' THEN 'DONE'
+    WHEN status IS NULL OR BTRIM(status) = '' THEN 'TODO'
+    ELSE status
+END;
+
+ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS client_accepted_close_at timestamptz;
+
+ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS admin_accepted_close_at timestamptz;
+
+ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+
+ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS satisfaction_rating integer;
+
 ALTER TABLE time_logs
     ADD COLUMN IF NOT EXISTS seconds integer NOT NULL DEFAULT 0;
 
@@ -308,17 +358,33 @@ UPDATE tasks
 SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
 WHERE owner_admin_id IS NULL;
 
-ALTER TABLE clients
-    ADD CONSTRAINT clients_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'clients_owner_admin_fk'
+    ) THEN
+        ALTER TABLE clients
+            ADD CONSTRAINT clients_owner_admin_fk
+            FOREIGN KEY (owner_admin_id) REFERENCES users(id) ON DELETE RESTRICT;
+    END IF;
 
-ALTER TABLE task_labels
-    ADD CONSTRAINT task_labels_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'tickets_satisfaction_rating_check'
+    ) THEN
+        ALTER TABLE tickets
+            ADD CONSTRAINT tickets_satisfaction_rating_check
+            CHECK (satisfaction_rating IS NULL OR satisfaction_rating BETWEEN 1 AND 5);
+    END IF;
 
-ALTER TABLE tasks
-    ADD CONSTRAINT tasks_owner_admin_check
-        CHECK (EXISTS (SELECT 1 FROM users WHERE id = owner_admin_id AND role = 'ADMIN'));
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_status_check'
+    ) THEN
+        ALTER TABLE tasks
+            ADD CONSTRAINT tasks_status_check
+            CHECK (status IN ('TODO', 'IN_PROGRESS', 'WAITING_CLIENT', 'REVIEW', 'DONE', 'ARCHIVED'));
+    END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -326,6 +392,8 @@ CREATE INDEX IF NOT EXISTS idx_clients_owner_admin_id ON clients(owner_admin_id)
 CREATE INDEX IF NOT EXISTS idx_task_labels_owner_admin_id ON task_labels(owner_admin_id);
 
 CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_client_created_at ON tickets(client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_client_updated_at ON tickets(client_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_requester_id ON tickets(requester_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_assignee_id ON tickets(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
@@ -333,6 +401,8 @@ CREATE INDEX IF NOT EXISTS idx_tickets_priority ON tickets(priority);
 CREATE INDEX IF NOT EXISTS idx_tickets_category ON tickets(category);
 CREATE INDEX IF NOT EXISTS idx_tickets_platform ON tickets(platform);
 CREATE INDEX IF NOT EXISTS idx_tickets_waiting_on ON tickets(waiting_on);
+CREATE INDEX IF NOT EXISTS idx_tickets_archived_at ON tickets(archived_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_satisfaction_rating ON tickets(satisfaction_rating);
 CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_updated_at ON tickets(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_subject_trgm ON tickets USING gin (subject gin_trgm_ops);
@@ -341,6 +411,11 @@ CREATE INDEX IF NOT EXISTS idx_tickets_ticket_number_trgm ON tickets USING gin (
 
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id_created_at
     ON ticket_messages(ticket_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_client_access_codes_client_id ON client_access_codes(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_access_codes_owner_admin_id ON client_access_codes(owner_admin_id);
+CREATE INDEX IF NOT EXISTS idx_client_access_codes_code_hash ON client_access_codes(code_hash);
+CREATE INDEX IF NOT EXISTS idx_client_access_codes_expires_at ON client_access_codes(expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_internal_comments_ticket_id_created_at
     ON internal_comments(ticket_id, created_at);
@@ -354,13 +429,21 @@ CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket_id_created_at
 CREATE INDEX IF NOT EXISTS idx_notification_devices_user_id
     ON notification_devices(user_id);
 
+CREATE INDEX IF NOT EXISTS idx_notification_alerts_user_id_created_at
+    ON notification_alerts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_alerts_ticket_id
+    ON notification_alerts(ticket_id);
+
 CREATE INDEX IF NOT EXISTS idx_task_labels_name ON task_labels(name);
 CREATE INDEX IF NOT EXISTS idx_tasks_client_id ON tasks(client_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_admin_id ON tasks(owner_admin_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_label_id ON tasks(label_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_time_logs_task_id ON time_logs(task_id);
 CREATE INDEX IF NOT EXISTS idx_time_logs_client_id ON time_logs(client_id);
+CREATE INDEX IF NOT EXISTS idx_time_logs_client_work_date ON time_logs(client_id, work_date DESC);
+CREATE INDEX IF NOT EXISTS idx_time_logs_task_work_date ON time_logs(task_id, work_date DESC);
 CREATE INDEX IF NOT EXISTS idx_time_logs_work_date ON time_logs(work_date DESC);
 CREATE INDEX IF NOT EXISTS idx_time_logs_author_id ON time_logs(author_id);
 

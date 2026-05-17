@@ -1,11 +1,11 @@
 package com.requena.supportdesk.features.tickets.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.model.InternalComment
+import com.requena.supportdesk.core.time.currentIsoDate
+import com.requena.supportdesk.core.time.currentIsoDateTime
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketEvent
-import com.requena.supportdesk.core.model.TicketMessage
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.TimeEntry
@@ -15,10 +15,12 @@ import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.domain.model.TicketFilters
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketStatusUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.RateTicketUseCase
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -37,6 +39,8 @@ class TicketsViewModel(
     private val replyTicketUseCase: ReplyTicketUseCase,
     private val changeTicketStatusUseCase: ChangeTicketStatusUseCase,
     private val changeTicketPriorityUseCase: ChangeTicketPriorityUseCase,
+    private val acceptTicketCloseUseCase: AcceptTicketCloseUseCase,
+    private val rateTicketUseCase: RateTicketUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TicketsUiState())
     val state: StateFlow<TicketsUiState> = _state.asStateFlow()
@@ -84,6 +88,8 @@ class TicketsViewModel(
             is TicketsUiEvent.ReplyToSelected -> replyToSelected(event.message)
             is TicketsUiEvent.ChangeSelectedStatus -> changeSelectedStatus(event.status)
             is TicketsUiEvent.ChangeSelectedPriority -> changeSelectedPriority(event.priority)
+            is TicketsUiEvent.AcceptSelectedClose -> acceptSelectedClose(event.resolutionSummary)
+            is TicketsUiEvent.RateSelected -> rateSelected(event.rating)
             is TicketsUiEvent.AddInternalNote -> addInternalNote(event)
             is TicketsUiEvent.AddTimeEntry -> addTimeEntry(event)
         }
@@ -94,9 +100,8 @@ class TicketsViewModel(
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             when (val result = getTicketsUseCase(currentFilters())) {
                 is AppResult.Error -> {
-                    sourceTickets = SupportDeskSeed.tickets()
-                    renderTickets(errorMessage = "Usando datos admin locales mientras el servidor no esta disponible.")
-                    _effects.emit(TicketsUiEffect.ShowMessage("Workspace de tickets cargado con datos locales"))
+                    renderTickets(errorMessage = result.message)
+                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     sourceTickets = result.data
@@ -131,10 +136,8 @@ class TicketsViewModel(
         launch {
             when (val result = createTicketUseCase(input)) {
                 is AppResult.Error -> {
-                    val localTicket = buildLocalTicket(input)
-                    sourceTickets = listOf(localTicket) + sourceTickets
-                    renderTickets(selectId = localTicket.id)
-                    _effects.emit(TicketsUiEffect.ShowMessage("Ticket creado en local dentro del workspace admin"))
+                    _state.update { it.copy(errorMessage = result.message) }
+                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     sourceTickets = listOf(result.data) + sourceTickets.filterNot { it.id == result.data.id }
@@ -147,23 +150,12 @@ class TicketsViewModel(
 
     private fun replyToSelected(message: String) {
         val selected = state.value.selectedTicket ?: return
+        if (message.isBlank()) return
         launch {
             when (val result = replyTicketUseCase(selected.id, message)) {
                 is AppResult.Error -> {
-                    val localMessage = TicketMessage(
-                        id = "message-local-${selected.messages.size + 1}",
-                        ticketId = selected.id,
-                        authorId = SupportDeskSeed.adminUser.id,
-                        authorName = SupportDeskSeed.adminUser.name,
-                        body = message,
-                        createdAt = "2026-04-15T12:00:00Z",
-                    )
-                    ticketOverrides[selected.id] = selected.copy(
-                        messages = selected.messages + localMessage,
-                        updatedAt = "2026-04-15T12:00:00Z",
-                    )
-                    renderTickets(selectId = selected.id)
-                    _effects.emit(TicketsUiEffect.ShowMessage("Respuesta guardada en local"))
+                    _state.update { it.copy(errorMessage = result.message) }
+                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     selectTicket(result.data.ticketId)
@@ -178,13 +170,8 @@ class TicketsViewModel(
         launch {
             when (val result = changeTicketStatusUseCase(selected.id, status)) {
                 is AppResult.Error -> {
-                    ticketOverrides[selected.id] = selected.copy(
-                        status = status,
-                        updatedAt = "2026-04-15T12:00:00Z",
-                        waitingOn = if (status == TicketStatus.PENDING_CLIENT) WaitingOn.CLIENT else WaitingOn.ADMIN,
-                    )
-                    renderTickets(selectId = selected.id)
-                    _effects.emit(TicketsUiEffect.ShowMessage("Estado actualizado en local"))
+                    _state.update { it.copy(errorMessage = result.message) }
+                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     ticketOverrides[selected.id] = mergeWithLocal(result.data)
@@ -199,10 +186,35 @@ class TicketsViewModel(
         launch {
             when (val result = changeTicketPriorityUseCase(selected.id, priority)) {
                 is AppResult.Error -> {
-                    ticketOverrides[selected.id] = selected.copy(priority = priority, updatedAt = "2026-04-15T12:00:00Z")
-                    renderTickets(selectId = selected.id)
-                    _effects.emit(TicketsUiEffect.ShowMessage("Prioridad actualizada en local"))
+                    _state.update { it.copy(errorMessage = result.message) }
+                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
+                is AppResult.Success -> {
+                    ticketOverrides[selected.id] = mergeWithLocal(result.data)
+                    renderTickets(selectId = selected.id)
+                }
+            }
+        }
+    }
+
+    private fun acceptSelectedClose(resolutionSummary: String?) {
+        val selected = state.value.selectedTicket ?: return
+        launch {
+            when (val result = acceptTicketCloseUseCase(selected.id, resolutionSummary)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> {
+                    ticketOverrides[selected.id] = mergeWithLocal(result.data)
+                    renderTickets(selectId = selected.id)
+                }
+            }
+        }
+    }
+
+    private fun rateSelected(rating: Int) {
+        val selected = state.value.selectedTicket ?: return
+        launch {
+            when (val result = rateTicketUseCase(selected.id, rating)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 is AppResult.Success -> {
                     ticketOverrides[selected.id] = mergeWithLocal(result.data)
                     renderTickets(selectId = selected.id)
@@ -221,11 +233,11 @@ class TicketsViewModel(
             authorId = event.authorId,
             authorName = event.authorName,
             body = body,
-            createdAt = "2026-04-15T12:00:00Z",
+            createdAt = currentIsoDateTime(),
         )
         ticketOverrides[selected.id] = selected.copy(
             internalComments = listOf(note) + selected.internalComments,
-            updatedAt = "2026-04-15T12:00:00Z",
+            updatedAt = currentIsoDateTime(),
         )
         renderTickets(selectId = selected.id)
     }
@@ -241,10 +253,10 @@ class TicketsViewModel(
             authorId = event.authorId,
             authorName = event.authorName,
             minutes = event.minutes,
-            workDate = "2026-04-15",
+            workDate = currentIsoDate(),
             note = noteBody,
             billable = event.billable,
-            createdAt = "2026-04-15T12:00:00Z",
+            createdAt = currentIsoDateTime(),
         )
         val eventLog = TicketEvent(
             id = "event-local-${selected.events.size + 1}",
@@ -252,12 +264,12 @@ class TicketsViewModel(
             type = "TIME_LOGGED",
             description = "${event.authorName} registro ${event.minutes} min",
             actorName = event.authorName,
-            createdAt = "2026-04-15T12:00:00Z",
+            createdAt = currentIsoDateTime(),
         )
         ticketOverrides[selected.id] = selected.copy(
             timeEntries = listOf(entry) + selected.timeEntries,
             events = listOf(eventLog) + selected.events,
-            updatedAt = "2026-04-15T12:00:00Z",
+            updatedAt = currentIsoDateTime(),
         )
         renderTickets(selectId = selected.id)
     }
@@ -274,26 +286,24 @@ class TicketsViewModel(
     private fun mergedTickets(): List<Ticket> = sourceTickets.map(::mergeWithLocal)
 
     private fun mergeWithLocal(ticket: Ticket): Ticket {
-        val seeded = SupportDeskSeed.tickets().firstOrNull { it.id == ticket.id }
         val local = ticketOverrides[ticket.id]
         if (local == null) {
-            return ticket.copy(
-                internalComments = (if (ticket.internalComments.isNotEmpty()) ticket.internalComments else seeded?.internalComments.orEmpty()).distinctBy { it.id },
-                timeEntries = (if (ticket.timeEntries.isNotEmpty()) ticket.timeEntries else seeded?.timeEntries.orEmpty()).distinctBy { it.id },
-                events = (if (ticket.events.isNotEmpty()) ticket.events else seeded?.events.orEmpty()).distinctBy { it.id },
-                messages = (if (ticket.messages.isNotEmpty()) ticket.messages else seeded?.messages.orEmpty()).distinctBy { it.id },
-            )
+            return ticket
         }
         return ticket.copy(
-            internalComments = local.internalComments.ifEmpty { seeded?.internalComments.orEmpty() }.distinctBy { it.id },
-            timeEntries = local.timeEntries.ifEmpty { seeded?.timeEntries.orEmpty() }.distinctBy { it.id },
-            events = local.events.ifEmpty { seeded?.events.orEmpty() }.distinctBy { it.id },
-            messages = local.messages.ifEmpty { seeded?.messages.orEmpty() }.distinctBy { it.id },
+            internalComments = local.internalComments.distinctBy { it.id },
+            timeEntries = local.timeEntries.distinctBy { it.id },
+            events = local.events.distinctBy { it.id },
+            messages = local.messages.distinctBy { it.id },
             status = local.status,
             priority = local.priority,
             waitingOn = local.waitingOn,
             updatedAt = local.updatedAt,
             resolutionSummary = local.resolutionSummary,
+            clientAcceptedCloseAt = local.clientAcceptedCloseAt,
+            adminAcceptedCloseAt = local.adminAcceptedCloseAt,
+            archivedAt = local.archivedAt,
+            satisfactionRating = local.satisfactionRating,
         )
     }
 
@@ -327,25 +337,4 @@ class TicketsViewModel(
             )
         }
     }
-
-    private fun buildLocalTicket(input: CreateTicketInput): Ticket = Ticket(
-        id = "ticket-local-${sourceTickets.size + 1}",
-        clientId = input.clientId.ifBlank { SupportDeskSeed.clients.first().id },
-        ticketNumber = "SD-${1100 + sourceTickets.size}",
-        subject = input.subject.ifBlank { "Nuevo ticket admin" },
-        description = input.description.ifBlank { "Creado desde el workspace admin." },
-        category = input.category,
-        affectedApp = input.affectedApp.ifBlank { SupportDeskSeed.clients.first().productName },
-        platform = input.platform,
-        appVersion = input.appVersion.ifBlank { null },
-        stepsToReproduce = input.stepsToReproduce.ifBlank { null },
-        clientReference = input.clientReference.ifBlank { null },
-        status = TicketStatus.OPEN,
-        priority = input.priority,
-        waitingOn = WaitingOn.ADMIN,
-        requester = SupportDeskSeed.adminUser,
-        assignee = SupportDeskSeed.partnerAdminUser,
-        createdAt = "2026-04-15T12:00:00Z",
-        updatedAt = "2026-04-15T12:00:00Z",
-    )
 }

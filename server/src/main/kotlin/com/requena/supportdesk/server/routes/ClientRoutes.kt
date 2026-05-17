@@ -1,6 +1,7 @@
 package com.requena.supportdesk.server.routes
 
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.ClientAccessCodeCreateRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
@@ -19,6 +20,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
@@ -74,6 +77,24 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             }
             service.deletedClient(clientId, ownerAdminId)
             call.respondJson(body = successResponse("/admin/clients/$clientId", messageJson("Client deleted")))
+        }
+        post("/clients/{clientId}/invitation") {
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+            val clientId = call.parameters["clientId"].orEmpty()
+            if (clientId.isBlank()) {
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
+            }
+            val request = call.receiveOrDefault(ClientAccessCodeCreateRequest())
+            val code = service.createdClientAccessCode(clientId, ownerAdminId, request)
+            call.respondJson(
+                body = successResponse(
+                    "/admin/clients/$clientId/invitation",
+                    buildJsonObject {
+                        put("code", code)
+                        put("expiresInDays", request.expiresInDays.coerceIn(1, 60))
+                    },
+                ),
+            )
         }
     }
 }

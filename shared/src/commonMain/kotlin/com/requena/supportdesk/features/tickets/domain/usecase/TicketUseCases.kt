@@ -41,3 +41,16 @@ class ChangeTicketPriorityUseCase(
 ) {
     suspend operator fun invoke(ticketId: String, priority: TicketPriority) = repository.changePriority(ticketId, priority)
 }
+
+class AcceptTicketCloseUseCase(
+    private val repository: TicketsRepository,
+) {
+    suspend operator fun invoke(ticketId: String, resolutionSummary: String? = null) =
+        repository.acceptClose(ticketId, resolutionSummary)
+}
+
+class RateTicketUseCase(
+    private val repository: TicketsRepository,
+) {
+    suspend operator fun invoke(ticketId: String, rating: Int) = repository.rateTicket(ticketId, rating)
+}

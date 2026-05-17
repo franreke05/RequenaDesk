@@ -41,6 +41,7 @@ import com.requena.supportdesk.designsystem.components.badges.TicketStatusBadge
 import com.requena.supportdesk.designsystem.components.badges.WaitingOnBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
+import com.requena.supportdesk.designsystem.components.cards.MetricCard
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
@@ -124,6 +125,7 @@ private fun TicketListPane(state: TicketsUiState, onEvent: (TicketsUiEvent) -> U
     val spacing = SupportDeskThemeTokens.spacing
     SectionCard(modifier = modifier, title = "Queue", subtitle = "${state.tickets.size} visible tickets after filters.") {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            SatisfactionSnapshot(tickets = state.tickets)
             SearchField(value = state.searchQuery, onValueChange = { onEvent(TicketsUiEvent.SearchChanged(it)) }, placeholder = "Search ticket, client or app")
             FilterBar(label = "Status", options = TicketStatus.entries.map { FilterOption(it, it.displayName()) }, selected = state.statusFilter, onSelected = { onEvent(TicketsUiEvent.StatusFilterChanged(it)) })
             FilterBar(label = "Priority", options = TicketPriority.entries.map { FilterOption(it, it.displayName()) }, selected = state.priorityFilter, onSelected = { onEvent(TicketsUiEvent.PriorityFilterChanged(it)) })
@@ -143,6 +145,34 @@ private fun TicketListPane(state: TicketsUiState, onEvent: (TicketsUiEvent) -> U
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SatisfactionSnapshot(tickets: List<Ticket>) {
+    val ratedTickets = tickets.mapNotNull { it.satisfactionRating }
+    val average = if (ratedTickets.isEmpty()) {
+        "Sin valoraciones"
+    } else {
+        val normalized = ratedTickets.sum().toFloat() / ratedTickets.size.toFloat()
+        "${(normalized * 10).toInt() / 10f}/5"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(SupportDeskThemeTokens.spacing.md),
+    ) {
+        MetricCard(
+            label = "Satisfaccion",
+            value = average,
+            supportingText = "${ratedTickets.size} tickets valorados",
+            modifier = Modifier.weight(1f),
+        )
+        MetricCard(
+            label = "Pendientes cliente",
+            value = tickets.count { it.waitingOn == WaitingOn.CLIENT }.toString(),
+            supportingText = "Tickets que esperan informacion externa",
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -186,6 +216,7 @@ private fun TicketContextCard(ticket: Ticket, modifier: Modifier = Modifier) {
             InfoRow(label = "Version", value = ticket.appVersion ?: "-")
             InfoRow(label = "Reference", value = ticket.clientReference ?: "-")
             InfoRow(label = "Steps", value = ticket.stepsToReproduce ?: "No repro steps yet.")
+            InfoRow(label = "Satisfaction", value = ticket.satisfactionRating?.let { "$it/5" } ?: "Not rated")
             InfoRow(label = "Updated", value = formatSupportDeskDateTime(ticket.updatedAt))
         }
         SectionCard(title = "Conversation", subtitle = "${ticket.messages.size} visible messages.") {

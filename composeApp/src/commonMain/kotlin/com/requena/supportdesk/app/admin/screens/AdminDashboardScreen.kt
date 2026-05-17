@@ -42,6 +42,7 @@ import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
+import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.designsystem.components.badges.ClientAccountStatusBadge
 import com.requena.supportdesk.designsystem.components.badges.ClientServiceTierBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
@@ -49,11 +50,11 @@ import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.cards.MetricCard
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
+import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
-import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -68,19 +69,32 @@ fun AdminDashboardScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = clients.firstOrNull { it.id == tasksState.selectedDashboardClientId }
-    val globalSeconds = tasksState.logs.sumOf { it.seconds }
-    val globalBillableSeconds = tasksState.logs.filter { it.billable }.sumOf { it.seconds }
+    val todayIsoDate = tasksState.todayIsoDate
+    val selectedDay = tasksState.selectedDay ?: todayIsoDate
+    val currentWeekStart = weekStartIsoDate(todayIsoDate)
+    val currentWeekEnd = shiftIsoDate(currentWeekStart, 6)
+    val currentMonthPrefix = todayIsoDate.take(7)
+    val globalSeconds = tasksState.logs.filter { it.workDate.startsWith(currentMonthPrefix) }.sumOf { it.seconds }
+    val globalBillableSeconds = tasksState.logs.filter { it.workDate.startsWith(currentMonthPrefix) && it.billable }.sumOf { it.seconds }
     val clientLogs = tasksState.logs.filter { log ->
         tasksState.selectedDashboardClientId == null || log.clientId == tasksState.selectedDashboardClientId
     }
-    val clientSeconds = clientLogs.sumOf { it.seconds }
-    val clientBillableSeconds = clientLogs.filter { it.billable }.sumOf { it.seconds }
-    val selectedPlanningDay = tasksState.selectedDay.takeIf { tasksState.selectedDayIsFuture }
+    val clientMonthLogs = clientLogs.filter { it.workDate.startsWith(currentMonthPrefix) }
+    val clientSeconds = clientMonthLogs.sumOf { it.seconds }
+    val clientBillableSeconds = clientMonthLogs.filter { it.billable }.sumOf { it.seconds }
+    val boardTasks = tasksState.tasks.filter { task ->
+        (tasksState.selectedDashboardClientId == null || task.clientId == tasksState.selectedDashboardClientId) &&
+            (tasksState.selectedCategoryId == null || task.categoryId == tasksState.selectedCategoryId)
+    }
     val dashboardTasks = tasksState.tasks.filter { task ->
         (tasksState.selectedDashboardClientId == null || task.clientId == tasksState.selectedDashboardClientId) &&
             (tasksState.selectedCategoryId == null || task.categoryId == tasksState.selectedCategoryId) &&
-            (selectedPlanningDay == null || task.dueDate == selectedPlanningDay)
-    }
+            (task.id == tasksState.activeTaskId || task.dueDate == selectedDay)
+    }.sortedWith(
+        compareByDescending<WorkTask> { it.id == tasksState.activeTaskId }
+            .thenBy { it.completed }
+            .thenByDescending { it.updatedAt },
+    )
     val selectedTask = tasksState.selectedTask?.takeIf { candidate -> dashboardTasks.any { it.id == candidate.id } } ?: dashboardTasks.firstOrNull()
 
     Column(
@@ -89,6 +103,16 @@ fun AdminDashboardScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
+        if (tasksState.isLoading && tasksState.tasks.isEmpty()) {
+            LoadingState(itemCount = 4)
+        }
+
+        tasksState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            SectionCard(title = "Datos no disponibles", subtitle = message) {
+                SecondaryButton(text = "Reintentar", onClick = { onTasksEvent(TasksUiEvent.Load) })
+            }
+        }
+
         CounterHeroCard(
             clients = clients,
             selectedClient = selectedClient,
@@ -105,20 +129,35 @@ fun AdminDashboardScreen(
             MetricCard(
                 label = "Tarea activa",
                 value = selectedTask?.title ?: "Sin tarea",
-                supportingText = selectedClient?.companyName ?: "Sin cliente fijo en la tarea",
+                supportingText = if (tasksState.activeTaskId != null) {
+                    "Contador vinculado a la sesion actual."
+                } else {
+                    "Solo tareas iniciadas o programadas para $selectedDay."
+                },
                 modifier = Modifier.weight(1f),
             )
             MetricCard(
                 label = "Horas del mes",
                 value = formatSupportDeskPreciseDuration(globalSeconds),
-                supportingText = if (selectedPlanningDay == null) {
-                    "${dashboardTasks.count()} tareas visibles tras los filtros."
-                } else {
-                    "${dashboardTasks.count()} tareas programadas para $selectedPlanningDay."
-                },
+                supportingText = "${dashboardTasks.count()} tareas del dia visibles tras filtros.",
                 modifier = Modifier.weight(1f),
             )
         }
+
+        TimeAnalyticsSection(
+            logs = clientLogs,
+            weekStart = currentWeekStart,
+            weekEnd = currentWeekEnd,
+            monthPrefix = currentMonthPrefix,
+            selectedClientName = selectedClient?.companyName,
+        )
+
+        StatusBoardSection(
+            tasks = boardTasks,
+            categories = tasksState.categories,
+            selectedTaskId = tasksState.selectedTaskId,
+            onSelectTask = { onTasksEvent(TasksUiEvent.SelectTask(it)) },
+        )
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val stacked = maxWidth < 1180.dp
@@ -212,16 +251,8 @@ private fun CounterHeroCard(
 
             if (tasks.isEmpty()) {
                 EmptyState(
-                    title = if (tasksState.selectedDayIsFuture) {
-                        "Sin tareas programadas para ${tasksState.selectedDay}"
-                    } else {
-                        "Sin tareas para este contexto"
-                    },
-                    message = if (tasksState.selectedDayIsFuture) {
-                        "Programa nuevas tareas desde la pantalla de Tareas usando el dia seleccionado."
-                    } else {
-                        ""
-                    },
+                    title = "Sin foco para ${tasksState.selectedDay ?: tasksState.todayIsoDate}",
+                    message = "El dashboard muestra solo la tarea iniciada y las tareas programadas para el dia activo.",
                 )
             } else {
                 LazyColumn(
@@ -390,6 +421,157 @@ private fun WheelSummaryRow(
             billableSeconds = clientBillableSeconds,
             modifier = Modifier.weight(1f),
         )
+    }
+}
+
+@Composable
+private fun TimeAnalyticsSection(
+    logs: List<TaskLog>,
+    weekStart: String,
+    weekEnd: String,
+    monthPrefix: String,
+    selectedClientName: String?,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val weekSeconds = logs.filter { it.workDate in weekStart..weekEnd }.sumOf { it.seconds }
+    val monthSeconds = logs.filter { it.workDate.startsWith(monthPrefix) }.sumOf { it.seconds }
+    val historicSeconds = logs.sumOf { it.seconds }
+    val periodLabel = selectedClientName ?: "Todos los clientes"
+
+    SectionCard(
+        title = "Horas",
+        subtitle = "$periodLabel - semana, mes e historico desde registros reales.",
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stacked = maxWidth < 900.dp
+            if (stacked) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    TimeMetricCard("Semana", weekSeconds, "$weekStart a $weekEnd", Modifier.fillMaxWidth())
+                    TimeMetricCard("Mes", monthSeconds, monthPrefix, Modifier.fillMaxWidth())
+                    TimeMetricCard("Historico", historicSeconds, "${logs.size} registros de tiempo", Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    TimeMetricCard("Semana", weekSeconds, "$weekStart a $weekEnd", Modifier.weight(1f))
+                    TimeMetricCard("Mes", monthSeconds, monthPrefix, Modifier.weight(1f))
+                    TimeMetricCard("Historico", historicSeconds, "${logs.size} registros de tiempo", Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeMetricCard(
+    label: String,
+    seconds: Int,
+    supportingText: String,
+    modifier: Modifier,
+) {
+    MetricCard(
+        label = label,
+        value = formatSupportDeskPreciseDuration(seconds),
+        supportingText = supportingText,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun StatusBoardSection(
+    tasks: List<WorkTask>,
+    categories: List<TaskCategory>,
+    selectedTaskId: String?,
+    onSelectTask: (String) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    SectionCard(
+        title = "Tableros por estado",
+        subtitle = "Carga real de trabajo agrupada por estado operativo.",
+    ) {
+        if (tasks.isEmpty()) {
+            EmptyState(
+                title = "Sin tareas para el tablero",
+                message = "No hay tareas que cumplan los filtros actuales.",
+            )
+            return@SectionCard
+        }
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val visibleStatuses = WorkTaskStatus.entries.filter { it != WorkTaskStatus.ARCHIVED }
+            if (maxWidth < 1180.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    visibleStatuses.forEach { status ->
+                        StatusColumn(
+                            status = status,
+                            tasks = tasks.filter { it.status == status }.take(5),
+                            totalCount = tasks.count { it.status == status },
+                            categories = categories,
+                            selectedTaskId = selectedTaskId,
+                            onSelectTask = onSelectTask,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    visibleStatuses.forEach { status ->
+                        StatusColumn(
+                            status = status,
+                            tasks = tasks.filter { it.status == status }.take(5),
+                            totalCount = tasks.count { it.status == status },
+                            categories = categories,
+                            selectedTaskId = selectedTaskId,
+                            onSelectTask = onSelectTask,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusColumn(
+    status: WorkTaskStatus,
+    tasks: List<WorkTask>,
+    totalCount: Int,
+    categories: List<TaskCategory>,
+    selectedTaskId: String?,
+    onSelectTask: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Text(
+            text = "${status.displayName()} ($totalCount)",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (tasks.isEmpty()) {
+            Text(
+                text = "Sin tareas",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            tasks.forEach { task ->
+                DashboardTaskRow(
+                    task = task,
+                    category = categories.firstOrNull { it.id == task.categoryId },
+                    selected = selectedTaskId == task.id,
+                    onSelect = { onSelectTask(task.id) },
+                )
+            }
+        }
     }
 }
 
@@ -758,6 +940,55 @@ private fun dayOfWeekMondayIndex(year: Int, month: Int, day: Int): Int {
     if (month < 3) adjustedYear -= 1
     val sundayBased = (adjustedYear + adjustedYear / 4 - adjustedYear / 100 + adjustedYear / 400 + offsets[month - 1] + day) % 7
     return if (sundayBased == 0) 6 else sundayBased - 1
+}
+
+private fun weekStartIsoDate(isoDate: String): String {
+    val parts = isoDate.split("-")
+    val year = parts.getOrNull(0)?.toIntOrNull() ?: return isoDate
+    val month = parts.getOrNull(1)?.toIntOrNull() ?: return isoDate
+    val day = parts.getOrNull(2)?.toIntOrNull() ?: return isoDate
+    return shiftIsoDate(isoDate, -dayOfWeekMondayIndex(year, month, day))
+}
+
+private fun shiftIsoDate(isoDate: String, days: Int): String {
+    val parts = isoDate.split("-")
+    var year = parts.getOrNull(0)?.toIntOrNull() ?: return isoDate
+    var month = parts.getOrNull(1)?.toIntOrNull() ?: return isoDate
+    var day = parts.getOrNull(2)?.toIntOrNull() ?: return isoDate
+
+    repeat(kotlin.math.abs(days)) {
+        if (days > 0) {
+            day += 1
+            if (day > daysInMonth(year, month)) {
+                day = 1
+                month += 1
+                if (month > 12) {
+                    month = 1
+                    year += 1
+                }
+            }
+        } else {
+            day -= 1
+            if (day < 1) {
+                month -= 1
+                if (month < 1) {
+                    month = 12
+                    year -= 1
+                }
+                day = daysInMonth(year, month)
+            }
+        }
+    }
+    return isoDate(year, month, day)
+}
+
+private fun WorkTaskStatus.displayName(): String = when (this) {
+    WorkTaskStatus.TODO -> "Pendiente"
+    WorkTaskStatus.IN_PROGRESS -> "En curso"
+    WorkTaskStatus.WAITING_CLIENT -> "Cliente"
+    WorkTaskStatus.REVIEW -> "Revision"
+    WorkTaskStatus.DONE -> "Hecha"
+    WorkTaskStatus.ARCHIVED -> "Archivada"
 }
 
 private val SPANISH_WEEKDAY_LABELS = listOf("L", "M", "X", "J", "V", "S", "D")

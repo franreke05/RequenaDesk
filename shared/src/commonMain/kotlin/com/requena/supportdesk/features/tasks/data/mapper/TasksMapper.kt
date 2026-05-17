@@ -3,6 +3,7 @@ package com.requena.supportdesk.features.tasks.data.mapper
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
+import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.features.tasks.data.dto.TaskDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLabelDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLogDto
@@ -23,6 +24,9 @@ object TasksMapper {
         description = dto.description,
         dueDate = dto.dueDate,
         completed = dto.completed,
+        status = runCatching { WorkTaskStatus.valueOf(dto.status) }.getOrElse {
+            if (dto.completed) WorkTaskStatus.DONE else WorkTaskStatus.TODO
+        },
         loggedMinutes = dto.loggedMinutes,
         loggedSeconds = dto.loggedSeconds,
         createdAt = dto.createdAt,

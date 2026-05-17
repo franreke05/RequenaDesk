@@ -46,6 +46,7 @@ fun configuredSupportDeskHttpClient(
                 return@intercept initialCall
             }
             if (!sessionManager.refreshSession(refreshClient)) {
+                AdminSessionContext.notifySessionExpired()
                 return@intercept initialCall
             }
 

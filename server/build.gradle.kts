@@ -16,7 +16,9 @@ application {
 
 dependencies {
     implementation(projects.shared)
+    implementation(libs.hikari)
     implementation(libs.java.jwt)
+    implementation(libs.jbcrypt)
     implementation(libs.logback)
     implementation(libs.postgresql)
     implementation(libs.ktor.serverCallLogging)

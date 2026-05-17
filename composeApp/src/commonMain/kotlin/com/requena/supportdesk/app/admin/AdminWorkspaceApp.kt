@@ -23,10 +23,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
+import com.requena.supportdesk.app.admin.screens.AdminCreateTicketScreen
 import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
 import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
 import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
+import com.requena.supportdesk.app.admin.screens.AdminTicketDetailScreen
+import com.requena.supportdesk.app.admin.screens.AdminTicketsScreen
 import com.requena.supportdesk.app.admin.screens.AdminTasksScreen
+import com.requena.supportdesk.app.client.ClientPortalScreen
+import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.navigation.AppDestination
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
@@ -44,6 +49,9 @@ import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEven
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
+import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
+import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -54,15 +62,21 @@ fun AdminWorkspaceApp() {
 
     val authState by module.authViewModel.state.collectAsState()
     val currentUser = authState.authenticatedUser
-    val clientsState = if (currentUser != null) {
+    val isAdmin = currentUser?.role == UserRole.ADMIN
+    val clientsState = if (isAdmin) {
         module.clientsViewModel.state.collectAsState().value
     } else {
         ClientsUiState()
     }
-    val tasksState = if (currentUser != null) {
+    val tasksState = if (isAdmin) {
         module.tasksViewModel.state.collectAsState().value
     } else {
         TasksUiState()
+    }
+    val ticketsState = if (currentUser != null) {
+        module.ticketsViewModel.state.collectAsState().value
+    } else {
+        TicketsUiState()
     }
 
     DisposableEffect(module) {
@@ -85,9 +99,19 @@ fun AdminWorkspaceApp() {
 
     LaunchedEffect(module, currentUser) {
         if (currentUser != null) {
-            module.clientsViewModel.effects.collect { effect ->
-                when (effect) {
-                    is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
+            launch {
+                module.clientsViewModel.effects.collect { effect ->
+                    when (effect) {
+                        is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
+                    }
+                }
+            }
+            launch {
+                module.ticketsViewModel.effects.collect { effect ->
+                    when (effect) {
+                        is TicketsUiEffect.ShowMessage -> statusMessage = effect.message
+                        is TicketsUiEffect.TicketSelected -> navigation = navigation.copy(destination = AppDestination.TicketDetail(effect.ticketId))
+                    }
                 }
             }
         }
@@ -95,6 +119,13 @@ fun AdminWorkspaceApp() {
 
     LaunchedEffect(currentUser?.id) {
         currentUser?.id ?: return@LaunchedEffect
+
+        if (currentUser.role == UserRole.CLIENT) {
+            navigation = navigation.copy(destination = AppDestination.Tickets)
+            statusMessage = "Sesion iniciada como ${currentUser.name}"
+            module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
+            return@LaunchedEffect
+        }
 
         navigation = navigation.copy(destination = AppDestination.Dashboard)
         statusMessage = "Sesion iniciada como ${currentUser.name}"
@@ -107,6 +138,7 @@ fun AdminWorkspaceApp() {
         module.tasksViewModel.onEvent(TasksUiEvent.SelectDashboardClient(null))
         module.tasksViewModel.onEvent(TasksUiEvent.SelectDay(currentIsoDate()))
         module.tasksViewModel.onEvent(TasksUiEvent.Load)
+        module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
     }
 
     BoxWithConstraints(
@@ -132,6 +164,15 @@ fun AdminWorkspaceApp() {
                 state = authState,
                 onEvent = module.authViewModel::onEvent,
             )
+        } else if (currentUser.role == UserRole.CLIENT) {
+            ClientPortalScreen(
+                clientName = currentUser.name,
+                state = ticketsState,
+                onEvent = module.ticketsViewModel::onEvent,
+                onRefresh = { module.ticketsViewModel.onEvent(TicketsUiEvent.Load) },
+                onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             val navItems = remember {
                 listOf<NavigationItemSpec<AppDestination>>(
@@ -149,6 +190,11 @@ fun AdminWorkspaceApp() {
                         key = AppDestination.Tasks,
                         title = "Tareas",
                         supportingText = "Trabajo, cliente y etiqueta",
+                    ),
+                    NavigationItemSpec(
+                        key = AppDestination.Tickets,
+                        title = "Tickets",
+                        supportingText = "Tablero, chat y prioridad",
                     ),
                     NavigationItemSpec(
                         key = AppDestination.Labels,
@@ -186,6 +232,7 @@ fun AdminWorkspaceApp() {
                         currentAdminName = currentUser.name,
                         clientsState = clientsState,
                         tasksState = tasksState,
+                        ticketsState = ticketsState,
                         module = module,
                         modifier = Modifier.weight(1f),
                     )
@@ -209,6 +256,7 @@ fun AdminWorkspaceApp() {
                                 currentAdminName = currentUser.name,
                                 clientsState = clientsState,
                                 tasksState = tasksState,
+                                ticketsState = ticketsState,
                                 module = module,
                                 modifier = Modifier.weight(1f),
                             )
@@ -224,6 +272,7 @@ fun AdminWorkspaceApp() {
                             currentAdminName = currentUser.name,
                             clientsState = clientsState,
                             tasksState = tasksState,
+                            ticketsState = ticketsState,
                             module = module,
                             modifier = Modifier.weight(1f),
                         )
@@ -250,6 +299,7 @@ private fun AdminContentArea(
     currentAdminName: String,
     clientsState: com.requena.supportdesk.features.clients.presentation.state.ClientsUiState,
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
+    ticketsState: com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState,
     module: AdminAppModule,
     modifier: Modifier = Modifier,
 ) {
@@ -321,13 +371,40 @@ private fun AdminContentArea(
         }
 
         when (navigation.destination) {
-            AppDestination.Dashboard,
-            AppDestination.Tickets,
-            AppDestination.CreateTicket,
-            is AppDestination.TicketDetail -> AdminDashboardScreen(
+            AppDestination.Dashboard -> AdminDashboardScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
+                modifier = Modifier.weight(1f),
+            )
+
+            AppDestination.Tickets -> AdminTicketsScreen(
+                layoutMode = layoutMode,
+                state = ticketsState,
+                currentAdminId = currentAdminId,
+                currentAdminName = currentAdminName,
+                onEvent = module.ticketsViewModel::onEvent,
+                onOpenCreateTicket = { onNavigate(AppDestination.CreateTicket) },
+                onOpenDetail = { ticket -> onNavigate(AppDestination.TicketDetail(ticket.id)) },
+                modifier = Modifier.weight(1f),
+            )
+
+            AppDestination.CreateTicket -> AdminCreateTicketScreen(
+                clients = clientsState.clients,
+                onBack = { onNavigate(AppDestination.Tickets) },
+                onCreateTicket = { input ->
+                    module.ticketsViewModel.onEvent(TicketsUiEvent.CreateTicket(input))
+                    onNavigate(AppDestination.Tickets)
+                },
+                modifier = Modifier.weight(1f),
+            )
+
+            is AppDestination.TicketDetail -> AdminTicketDetailScreen(
+                ticket = ticketsState.selectedTicket,
+                currentAdminId = currentAdminId,
+                currentAdminName = currentAdminName,
+                onBack = { onNavigate(AppDestination.Tickets) },
+                onEvent = module.ticketsViewModel::onEvent,
                 modifier = Modifier.weight(1f),
             )
 
@@ -369,7 +446,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Notifications -> AppDestination.Labels
     AppDestination.Tickets,
     AppDestination.CreateTicket,
-    is AppDestination.TicketDetail,
+    is AppDestination.TicketDetail -> AppDestination.Tickets
     AppDestination.Login -> AppDestination.Dashboard
 }
 
@@ -379,9 +456,9 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Tasks -> "Tareas"
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
-    AppDestination.Tickets,
-    AppDestination.CreateTicket,
-    is AppDestination.TicketDetail -> "Agenda"
+    AppDestination.Tickets -> "Tickets"
+    AppDestination.CreateTicket -> "Nuevo ticket"
+    is AppDestination.TicketDetail -> "Detalle ticket"
     AppDestination.Login -> "OryKai software Admin"
 }
 
@@ -393,6 +470,6 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
     AppDestination.Tickets,
     AppDestination.CreateTicket,
-    is AppDestination.TicketDetail -> "El flujo antiguo de tickets ha quedado retirado de la navegacion."
+    is AppDestination.TicketDetail -> "Tablero de soporte, prioridad y chat por cliente."
     AppDestination.Login -> "Workspace admin para organizar trabajo compartido."
 }

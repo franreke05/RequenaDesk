@@ -53,35 +53,30 @@ fun AdminLoginScreen(
         ) {
             SectionCard(
                 modifier = Modifier.widthIn(max = 960.dp),
-                title = "OryKai software Admin",
-                subtitle = "Agenda interna para organizar clientes, notas, tareas y registro de horas.",
+                title = "OryKai software",
+                subtitle = "Acceso por rol para admins y clientes.",
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(spacing.md),
                 ) {
                     SupportDeskBadge(
-                        text = "Solo admin",
+                        text = "Admin",
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     SupportDeskBadge(
-                        text = "Trabajo a dos",
+                        text = "Cliente",
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
-                Text(
-                    text = "La version 1.0.0 queda enfocada a control diario, clientes y horas, sin flujo principal de tickets.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
 
             SectionCard(
                 modifier = Modifier.widthIn(max = 520.dp),
-                title = "Acceso admin",
-                subtitle = "Accede con uno de los usuarios admin configurados en el servidor.",
+                title = "Entrar",
+                subtitle = "El escritorio abre el panel adecuado segun el rol de la cuenta.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     OutlinedTextField(
@@ -110,6 +105,34 @@ fun AdminLoginScreen(
                     PrimaryButton(
                         text = if (state.isLoading) "Entrando..." else "Entrar",
                         onClick = { onEvent(AuthUiEvent.Submit) },
+                        fullWidth = true,
+                    )
+                }
+            }
+            SectionCard(
+                modifier = Modifier.widthIn(max = 520.dp),
+                title = "Primer acceso cliente",
+                subtitle = "Usa la invitacion de tu admin para enlazar la cuenta.",
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    OutlinedTextField(
+                        value = state.clientAccessCode,
+                        onValueChange = { onEvent(AuthUiEvent.ClientAccessCodeChanged(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Codigo de invitacion") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = state.displayName,
+                        onValueChange = { onEvent(AuthUiEvent.DisplayNameChanged(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Nombre visible") },
+                        singleLine = true,
+                    )
+                    PrimaryButton(
+                        text = if (state.isLoading) "Activando..." else "Activar acceso cliente",
+                        onClick = { onEvent(AuthUiEvent.ClaimClientAccess) },
+                        enabled = state.clientAccessCode.isNotBlank() && state.email.isNotBlank() && state.password.length >= 8,
                         fullWidth = true,
                     )
                 }

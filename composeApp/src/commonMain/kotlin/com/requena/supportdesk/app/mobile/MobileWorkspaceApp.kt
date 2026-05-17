@@ -71,19 +71,23 @@ private enum class MobileTab(
 ) {
     SUMMARY(
         title = "Resumen",
-        navLabel = "Hoy",
+        navLabel = "Inicio",
+    ),
+    CALENDAR(
+        title = "Calendario",
+        navLabel = "Agenda",
+    ),
+    TICKETS(
+        title = "Tickets",
+        navLabel = "Tickets",
     ),
     TASKS(
         title = "Tareas",
         navLabel = "Tareas",
     ),
-    CLIENTS(
-        title = "Clientes",
-        navLabel = "Clientes",
-    ),
-    LABELS(
-        title = "Etiquetas",
-        navLabel = "Etiquetas",
+    SETTINGS(
+        title = "Ajustes",
+        navLabel = "Config",
     ),
 }
 
@@ -381,23 +385,20 @@ private fun MobileReadOnlyShell(
                         onTasksEvent = onTasksEvent,
                     )
 
+                    MobileTab.CALENDAR -> MobileCalendarScreen(
+                        tasksState = tasksState,
+                        onTasksEvent = onTasksEvent,
+                    )
+
+                    MobileTab.TICKETS -> Text("Tickets Screen")
+
                     MobileTab.TASKS -> MobileTasksScreen(
                         tasksState = tasksState,
                         clients = clientsState.clients,
                         onTasksEvent = onTasksEvent,
                     )
 
-                    MobileTab.CLIENTS -> MobileClientsScreen(
-                        clientsState = clientsState,
-                        tasksState = tasksState,
-                        onClientsEvent = onClientsEvent,
-                    )
-
-                    MobileTab.LABELS -> MobileLabelsScreen(
-                        tasksState = tasksState,
-                        clients = clientsState.clients,
-                        onTasksEvent = onTasksEvent,
-                    )
+                    MobileTab.SETTINGS -> Text("Settings Screen")
                 }
             }
         }
@@ -976,6 +977,54 @@ private fun HighlightedTasksCard(
                     category = categoriesById[task.categoryId],
                     selected = false,
                     onClick = {},
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileCalendarScreen(
+    tasksState: TasksUiState,
+    onTasksEvent: (TasksUiEvent) -> Unit,
+) {
+    val tasksById = remember(tasksState.tasks) { tasksState.tasks.associateBy { it.id } }
+    val categoriesById = remember(tasksState.categories) { tasksState.categories.associateBy { it.id } }
+    val selectedDayLogs = remember(tasksState.selectedDayLogs) {
+        tasksState.selectedDayLogs.sortedByDescending { it.createdAt }
+    }
+    val highlightedTasks = remember(tasksState.tasks) {
+        tasksState.tasks
+            .filter { task -> task.categoryId != null }
+            .sortedWith(compareBy<WorkTask> { it.completed }.thenByDescending { it.updatedAt })
+            .take(3)
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            MobileCalendarCard(
+                tasksState = tasksState,
+                onSelectDay = { onTasksEvent(TasksUiEvent.SelectDay(it)) },
+            )
+        }
+        item {
+            SelectedDayLogsCard(
+                selectedDay = tasksState.selectedDay ?: "-",
+                logs = selectedDayLogs,
+                tasksById = tasksById,
+                clientsById = emptyMap(),
+                categoriesById = categoriesById,
+            )
+        }
+        if (highlightedTasks.isNotEmpty()) {
+            item {
+                HighlightedTasksCard(
+                    tasks = highlightedTasks,
+                    clientsById = emptyMap(),
+                    categoriesById = categoriesById,
                 )
             }
         }

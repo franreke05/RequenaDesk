@@ -5,6 +5,7 @@ import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.model.SupportPlatform
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
+import com.requena.supportdesk.core.model.TicketMessage
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.WaitingOn
@@ -29,20 +30,36 @@ object TicketsMapper {
             waitingOn = WaitingOn.valueOf(dto.waitingOn),
             resolutionSummary = dto.resolutionSummary,
             requester = User(
-                id = "requester-${dto.clientId}",
-                name = "Client requester",
-                email = "client@support.local",
+                id = dto.requesterId.ifBlank { "requester-${dto.clientId}" },
+                name = dto.requesterName.ifBlank { "Cliente" },
+                email = dto.requesterEmail.ifBlank { "cliente@orykai.local" },
                 role = UserRole.CLIENT,
                 clientId = dto.clientId,
             ),
-            assignee = User(
-                id = "admin-assignee",
-                name = "Admin",
-                email = "admin@support.local",
-                role = UserRole.ADMIN,
-            ),
-            createdAt = "2026-03-19T00:00:00Z",
-            updatedAt = "2026-03-19T00:00:00Z",
+            assignee = dto.assigneeId?.let { assigneeId ->
+                User(
+                    id = assigneeId,
+                    name = dto.assigneeName ?: "Admin",
+                    email = "",
+                    role = UserRole.ADMIN,
+                )
+            },
+            createdAt = dto.createdAt,
+            updatedAt = dto.updatedAt,
+            clientAcceptedCloseAt = dto.clientAcceptedCloseAt,
+            adminAcceptedCloseAt = dto.adminAcceptedCloseAt,
+            archivedAt = dto.archivedAt,
+            satisfactionRating = dto.satisfactionRating,
+            messages = dto.messages.map { message ->
+                TicketMessage(
+                    id = message.id,
+                    ticketId = message.ticketId,
+                    authorId = message.authorId,
+                    authorName = message.authorName,
+                    body = message.body,
+                    createdAt = message.createdAt,
+                )
+            },
         )
     }
 }

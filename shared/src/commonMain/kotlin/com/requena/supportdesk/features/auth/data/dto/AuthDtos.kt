@@ -9,6 +9,14 @@ data class LoginRequestDto(
 )
 
 @Serializable
+data class ClientAccessClaimRequestDto(
+    val code: String,
+    val name: String,
+    val email: String,
+    val password: String,
+)
+
+@Serializable
 data class RefreshSessionRequestDto(
     val refreshToken: String,
 )

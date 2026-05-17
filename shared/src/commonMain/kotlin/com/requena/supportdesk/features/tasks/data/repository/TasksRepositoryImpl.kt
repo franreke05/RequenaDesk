@@ -66,6 +66,7 @@ class TasksRepositoryImpl(
                 labelId = input.categoryId,
                 dueDate = input.dueDate ?: "",
                 completed = input.completed,
+                status = input.status,
             ),
         ).let(TasksMapper::fromTaskDto)
     }.fold(

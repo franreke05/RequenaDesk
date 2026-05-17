@@ -8,6 +8,11 @@ data class DatabaseSettings(
     val jdbcUrl: String,
     val username: String,
     val password: String,
+    val maximumPoolSize: Int = 8,
+    val connectionTimeoutMillis: Long = 10_000,
+    val validationTimeoutMillis: Long = 3_000,
+    val idleTimeoutMillis: Long = 60_000,
+    val maxLifetimeMillis: Long = 1_800_000,
 )
 
 data class ServerEnvironment(
@@ -45,7 +50,7 @@ data class ServerEnvironment(
                 ?: value("DATABASE_PASSWORD", environment, properties)
 
             if (!rawUrl.isNullOrBlank()) {
-                val parsed = parseDatabaseUrl(rawUrl, username, password)
+                val parsed = parseDatabaseUrl(rawUrl, username, password, environment, properties)
                 if (parsed != null) return parsed
             }
 
@@ -58,6 +63,7 @@ data class ServerEnvironment(
                     jdbcUrl = "jdbc:postgresql://$host:$port/$database?sslmode=require",
                     username = username,
                     password = password,
+                    maximumPoolSize = poolSize(environment, properties),
                 )
             } else {
                 null
@@ -106,6 +112,8 @@ data class ServerEnvironment(
             rawUrl: String,
             explicitUsername: String?,
             explicitPassword: String?,
+            environment: Map<String, String>,
+            properties: Map<String, String>,
         ): DatabaseSettings? {
             val normalized = rawUrl.removePrefix("jdbc:")
             val uri = runCatching { URI(normalized) }.getOrNull() ?: return null
@@ -122,7 +130,14 @@ data class ServerEnvironment(
                 jdbcUrl = "$scheme${uri.host}:${if (uri.port == -1) 5432 else uri.port}/$path$query",
                 username = username,
                 password = password,
+                maximumPoolSize = poolSize(environment, properties),
             )
         }
+
+        private fun poolSize(environment: Map<String, String>, properties: Map<String, String>): Int =
+            value("SUPPORTDESK_DB_POOL_SIZE", environment, properties)
+                ?.toIntOrNull()
+                ?.coerceIn(1, 32)
+                ?: 8
     }
 }

@@ -25,4 +25,8 @@ data class Ticket(
     val internalComments: List<InternalComment> = emptyList(),
     val timeEntries: List<TimeEntry> = emptyList(),
     val events: List<TicketEvent> = emptyList(),
+    val clientAcceptedCloseAt: String? = null,
+    val adminAcceptedCloseAt: String? = null,
+    val archivedAt: String? = null,
+    val satisfactionRating: Int? = null,
 )

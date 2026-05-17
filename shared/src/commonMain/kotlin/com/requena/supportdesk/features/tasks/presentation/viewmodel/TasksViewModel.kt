@@ -1,7 +1,6 @@
 package com.requena.supportdesk.features.tasks.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
@@ -134,7 +133,7 @@ class TasksViewModel(
     private fun createLabel(name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = currentAdminUserIdOrError() ?: return
         launch {
             when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -149,7 +148,7 @@ class TasksViewModel(
     private fun updateLabel(labelId: String, name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = currentAdminUserIdOrError() ?: return
         launch {
             when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -357,6 +356,7 @@ class TasksViewModel(
 
         val secondsToAdd = current.activeTaskSeconds
         val minutesToAdd = secondsToAdd / 60
+        val authorId = currentAdminUserIdOrError() ?: return
 
         if (secondsToAdd <= 0) {
             publish(
@@ -374,7 +374,7 @@ class TasksViewModel(
                 val result = createTimeLogUseCase(
                     TaskTimeLogDraft(
                         taskId = taskId,
-                        authorId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id,
+                        authorId = authorId,
                         workDate = workDate,
                         minutes = minutesToAdd,
                         seconds = secondsToAdd,
@@ -459,6 +459,15 @@ class TasksViewModel(
                 statusMessage = message,
             )
         }
+    }
+
+    private fun currentAdminUserIdOrError(): String? {
+        val userId = AdminSessionContext.currentUserId()
+        if (userId.isNullOrBlank()) {
+            handleWorkspaceError("Sesion no disponible. Vuelve a iniciar sesion.")
+            return null
+        }
+        return userId
     }
 
     private fun nextSelectionAfterDelete(taskId: String): String? {

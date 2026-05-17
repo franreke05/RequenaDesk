@@ -5,4 +5,9 @@ import io.ktor.client.engine.cio.CIO
 
 actual fun createSupportDeskHttpClient(): HttpClient = HttpClient(CIO)
 
-actual fun supportDeskBaseUrl(): String = "http://10.0.2.2:8080"
+actual fun supportDeskBaseUrl(): String {
+    val envUrl = System.getenv("SUPPORTDESK_BASE_URL")
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    return (envUrl ?: "https://crm.franciscorequena.cloud").removeSuffix("/")
+}

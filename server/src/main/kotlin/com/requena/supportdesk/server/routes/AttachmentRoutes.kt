@@ -15,9 +15,10 @@ import io.ktor.server.routing.route
 fun Route.attachmentRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/attachments") {
         get("/{id}") {
-            call.requireAdminIdentity(tokenService) ?: return@get
+            val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing attachment id"))
-            val attachment = service.attachment(id) ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Attachment not found"))
+            val attachment = service.attachment(id, ownerAdminId = identity.userId)
+                ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Attachment not found"))
             call.respondJson(body = successResponse("/attachments/$id", attachmentJson(attachment)))
         }
     }

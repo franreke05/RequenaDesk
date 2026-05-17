@@ -1,7 +1,9 @@
 package com.requena.supportdesk.features.auth.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
+import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.features.auth.domain.usecase.ClaimClientAccessUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.ClearSessionUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.RestoreSessionUseCase
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.update
 
 class AuthViewModel(
     private val loginUseCase: LoginUseCase,
+    private val claimClientAccessUseCase: ClaimClientAccessUseCase,
     private val restoreSessionUseCase: RestoreSessionUseCase,
     private val clearSessionUseCase: ClearSessionUseCase,
 ) : BaseViewModel() {
@@ -29,12 +32,19 @@ class AuthViewModel(
 
     init {
         restoreSession()
+        launch {
+            AdminSessionContext.sessionExpiredFlow.collect {
+                onEvent(AuthUiEvent.Logout)
+            }
+        }
     }
 
     fun onEvent(event: AuthUiEvent) {
         when (event) {
             is AuthUiEvent.EmailChanged -> _state.update { it.copy(email = event.value, errorMessage = null) }
             is AuthUiEvent.PasswordChanged -> _state.update { it.copy(password = event.value, errorMessage = null) }
+            is AuthUiEvent.ClientAccessCodeChanged -> _state.update { it.copy(clientAccessCode = event.value, errorMessage = null) }
+            is AuthUiEvent.DisplayNameChanged -> _state.update { it.copy(displayName = event.value, errorMessage = null) }
             AuthUiEvent.Logout -> {
                 clearSessionUseCase()
                 _state.update {
@@ -46,6 +56,7 @@ class AuthViewModel(
                 }
             }
             AuthUiEvent.Submit -> submit()
+            AuthUiEvent.ClaimClientAccess -> claimClientAccess()
         }
     }
 
@@ -64,6 +75,30 @@ class AuthViewModel(
         launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             when (val result = loginUseCase(state.value.email, state.value.password)) {
+                is AppResult.Error -> {
+                    _state.update { it.copy(isLoading = false, errorMessage = result.message) }
+                    _effects.emit(AuthUiEffect.ShowMessage(result.message))
+                }
+                is AppResult.Success -> {
+                    _state.update { it.copy(isLoading = false, authenticatedUser = result.data, errorMessage = null) }
+                    _effects.emit(AuthUiEffect.NavigateToHome)
+                }
+            }
+        }
+    }
+
+    private fun claimClientAccess() {
+        launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            val current = state.value
+            when (
+                val result = claimClientAccessUseCase(
+                    code = current.clientAccessCode,
+                    name = current.displayName,
+                    email = current.email,
+                    password = current.password,
+                )
+            ) {
                 is AppResult.Error -> {
                     _state.update { it.copy(isLoading = false, errorMessage = result.message) }
                     _effects.emit(AuthUiEffect.ShowMessage(result.message))
