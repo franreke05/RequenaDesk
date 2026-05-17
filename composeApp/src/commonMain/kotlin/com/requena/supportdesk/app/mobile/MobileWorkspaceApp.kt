@@ -547,28 +547,17 @@ private fun MobileSummaryScreen(
     clientsState: ClientsUiState,
     onTasksEvent: (TasksUiEvent) -> Unit,
 ) {
-    val tasksById = remember(tasksState.tasks) { tasksState.tasks.associateBy { it.id } }
-    val clientsById = remember(clientsState.clients) { clientsState.clients.associateBy { it.id } }
-    val categoriesById = remember(tasksState.categories) { tasksState.categories.associateBy { it.id } }
-    val selectedDayLogs = remember(tasksState.selectedDayLogs) {
-        tasksState.selectedDayLogs.sortedByDescending { it.createdAt }
-    }
     val topClients = remember(clientsState.clients, tasksState.tasks, tasksState.logs) {
         buildClientOverviews(
             clients = clientsState.clients,
             tasks = tasksState.tasks,
             logs = tasksState.logs,
-        ).take(4)
-    }
-    val highlightedTasks = remember(tasksState.tasks) {
-        tasksState.tasks
-            .sortedWith(compareBy<WorkTask> { it.completed }.thenByDescending { it.updatedAt })
-            .take(4)
+        ).take(3)
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             OverviewHeroCard(
@@ -581,29 +570,7 @@ private fun MobileSummaryScreen(
             )
         }
         item {
-            MobileCalendarCard(
-                tasksState = tasksState,
-                onSelectDay = { onTasksEvent(TasksUiEvent.SelectDay(it)) },
-            )
-        }
-        item {
-            SelectedDayLogsCard(
-                selectedDay = tasksState.selectedDay ?: "-",
-                logs = selectedDayLogs,
-                tasksById = tasksById,
-                clientsById = clientsById,
-                categoriesById = categoriesById,
-            )
-        }
-        item {
             TopClientsCard(topClients = topClients)
-        }
-        item {
-            HighlightedTasksCard(
-                tasks = highlightedTasks,
-                clientsById = clientsById,
-                categoriesById = categoriesById,
-            )
         }
     }
 }
