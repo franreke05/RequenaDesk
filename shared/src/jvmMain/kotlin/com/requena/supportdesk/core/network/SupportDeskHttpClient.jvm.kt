@@ -14,7 +14,7 @@ private object DesktopDistributionAnchor
 
 private fun resolveJvmSupportDeskBaseUrl(): String {
     val configuredUrl = configuredBaseUrl()
-        ?: "http://127.0.0.1:8080"
+        ?: "https://crm.franciscorequena.cloud"
     return configuredUrl.removeSuffix("/")
 }
 

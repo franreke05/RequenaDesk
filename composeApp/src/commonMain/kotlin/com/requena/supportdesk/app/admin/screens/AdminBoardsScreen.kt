@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.features.boards.domain.model.Board
 import com.requena.supportdesk.features.boards.domain.model.BoardCard
 import com.requena.supportdesk.features.boards.domain.model.BoardColumn
@@ -290,6 +291,7 @@ private fun KanbanBoardView(
                 .padding(spacing.md),
             horizontalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
+            // Recibir tickets desde props para mostrar info real
             board.columns.forEach { column ->
                 KanbanColumn(
                     column = column,
@@ -310,6 +312,7 @@ private fun KanbanColumn(
     selectedCard: BoardCard?,
     onSelectCard: (String) -> Unit,
     onMoveCard: (String, Int) -> Unit,
+    tickets: List<com.requena.supportdesk.core.model.Ticket> = emptyList(),
 ) {
     val spacing = SupportDeskThemeTokens.spacing
 
@@ -355,10 +358,17 @@ private fun KanbanColumn(
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             items(cards) { card ->
+                val ticket = tickets.find { it.id == card.ticketId }
+                val ticketInfo = if (ticket != null) {
+                    Pair(ticket.subject, ticket.priority.displayName())
+                } else {
+                    null
+                }
                 KanbanCardItem(
                     card = card,
                     isSelected = selectedCard?.id == card.id,
                     onClick = { onSelectCard(card.id) },
+                    ticketInfo = ticketInfo,
                 )
             }
         }
@@ -371,8 +381,10 @@ private fun KanbanCardItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    ticketInfo: Pair<String, String>? = null,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val (subject, priority) = ticketInfo ?: ("Ticket #${card.ticketId.take(8)}" to "")
 
     Box(
         modifier = modifier
@@ -391,13 +403,20 @@ private fun KanbanCardItem(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
             Text(
-                text = "Ticket #${card.ticketId.take(8)}",
+                text = subject,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
             )
+            if (priority.isNotEmpty()) {
+                Text(
+                    text = "Prioridad: $priority",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
-                text = "Creado: ${card.createdAt.take(10)}",
+                text = "ID: ${card.ticketId.take(8)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

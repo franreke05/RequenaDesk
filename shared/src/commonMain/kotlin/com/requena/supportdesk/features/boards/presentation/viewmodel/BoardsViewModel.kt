@@ -1,5 +1,6 @@
 package com.requena.supportdesk.features.boards.presentation.viewmodel
 
+import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.features.boards.domain.model.Board
 import com.requena.supportdesk.features.boards.domain.model.BoardCard
 import com.requena.supportdesk.features.boards.domain.model.BoardColumn
@@ -14,6 +15,10 @@ import java.util.UUID
 class BoardsViewModel {
     private val _state = MutableStateFlow(BoardsUiState())
     val state: StateFlow<BoardsUiState> = _state.asStateFlow()
+
+    fun updateTickets(tickets: List<Ticket>) {
+        _state.value = _state.value.copy(tickets = tickets)
+    }
 
     fun onEvent(event: BoardsUiEvent) {
         when (event) {

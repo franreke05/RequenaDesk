@@ -90,6 +90,12 @@ fun AdminWorkspaceApp() {
         onDispose { module.clear() }
     }
 
+    LaunchedEffect(ticketsState.tickets) {
+        if (isAdmin && ticketsState.tickets.isNotEmpty()) {
+            module.boardsViewModel.updateTickets(ticketsState.tickets)
+        }
+    }
+
     LaunchedEffect(module) {
         launch {
             module.authViewModel.effects.collect { effect ->
