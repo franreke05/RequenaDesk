@@ -50,6 +50,7 @@ import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEven
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -413,7 +414,7 @@ private fun AdminContentArea(
             AppDestination.CreateTicket -> AdminCreateTicketScreen(
                 clients = clientsState.clients,
                 onBack = { onNavigate(AppDestination.Tickets) },
-                onCreateTicket = { input ->
+                onCreateTicket = { input: CreateTicketInput ->
                     module.ticketsViewModel.onEvent(TicketsUiEvent.CreateTicket(input))
                     onNavigate(AppDestination.Tickets)
                 },
