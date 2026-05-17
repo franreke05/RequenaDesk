@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -390,7 +391,7 @@ private fun MobileReadOnlyShell(
                         onTasksEvent = onTasksEvent,
                     )
 
-                    MobileTab.TICKETS -> Text("Tickets Screen")
+                    MobileTab.TICKETS -> MobileTicketsScreen()
 
                     MobileTab.TASKS -> MobileTasksScreen(
                         tasksState = tasksState,
@@ -398,7 +399,9 @@ private fun MobileReadOnlyShell(
                         onTasksEvent = onTasksEvent,
                     )
 
-                    MobileTab.SETTINGS -> Text("Settings Screen")
+                    MobileTab.SETTINGS -> MobileSettingsScreen(
+                        onSignOut = onSignOut,
+                    )
                 }
             }
         }
@@ -999,6 +1002,21 @@ private fun MobileCalendarScreen(
 }
 
 @Composable
+private fun MobileTicketsScreen() {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                CardHeader(title = "Tickets")
+                EmptyPhoneState(title = "Sin tickets")
+            }
+        }
+    }
+}
+
+@Composable
 private fun MobileTasksScreen(
     tasksState: TasksUiState,
     clients: List<Client>,
@@ -1561,6 +1579,57 @@ private fun MobileLabelsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun MobileSettingsScreen(
+    onSignOut: () -> Unit,
+) {
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                CardHeader(title = "Configuración")
+                Text(
+                    text = "Sesión activa",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ActionButton(
+                    text = "Cerrar sesión",
+                    onClick = { showLogoutConfirm = true },
+                )
+            }
+        }
+    }
+
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text("Cerrar sesión") },
+            text = { Text("¿Estás seguro de que deseas cerrar sesión?") },
+            confirmButton = {
+                ActionButton(
+                    text = "Confirmar",
+                    onClick = {
+                        showLogoutConfirm = false
+                        onSignOut()
+                    },
+                )
+            },
+            dismissButton = {
+                ActionButton(
+                    text = "Cancelar",
+                    onClick = { showLogoutConfirm = false },
+                )
+            },
+        )
     }
 }
 
