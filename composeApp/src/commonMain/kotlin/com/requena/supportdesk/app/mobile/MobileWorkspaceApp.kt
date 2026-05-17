@@ -62,8 +62,12 @@ import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.features.notifications.presentation.event.NotificationsUiEvent
+import com.requena.supportdesk.features.notifications.presentation.state.NotificationsUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
+import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
 import kotlinx.coroutines.launch
 
 private enum class MobileTab(
@@ -152,6 +156,16 @@ fun MobileWorkspaceApp() {
     } else {
         ClientsUiState()
     }
+    val ticketsState = if (currentUser != null) {
+        module.ticketsViewModel.state.collectAsState().value
+    } else {
+        TicketsUiState()
+    }
+    val notificationsState = if (currentUser != null) {
+        module.notificationsViewModel.state.collectAsState().value
+    } else {
+        NotificationsUiState()
+    }
 
     DisposableEffect(module) {
         onDispose { module.clear() }
@@ -188,6 +202,8 @@ fun MobileWorkspaceApp() {
         statusMessage = "Sesion iniciada como ${currentUser.name}"
 
         module.clientsViewModel.onEvent(ClientsUiEvent.Load)
+        module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
+        module.notificationsViewModel.onEvent(NotificationsUiEvent.RegisterAdminDevice)
 
         module.tasksViewModel.onEvent(TasksUiEvent.SelectTask(null))
         module.tasksViewModel.onEvent(TasksUiEvent.SelectCategory(null))
