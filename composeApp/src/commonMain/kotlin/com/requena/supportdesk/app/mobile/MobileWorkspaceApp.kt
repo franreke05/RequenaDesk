@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height as layoutHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -436,66 +437,55 @@ private fun MobileHeader(
         modifier = Modifier.fillMaxWidth(),
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compactLayout = maxWidth < 380.dp
-
-            if (compactLayout) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = currentTab.title,
-                            style = MaterialTheme.typography.displayMedium,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ActionButton(text = "Actualizar", compact = true, onClick = onRefresh)
-                        ActionButton(text = "Salir", compact = true, onClick = onSignOut)
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = currentTab.title,
-                            style = MaterialTheme.typography.displayMedium,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ActionButton(text = "Actualizar", compact = true, onClick = onRefresh)
-                        ActionButton(text = "Salir", compact = true, onClick = onSignOut)
-                    }
-                }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            TagChip(
-                text = "Solo lectura",
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            statusMessage.takeIf { it.isNotBlank() }?.let {
-                TagChip(
-                    text = it,
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Title section
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Hola, ${currentUserName.substringBefore(" ").ifBlank { "admin" }}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
+                Text(
+                    text = currentTab.title,
+                    style = MaterialTheme.typography.displayMedium,
+                )
+            }
+
+            // Action buttons - full width
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActionButton(
+                    text = "Actualizar",
+                    onClick = onRefresh,
+                    modifier = Modifier.weight(1f),
+                )
+                ActionButton(
+                    text = "Salir",
+                    onClick = onSignOut,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Status chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TagChip(
+                    text = "Solo lectura",
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                statusMessage.takeIf { it.isNotBlank() }?.let {
+                    TagChip(
+                        text = it,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -522,7 +512,7 @@ private fun MobileBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 MobileTab.entries.forEach { tab ->
                     val selected = currentTab == tab
@@ -539,18 +529,19 @@ private fun MobileBottomBar(
                         },
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
                             Text(
-                                text = tab.navLabel,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
+                                text = when (tab) {
+                                    MobileTab.SUMMARY -> "🏠"
+                                    MobileTab.CALENDAR -> "📅"
+                                    MobileTab.TICKETS -> "🎫"
+                                    MobileTab.TASKS -> "✓"
+                                    MobileTab.SETTINGS -> "⚙️"
                                 },
+                                style = MaterialTheme.typography.headlineMedium,
                             )
                         }
                     }
@@ -1953,9 +1944,10 @@ private fun ActionButton(
     emphasized: Boolean = false,
     compact: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.small,
