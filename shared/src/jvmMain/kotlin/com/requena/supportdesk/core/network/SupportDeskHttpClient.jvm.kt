@@ -2,68 +2,40 @@ package com.requena.supportdesk.core.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.Properties
+import io.ktor.client.plugins.HttpTimeout
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 
-actual fun createSupportDeskHttpClient(): HttpClient = HttpClient(CIO)
+actual fun createSupportDeskHttpClient(): HttpClient {
+    val trustAllCertificates = arrayOf<X509TrustManager>(object : X509TrustManager {
+        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {}
+        override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {}
+    })
 
-actual fun supportDeskBaseUrl(): String = resolveJvmSupportDeskBaseUrl()
+    val sslContext = SSLContext.getInstance("TLS").apply {
+        init(null, trustAllCertificates, SecureRandom())
+    }
 
-private object DesktopDistributionAnchor
-
-private fun resolveJvmSupportDeskBaseUrl(): String {
-    val configuredUrl = configuredBaseUrl()
-        ?: "https://crm.franciscorequena.cloud"
-    return configuredUrl.removeSuffix("/")
+    return HttpClient(CIO) {
+        engine {
+            https {
+                trustManager = trustAllCertificates[0]
+            }
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30000
+            connectTimeoutMillis = 30000
+            socketTimeoutMillis = 30000
+        }
+    }
 }
 
-private fun configuredBaseUrl(): String? {
-    val propertyValue = System.getProperty("supportdesk.baseUrl")
+actual fun supportDeskBaseUrl(): String {
+    val envUrl = System.getenv("SUPPORTDESK_BASE_URL")
         ?.trim()
         ?.takeIf(String::isNotBlank)
-    if (propertyValue != null) return propertyValue
-
-    val envValue = System.getenv("SUPPORTDESK_BASE_URL")
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    if (envValue != null) return envValue
-
-    val properties = loadDesktopProperties()
-    return listOf("supportdesk.baseUrl", "baseUrl")
-        .firstNotNullOfOrNull { key ->
-            properties.getProperty(key)
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-        }
-}
-
-private fun loadDesktopProperties(): Properties {
-    val properties = Properties()
-    desktopPropertiesCandidates()
-        .firstOrNull(Files::exists)
-        ?.let { path ->
-            Files.newInputStream(path).use(properties::load)
-        }
-    return properties
-}
-
-private fun desktopPropertiesCandidates(): List<Path> {
-    val userDir = runCatching { Path.of(System.getProperty("user.dir")) }.getOrNull()
-    val codeSourceDir = runCatching {
-        Path.of(
-            DesktopDistributionAnchor::class.java.protectionDomain.codeSource.location.toURI(),
-        ).parent
-    }.getOrNull()
-    val applicationRoot = codeSourceDir?.parent
-    val userHome = System.getProperty("user.home")
-        ?.takeIf(String::isNotBlank)
-        ?.let { Path.of(it, ".supportdesk") }
-
-    return buildList {
-        if (userDir != null) add(userDir.resolve("supportdesk.properties"))
-        if (codeSourceDir != null) add(codeSourceDir.resolve("supportdesk.properties"))
-        if (applicationRoot != null) add(applicationRoot.resolve("supportdesk.properties"))
-        if (userHome != null) add(userHome.resolve("supportdesk.properties"))
-    }.distinct()
+    return (envUrl ?: "https://crm.franciscorequena.cloud").removeSuffix("/")
 }

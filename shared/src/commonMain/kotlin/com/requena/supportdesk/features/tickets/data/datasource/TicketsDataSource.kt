@@ -33,44 +33,105 @@ interface TicketsDataSource {
 class RemoteTicketsDataSource(
     private val httpClient: HttpClient,
 ) : TicketsDataSource {
-    override suspend fun getTickets(): List<TicketDto> =
-        httpClient.get("${supportDeskBaseUrl()}${ticketsPath()}").requireApiData()
+    override suspend fun getTickets(): List<TicketDto> {
+        val url = "${supportDeskBaseUrl()}${ticketsPath()}"
+        return try {
+            println("[DEBUG] GET $url")
+            httpClient.get(url).requireApiData()
+        } catch (e: Exception) {
+            println("[ERROR] getTickets failed: ${e.message} at $url")
+            throw e
+        }
+    }
 
-    override suspend fun getTicket(id: String): TicketDto? =
-        httpClient.get("${supportDeskBaseUrl()}${ticketsPath()}/$id").requireApiData()
+    override suspend fun getTicket(id: String): TicketDto? {
+        val url = "${supportDeskBaseUrl()}${ticketsPath()}/$id"
+        return try {
+            println("[DEBUG] GET $url")
+            httpClient.get(url).requireApiData()
+        } catch (e: Exception) {
+            println("[ERROR] getTicket($id) failed: ${e.message} at $url")
+            throw e
+        }
+    }
 
-    override suspend fun createTicket(request: CreateTicketRequestDto): TicketDto =
-        httpClient.post("${supportDeskBaseUrl()}${ticketsPath()}") {
-            setBody(jsonRequestBody(request))
-        }.requireApiData()
+    override suspend fun createTicket(request: CreateTicketRequestDto): TicketDto {
+        val url = "${supportDeskBaseUrl()}${ticketsPath()}"
+        return try {
+            println("[DEBUG] POST $url with subject: ${request.subject}")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireApiData()
+        } catch (e: Exception) {
+            println("[ERROR] createTicket failed: ${e.message} at $url")
+            throw e
+        }
+    }
 
     override suspend fun replyTicket(ticketId: String, request: CreateTicketMessageRequestDto) {
-        httpClient.post("${supportDeskBaseUrl()}${ticketsPath()}/$ticketId/messages") {
-            setBody(jsonRequestBody(request))
-        }.requireSuccess()
+        val url = "${supportDeskBaseUrl()}${ticketsPath()}/$ticketId/messages"
+        try {
+            println("[DEBUG] POST $url")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireSuccess()
+        } catch (e: Exception) {
+            println("[ERROR] replyTicket($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
     }
 
     override suspend fun changeStatus(ticketId: String, request: UpdateTicketStatusRequestDto) {
-        httpClient.patch("${supportDeskBaseUrl()}/admin/tickets/$ticketId/status") {
-            setBody(jsonRequestBody(request))
-        }.requireSuccess()
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/status"
+        try {
+            println("[DEBUG] PATCH $url")
+            httpClient.patch(url) {
+                setBody(jsonRequestBody(request))
+            }.requireSuccess()
+        } catch (e: Exception) {
+            println("[ERROR] changeStatus($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
     }
 
     override suspend fun changePriority(ticketId: String, request: UpdateTicketPriorityRequestDto) {
-        httpClient.patch("${supportDeskBaseUrl()}/admin/tickets/$ticketId/priority") {
-            setBody(jsonRequestBody(request))
-        }.requireSuccess()
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/priority"
+        try {
+            println("[DEBUG] PATCH $url")
+            httpClient.patch(url) {
+                setBody(jsonRequestBody(request))
+            }.requireSuccess()
+        } catch (e: Exception) {
+            println("[ERROR] changePriority($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
     }
 
-    override suspend fun acceptClose(ticketId: String, request: TicketCloseAcceptanceRequestDto): TicketDto =
-        httpClient.post("${supportDeskBaseUrl()}${ticketsPath()}/$ticketId/accept-close") {
-            setBody(jsonRequestBody(request))
-        }.requireApiData()
+    override suspend fun acceptClose(ticketId: String, request: TicketCloseAcceptanceRequestDto): TicketDto {
+        val url = "${supportDeskBaseUrl()}${ticketsPath()}/$ticketId/accept-close"
+        return try {
+            println("[DEBUG] POST $url")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireApiData()
+        } catch (e: Exception) {
+            println("[ERROR] acceptClose($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
 
-    override suspend fun rateTicket(ticketId: String, request: TicketSatisfactionRequestDto): TicketDto =
-        httpClient.post("${supportDeskBaseUrl()}/client/tickets/$ticketId/satisfaction") {
-            setBody(jsonRequestBody(request))
-        }.requireApiData()
+    override suspend fun rateTicket(ticketId: String, request: TicketSatisfactionRequestDto): TicketDto {
+        val url = "${supportDeskBaseUrl()}/client/tickets/$ticketId/satisfaction"
+        return try {
+            println("[DEBUG] POST $url")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireApiData()
+        } catch (e: Exception) {
+            println("[ERROR] rateTicket($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
 
     private fun ticketsPath(): String =
         if (AdminSessionContext.currentUser()?.role == UserRole.CLIENT) "/client/tickets" else "/admin/tickets"

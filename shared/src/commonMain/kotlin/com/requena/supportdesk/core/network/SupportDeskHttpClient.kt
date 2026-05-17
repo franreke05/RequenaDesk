@@ -84,7 +84,7 @@ private fun io.ktor.client.HttpClientConfig<*>.installSupportDeskHttpPlugins() {
         )
     }
     install(Logging) {
-        level = LogLevel.INFO
+        level = LogLevel.ALL
     }
 }
 
