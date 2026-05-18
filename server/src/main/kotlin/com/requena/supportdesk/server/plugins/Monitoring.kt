@@ -33,7 +33,9 @@ fun Application.configureMonitoring() {
         exception<ServerValidationException> { call, cause ->
             call.respondJson(HttpStatusCode.BadRequest, errorResponse(cause.message ?: "Invalid request"))
         }
-        exception<Throwable> { call, _ ->
+        exception<Throwable> { call, cause ->
+            System.err.println("[SERVER ERROR] ${call.request.httpMethod.value} ${call.request.path()}: ${cause::class.simpleName}: ${cause.message}")
+            cause.printStackTrace(System.err)
             call.respondJson(HttpStatusCode.InternalServerError, errorResponse("Unexpected server error"))
         }
     }
