@@ -51,35 +51,35 @@ fun LoginScreen(
             SectionCard(
                 modifier = Modifier.widthIn(min = 360.dp, max = 460.dp),
                 title = "OryKai software",
-                subtitle = "A clean desktop CRM for freelance support. One workspace, two roles, less friction.",
+                subtitle = "Un CRM de escritorio para soporte freelance. Un espacio de trabajo, dos roles, sin fricción.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     SupportDeskBadge(
-                        text = "Desktop first",
+                        text = "Escritorio primero",
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
-                        text = "Track open tickets, answer faster, and keep every client conversation in one place.",
+                        text = "Gestiona tickets abiertos, responde más rápido y mantén cada conversación con el cliente en un solo lugar.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    LoginFeatureRow("Shared product shell with separate admin and client flows.")
-                    LoginFeatureRow("Ticket queue designed for daily review and fast triage.")
-                    LoginFeatureRow("Quiet visual language built for real paying clients.")
+                    LoginFeatureRow("Entorno compartido con flujos separados para admin y cliente.")
+                    LoginFeatureRow("Cola de tickets diseñada para revisión diaria y triaje rápido.")
+                    LoginFeatureRow("Interfaz visual pensada para clientes reales de pago.")
                 }
             }
             SectionCard(
                 modifier = Modifier.widthIn(min = 360.dp, max = 460.dp),
-                title = "Sign in",
-                subtitle = "Use one of the configured admin accounts to enter the workspace.",
+                title = "Iniciar sesión",
+                subtitle = "Usa una de las cuentas de administrador configuradas para acceder al espacio de trabajo.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     OutlinedTextField(
                         value = state.email,
                         onValueChange = { onEvent(AuthUiEvent.EmailChanged(it)) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Email") },
+                        label = { Text("Correo electrónico") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         singleLine = true,
                     )
@@ -87,7 +87,7 @@ fun LoginScreen(
                         value = state.password,
                         onValueChange = { onEvent(AuthUiEvent.PasswordChanged(it)) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Password") },
+                        label = { Text("Contraseña") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                     )
@@ -99,12 +99,12 @@ fun LoginScreen(
                         )
                     }
                     PrimaryButton(
-                        text = if (state.isLoading) "Signing in..." else "Sign in",
+                        text = if (state.isLoading) "Iniciando sesión..." else "Iniciar sesión",
                         onClick = { onEvent(AuthUiEvent.Submit) },
                         fullWidth = true,
                     )
                     Text(
-                        text = "The first pass keeps the entry flow intentionally short so tickets stay front and center.",
+                        text = "El acceso es intencionalmente breve para que los tickets queden siempre en primer plano.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

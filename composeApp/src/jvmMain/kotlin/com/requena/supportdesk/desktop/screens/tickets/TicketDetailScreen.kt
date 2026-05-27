@@ -2,19 +2,28 @@ package com.requena.supportdesk.desktop.screens.tickets
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
@@ -50,8 +59,8 @@ fun TicketDetailScreen(
     val spacing = SupportDeskThemeTokens.spacing
     if (ticket == null) {
         EmptyState(
-            title = "No ticket selected",
-            message = "Choose a ticket from the queue to review the conversation, technical context and next actions.",
+            title = "Ningún ticket seleccionado",
+            message = "Elige un ticket de la cola para revisar la conversación, el contexto técnico y las siguientes acciones.",
             modifier = modifier,
         )
         return
@@ -93,8 +102,8 @@ fun TicketDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing.lg),
                 ) {
                     SectionCard(
-                        title = "Issue context",
-                        subtitle = "The technical fields that should explain what is affected and how to reproduce it.",
+                        title = "Contexto del problema",
+                        subtitle = "Campos técnicos que explican qué está afectado y cómo reproducirlo.",
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -104,27 +113,66 @@ fun TicketDetailScreen(
                             SupportPlatformBadge(ticket.platform)
                             WaitingOnBadge(ticket.waitingOn)
                         }
-                        InfoRow(label = "Affected app", value = ticket.affectedApp)
-                        InfoRow(label = "Version", value = ticket.appVersion ?: "-")
-                        InfoRow(label = "Reference", value = ticket.clientReference ?: "-")
+                        InfoRow(label = "App afectada", value = ticket.affectedApp)
+                        InfoRow(label = "Versión", value = ticket.appVersion ?: "-")
+                        InfoRow(label = "Referencia", value = ticket.clientReference ?: "-")
                         InfoRow(
-                            label = "Steps to reproduce",
-                            value = ticket.stepsToReproduce ?: "The client did not include repro steps yet.",
+                            label = "Pasos para reproducir",
+                            value = ticket.stepsToReproduce ?: "El cliente no incluyó pasos para reproducir aún.",
                         )
                     }
 
-                    AnimatedVisibility(visible = currentRole == UserRole.ADMIN && ticket.internalComments.isNotEmpty()) {
+                    AnimatedVisibility(visible = currentRole == UserRole.ADMIN) {
+                        var replyText by remember { mutableStateOf("") }
                         SectionCard(
-                            title = "Internal comments",
-                            subtitle = "Notes that stay visible only to the admin role.",
+                            title = "Comentarios internos",
+                            subtitle = "Notas visibles únicamente para el rol de administrador.",
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                                ticket.internalComments.forEach { comment ->
-                                    CommentBubble(
-                                        authorName = comment.authorName,
-                                        body = comment.body,
-                                        timestamp = comment.createdAt,
+                                if (ticket.internalComments.isEmpty()) {
+                                    Text(
+                                        text = "Sin comentarios internos aún.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                } else {
+                                    ticket.internalComments.forEach { comment ->
+                                        val isOwn = comment.authorId == currentUserId
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
+                                        ) {
+                                            CommentBubble(
+                                                authorName = comment.authorName,
+                                                body = comment.body,
+                                                timestamp = comment.createdAt,
+                                                modifier = Modifier.widthIn(max = 480.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = spacing.xs),
+                                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                                    verticalAlignment = Alignment.Bottom,
+                                ) {
+                                    OutlinedTextField(
+                                        value = replyText,
+                                        onValueChange = { replyText = it },
+                                        placeholder = { Text("Escribe una respuesta...") },
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 4,
+                                        shape = MaterialTheme.shapes.medium,
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onReply(replyText)
+                                            replyText = ""
+                                        },
+                                        enabled = replyText.isNotBlank(),
+                                    ) {
+                                        Text("Enviar")
+                                    }
                                 }
                             }
                         }
@@ -136,37 +184,37 @@ fun TicketDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing.lg),
                 ) {
                     SectionCard(
-                        title = "Ticket info",
-                        subtitle = "Core metadata, owner and workflow controls.",
+                        title = "Información del ticket",
+                        subtitle = "Metadatos principales, propietario y controles de flujo.",
                     ) {
-                        InfoRow(label = "Requester", value = ticket.requester.name, supportingText = ticket.requester.email)
+                        InfoRow(label = "Solicitante", value = ticket.requester.name, supportingText = ticket.requester.email)
                         InfoRow(
-                            label = "Assignee",
-                            value = ticket.assignee?.name ?: "Unassigned",
+                            label = "Asignado a",
+                            value = ticket.assignee?.name ?: "Sin asignar",
                             supportingText = ticket.assignee?.email,
                         )
-                        InfoRow(label = "Created", value = formatSupportDeskDateTime(ticket.createdAt))
-                        InfoRow(label = "Updated", value = formatSupportDeskDateTime(ticket.updatedAt))
+                        InfoRow(label = "Creado", value = formatSupportDeskDateTime(ticket.createdAt))
+                        InfoRow(label = "Actualizado", value = formatSupportDeskDateTime(ticket.updatedAt))
                         VerticalSectionSpacer()
                         if (currentRole == UserRole.ADMIN) {
                             Text(
-                                text = "Status",
+                                text = "Estado",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             FilterBar(
-                                label = "Status",
+                                label = "Estado",
                                 options = statusOptions,
                                 selected = ticket.status,
                                 onSelected = { selected -> selected?.let(onChangeStatus) },
                             )
                             Text(
-                                text = "Priority",
+                                text = "Prioridad",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             FilterBar(
-                                label = "Priority",
+                                label = "Prioridad",
                                 options = priorityOptions,
                                 selected = ticket.priority,
                                 onSelected = { selected -> selected?.let(onChangePriority) },
@@ -176,8 +224,8 @@ fun TicketDetailScreen(
 
                     AnimatedVisibility(visible = !ticket.resolutionSummary.isNullOrBlank()) {
                         SectionCard(
-                            title = "Resolution summary",
-                            subtitle = "A short close-out note that can be reused in reports and future triage.",
+                            title = "Resumen de resolución",
+                            subtitle = "Nota de cierre breve que puede reutilizarse en informes y futuros triajes.",
                         ) {
                             Text(
                                 text = ticket.resolutionSummary.orEmpty(),
@@ -188,17 +236,17 @@ fun TicketDetailScreen(
                     }
 
                     SectionCard(
-                        title = "Attachments",
+                        title = "Adjuntos",
                         subtitle = if (ticket.attachments.isEmpty()) {
-                            "No ticket-level files uploaded yet."
+                            "Aún no se han subido archivos para este ticket."
                         } else {
-                            "${ticket.attachments.size} files available."
+                            "${ticket.attachments.size} archivos disponibles."
                         },
                     ) {
                         if (ticket.attachments.isEmpty()) {
                             EmptyState(
-                                title = "No attachments",
-                                message = "Files uploaded in replies will appear here when that backend flow is connected.",
+                                title = "Sin adjuntos",
+                                message = "Los archivos subidos en las respuestas aparecerán aquí cuando ese flujo de backend esté conectado.",
                             )
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
@@ -210,13 +258,13 @@ fun TicketDetailScreen(
                     }
 
                     SectionCard(
-                        title = "Event history",
-                        subtitle = "A compact audit trail of ticket state changes.",
+                        title = "Historial de eventos",
+                        subtitle = "Registro de auditoría compacto de los cambios de estado del ticket.",
                     ) {
                         if (ticket.events.isEmpty()) {
                             EmptyState(
-                                title = "No history yet",
-                                message = "Events will appear here as the workflow becomes more complete.",
+                                title = "Sin historial aún",
+                                message = "Los eventos aparecerán aquí a medida que el flujo de trabajo se complete.",
                             )
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {

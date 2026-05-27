@@ -76,13 +76,13 @@ fun CreateTicketScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
         PageHeader(
-            title = "Create ticket",
-            subtitle = "Capture the issue fast, add the minimum technical context, and let triage happen without extra back-and-forth.",
-            eyebrow = "Client workflow",
+            title = "Crear ticket",
+            subtitle = "Captura el problema rápido, añade el contexto técnico mínimo y deja que el triaje ocurra sin idas y vueltas extra.",
+            eyebrow = "Flujo del cliente",
             actions = {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     SecondaryButton(
-                        text = "Back",
+                        text = "Volver",
                         onClick = {
                             if (subject.isBlank() && description.isBlank() && appVersion.isBlank() && clientReference.isBlank() && stepsToReproduce.isBlank()) {
                                 onBack()
@@ -92,7 +92,7 @@ fun CreateTicketScreen(
                         },
                     )
                     PrimaryButton(
-                        text = "Create ticket",
+                        text = "Crear ticket",
                         onClick = {
                             showErrors = true
                             if (isValid) {
@@ -116,15 +116,15 @@ fun CreateTicketScreen(
         )
 
         FormSection(
-            title = "Issue overview",
-            subtitle = "Keep the first block short. Subject, category and product context should be enough to route the ticket correctly.",
+            title = "Resumen del problema",
+            subtitle = "Mantén el primer bloque breve. Asunto, categoría y contexto del producto deben ser suficientes para enrutar el ticket correctamente.",
         ) {
             OutlinedTextField(
                 value = subject,
                 onValueChange = { subject = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Subject") },
-                placeholder = { Text("Desktop installer fails after the latest update") },
+                label = { Text("Asunto") },
+                placeholder = { Text("El instalador de escritorio falla tras la última actualización") },
                 isError = showErrors && subject.isBlank(),
                 singleLine = true,
             )
@@ -132,18 +132,18 @@ fun CreateTicketScreen(
                 value = affectedApp,
                 onValueChange = {},
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Affected app") },
+                label = { Text("App afectada") },
                 enabled = false,
-                supportingText = { Text("Assigned from the client account to keep the form focused.") },
+                supportingText = { Text("Asignada desde la cuenta del cliente para mantener el formulario enfocado.") },
                 singleLine = true,
             )
             Text(
-                text = "Category",
+                text = "Categoría",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             FilterBar(
-                label = "Category",
+                label = "Categoría",
                 options = categoryOptions,
                 selected = selectedCategory,
                 onSelected = { selectedCategory = it ?: TicketCategory.BUG },
@@ -158,16 +158,16 @@ fun CreateTicketScreen(
         }
 
         FormSection(
-            title = "Technical context",
-            subtitle = "Only the details that help you debug quickly: platform, version, repro steps and a reference if the client has one.",
+            title = "Contexto técnico",
+            subtitle = "Solo los detalles que ayudan a depurar rápido: plataforma, versión, pasos para reproducir y una referencia si el cliente la tiene.",
         ) {
             Text(
-                text = "Platform",
+                text = "Plataforma",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             FilterBar(
-                label = "Platform",
+                label = "Plataforma",
                 options = platformOptions,
                 selected = selectedPlatform,
                 onSelected = { selectedPlatform = it ?: SupportPlatform.DESKTOP },
@@ -176,7 +176,7 @@ fun CreateTicketScreen(
                 value = appVersion,
                 onValueChange = { appVersion = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("App version") },
+                label = { Text("Versión de la app") },
                 placeholder = { Text("1.8.2 (418)") },
                 singleLine = true,
             )
@@ -184,16 +184,16 @@ fun CreateTicketScreen(
                 value = clientReference,
                 onValueChange = { clientReference = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Client reference") },
-                placeholder = { Text("Optional build, invoice or sprint reference") },
+                label = { Text("Referencia del cliente") },
+                placeholder = { Text("Referencia opcional de compilación, factura o sprint") },
                 singleLine = true,
             )
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Description") },
-                placeholder = { Text("Describe what happened, what changed, and the impact on the app.") },
+                label = { Text("Descripción") },
+                placeholder = { Text("Describe qué ocurrió, qué cambió y el impacto en la app.") },
                 isError = showErrors && description.isBlank(),
                 minLines = 5,
             )
@@ -201,27 +201,27 @@ fun CreateTicketScreen(
                 value = stepsToReproduce,
                 onValueChange = { stepsToReproduce = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Steps to reproduce") },
-                placeholder = { Text("Open the app, sign in, then the crash appears after pressing Sync.") },
+                label = { Text("Pasos para reproducir") },
+                placeholder = { Text("Abre la app, inicia sesión, y el fallo aparece al pulsar Sincronizar.") },
                 minLines = 4,
             )
             if (showErrors && !isValid) {
                 Text(
-                    text = "Subject and description are required before sending the ticket.",
+                    text = "El asunto y la descripción son obligatorios antes de enviar el ticket.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             Text(
-                text = "Priority is assigned during triage to keep the client form short and consistent.",
+                text = "La prioridad se asigna durante el triaje para mantener el formulario del cliente breve y consistente.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         FormSection(
-            title = "Attachments",
-            subtitle = "The upload area is still placeholder-only, but screenshots and logs already have a clear place in the flow.",
+            title = "Adjuntos",
+            subtitle = "El área de carga es solo un marcador de posición, pero capturas y logs ya tienen un lugar claro en el flujo.",
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -232,14 +232,14 @@ fun CreateTicketScreen(
                 }
             }
             Text(
-                text = "Final upload wiring will connect this area to the attachment endpoint later.",
+                text = "La conexión final de carga enlazará esta área con el endpoint de adjuntos más adelante.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         PrimaryButton(
-            text = "Create ticket",
+            text = "Crear ticket",
             onClick = {
                 showErrors = true
                 if (isValid) {
@@ -263,9 +263,9 @@ fun CreateTicketScreen(
 
     ConfirmDialog(
         visible = showDiscardDialog,
-        title = "Discard this draft?",
-        message = "The current subject, description and technical context will be lost.",
-        confirmText = "Discard draft",
+        title = "¿Descartar este borrador?",
+        message = "Se perderán el asunto, la descripción y el contexto técnico actuales.",
+        confirmText = "Descartar borrador",
         onConfirm = {
             showDiscardDialog = false
             onBack()

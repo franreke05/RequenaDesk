@@ -45,9 +45,9 @@ fun ClientListScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
         PageHeader(
-            title = "Clients",
-            subtitle = "A clear administrative view of product ownership, service tier and current support load.",
-            eyebrow = "Admin directory",
+            title = "Clientes",
+            subtitle = "Vista administrativa clara de la titularidad de producto, nivel de servicio y carga de soporte actual.",
+            eyebrow = "Directorio de administración",
         )
 
         Row(
@@ -55,43 +55,43 @@ fun ClientListScreen(
             horizontalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             MetricCard(
-                label = "Accounts",
+                label = "Cuentas",
                 value = state.clients.size.toString(),
-                supportingText = "Visible client records after the current search.",
+                supportingText = "Registros de clientes visibles tras la búsqueda actual.",
                 modifier = Modifier.weight(1f),
             )
             MetricCard(
-                label = "With active tickets",
+                label = "Con tickets activos",
                 value = activeLoad.toString(),
-                supportingText = "Clients that currently need follow-up work.",
+                supportingText = "Clientes que actualmente necesitan seguimiento.",
                 modifier = Modifier.weight(1f),
             )
             MetricCard(
-                label = "Priority coverage",
+                label = "Cobertura prioritaria",
                 value = priorityTier.toString(),
-                supportingText = "Clients on priority or VIP support tiers.",
+                supportingText = "Clientes en niveles de soporte prioritario o VIP.",
                 modifier = Modifier.weight(1f),
             )
         }
 
         SectionCard(
-            title = "Client directory",
-            subtitle = "Search by company, product, contact or email and scan support posture at a glance.",
+            title = "Directorio de clientes",
+            subtitle = "Busca por empresa, producto, contacto o correo y revisa la postura de soporte de un vistazo.",
         ) {
             SearchField(
                 value = state.query,
                 onValueChange = { onEvent(ClientsUiEvent.SearchChanged(it)) },
-                placeholder = "Search company, product, contact or email",
+                placeholder = "Buscar empresa, producto, contacto o correo",
             )
             when {
                 state.isLoading && state.clients.isEmpty() -> LoadingState(itemCount = 4)
                 errorMessage != null && state.clients.isEmpty() -> EmptyState(
-                    title = "Client list unavailable",
+                    title = "Lista de clientes no disponible",
                     message = errorMessage,
                 )
                 state.clients.isEmpty() -> EmptyState(
-                    title = "No clients found",
-                    message = "Adjust the search or add the first client record when the real admin flow is ready.",
+                    title = "No se encontraron clientes",
+                    message = "Ajusta la búsqueda o añade el primer registro de cliente cuando el flujo de admin esté listo.",
                 )
                 else -> {
                     ClientHeaderRow()
@@ -157,7 +157,7 @@ fun ClientListScreen(
                                     horizontalArrangement = Arrangement.Start,
                                 ) {
                                     SupportDeskBadge(
-                                        text = "${client.activeTicketCount} open",
+                                        text = "${client.activeTicketCount} abiertos",
                                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     )
@@ -185,37 +185,37 @@ private fun ClientHeaderRow() {
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         Text(
-            text = "Client / product",
+            text = "Cliente / producto",
             modifier = Modifier.weight(0.24f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Contact",
+            text = "Contacto",
             modifier = Modifier.weight(0.2f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Channel",
+            text = "Canal",
             modifier = Modifier.weight(0.16f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Tier",
+            text = "Nivel",
             modifier = Modifier.weight(0.14f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Status",
+            text = "Estado",
             modifier = Modifier.weight(0.14f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Open",
+            text = "Abiertos",
             modifier = Modifier.weight(0.12f),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -66,10 +66,10 @@ fun TicketListScreen(
     ) {
         PageHeader(
             title = "Tickets",
-            subtitle = "Scan the queue fast, keep the active conversation open, and triage the next move without leaving the workspace.",
-            eyebrow = if (role == UserRole.ADMIN) "Admin queue" else "Client tickets",
+            subtitle = "Revisa la cola rápido, mantén la conversación activa abierta y decide el siguiente paso sin salir del espacio de trabajo.",
+            eyebrow = if (role == UserRole.ADMIN) "Cola de administración" else "Tickets del cliente",
             actions = {
-                PrimaryButton(text = "Create ticket", onClick = onCreateTicket)
+                PrimaryButton(text = "Crear ticket", onClick = onCreateTicket)
             },
         )
 
@@ -83,8 +83,8 @@ fun TicketListScreen(
                 modifier = Modifier
                     .weight(0.42f)
                     .fillMaxHeight(),
-                title = "Inbox",
-                subtitle = "${state.tickets.size} visible tickets after the current filters.",
+                title = "Bandeja de entrada",
+                subtitle = "${state.tickets.size} tickets visibles con los filtros actuales.",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     SearchField(
@@ -96,32 +96,32 @@ fun TicketListScreen(
                         verticalArrangement = Arrangement.spacedBy(spacing.sm),
                     ) {
                         FilterBar(
-                            label = "Status",
+                            label = "Estado",
                             options = statusOptions,
                             selected = state.statusFilter,
                             onSelected = { onEvent(TicketsUiEvent.StatusFilterChanged(it)) },
                         )
                         FilterBar(
-                            label = "Priority",
+                            label = "Prioridad",
                             options = priorityOptions,
                             selected = state.priorityFilter,
                             onSelected = { onEvent(TicketsUiEvent.PriorityFilterChanged(it)) },
                         )
                         FilterBar(
-                            label = "Category",
+                            label = "Categoría",
                             options = categoryOptions,
                             selected = state.categoryFilter,
                             onSelected = { onEvent(TicketsUiEvent.CategoryFilterChanged(it)) },
                         )
                         FilterBar(
-                            label = "Platform",
+                            label = "Plataforma",
                             options = platformOptions,
                             selected = state.platformFilter,
                             onSelected = { onEvent(TicketsUiEvent.PlatformFilterChanged(it)) },
                         )
                         if (role == UserRole.ADMIN) {
                             FilterBar(
-                                label = "Waiting on",
+                                label = "Esperando a",
                                 options = waitingOnOptions,
                                 selected = state.waitingOnFilter,
                                 onSelected = { onEvent(TicketsUiEvent.WaitingOnFilterChanged(it)) },
@@ -131,13 +131,13 @@ fun TicketListScreen(
                     when {
                         state.isLoading && state.tickets.isEmpty() -> LoadingState(itemCount = 5)
                         errorMessage != null && state.tickets.isEmpty() -> EmptyState(
-                            title = "Ticket queue unavailable",
+                            title = "Cola de tickets no disponible",
                             message = errorMessage,
                         )
                         state.tickets.isEmpty() -> EmptyState(
-                            title = "No tickets match these filters",
-                            message = "Clear some filters or create a new ticket to populate the workspace.",
-                            actionText = "Create ticket",
+                            title = "Ningún ticket coincide con estos filtros",
+                            message = "Elimina algunos filtros o crea un nuevo ticket para poblar el espacio de trabajo.",
+                            actionText = "Crear ticket",
                             onAction = onCreateTicket,
                         )
                         else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -158,8 +158,8 @@ fun TicketListScreen(
                 modifier = Modifier
                     .weight(0.58f)
                     .fillMaxHeight(),
-                title = "Active ticket",
-                subtitle = "Conversation, context and next actions stay visible while you work through the queue.",
+                title = "Ticket activo",
+                subtitle = "La conversación, el contexto y las acciones siguientes permanecen visibles mientras trabajas la cola.",
             ) {
                 Crossfade(
                     targetState = state.selectedTicket,
@@ -168,7 +168,7 @@ fun TicketListScreen(
                     if (selectedTicket == null) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                text = "Select a ticket to review the thread, context fields, attachments and workflow controls.",
+                                text = "Selecciona un ticket para revisar el hilo, campos de contexto, adjuntos y controles de flujo.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

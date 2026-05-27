@@ -41,13 +41,13 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
         PageHeader(
-            title = "Dashboard",
-            subtitle = "A compact operational view of the current workload, without filler metrics or decorative noise.",
-            eyebrow = "Admin overview",
+            title = "Panel",
+            subtitle = "Vista operativa compacta de la carga de trabajo actual, sin métricas de relleno ni ruido decorativo.",
+            eyebrow = "Resumen de administración",
             actions = {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    PrimaryButton(text = "Open tickets", onClick = onOpenTickets)
-                    SecondaryButton(text = "Open clients", onClick = onOpenClients)
+                    PrimaryButton(text = "Ver tickets", onClick = onOpenTickets)
+                    SecondaryButton(text = "Ver clientes", onClick = onOpenClients)
                 }
             },
         )
@@ -55,12 +55,12 @@ fun DashboardScreen(
         when {
             isLoading && summary == null -> LoadingState(itemCount = 4)
             errorMessage != null && summary == null -> EmptyState(
-                title = "Dashboard unavailable",
+                title = "Panel no disponible",
                 message = errorMessage,
             )
             summary == null -> EmptyState(
-                title = "No dashboard data",
-                message = "The summary will appear here once the shared dashboard state is available.",
+                title = "Sin datos del panel",
+                message = "El resumen aparecerá aquí una vez que el estado del panel esté disponible.",
             )
             else -> {
                 FlowRow(
@@ -70,11 +70,11 @@ fun DashboardScreen(
                     maxItemsInEachRow = Int.MAX_VALUE,
                 ) {
                     listOf(
-                        DashboardMetric("Open tickets", summary.openTickets.toString(), "Active work that still needs attention."),
-                        DashboardMetric("Pending client", summary.pendingClientTickets.toString(), "Tickets blocked waiting on client input."),
-                        DashboardMetric("Resolved today", summary.resolvedToday.toString(), "Closed or fixed during the current day."),
-                        DashboardMetric("Urgent focus", recentTickets.count { it.priority == TicketPriority.URGENT }.toString(), "High pressure items surfaced from the queue."),
-                        DashboardMetric("Active clients", summary.activeClients.toString(), "Accounts with current project activity."),
+                        DashboardMetric("Tickets abiertos", summary.openTickets.toString(), "Trabajo activo que aún requiere atención."),
+                        DashboardMetric("Pendiente de cliente", summary.pendingClientTickets.toString(), "Tickets bloqueados esperando respuesta del cliente."),
+                        DashboardMetric("Resueltos hoy", summary.resolvedToday.toString(), "Cerrados o corregidos durante el día actual."),
+                        DashboardMetric("Foco urgente", recentTickets.count { it.priority == TicketPriority.URGENT }.toString(), "Elementos de alta presión extraídos de la cola."),
+                        DashboardMetric("Clientes activos", summary.activeClients.toString(), "Cuentas con actividad de proyecto en curso."),
                     ).forEach { metric ->
                         MetricCard(
                             label = metric.label,
@@ -86,13 +86,13 @@ fun DashboardScreen(
                 }
 
                 SectionCard(
-                    title = "Critical queue",
-                    subtitle = "The most recent or urgent tickets are one click away from the dashboard.",
+                    title = "Cola crítica",
+                    subtitle = "Los tickets más recientes o urgentes están a un clic desde el panel.",
                 ) {
                     if (recentTickets.isEmpty()) {
                         EmptyState(
-                            title = "Queue is clear",
-                            message = "No recent tickets need immediate attention right now.",
+                            title = "Cola limpia",
+                            message = "Ningún ticket reciente requiere atención inmediata ahora mismo.",
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {

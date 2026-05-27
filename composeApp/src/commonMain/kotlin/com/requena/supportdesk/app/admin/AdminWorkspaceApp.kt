@@ -239,7 +239,7 @@ fun AdminWorkspaceApp() {
                     NavigationItemSpec(
                         key = AppDestination.Labels,
                         title = "Etiquetas",
-                        supportingText = "Colores y organización",
+                        supportingText = "Notificaciones móviles",
                     ),
                 )
             }
@@ -481,6 +481,8 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
 
+            // "Etiquetas" en el menú navega a NotificationsScreen porque desde aquí
+            // se gestionan las etiquetas que disparan notificaciones push a la app móvil.
             AppDestination.Labels,
             AppDestination.Notifications -> AdminNotificationsScreen(
                 tasksState = tasksState,
