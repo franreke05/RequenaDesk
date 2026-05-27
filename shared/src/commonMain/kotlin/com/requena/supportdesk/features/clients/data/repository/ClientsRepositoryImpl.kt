@@ -60,4 +60,11 @@ class ClientsRepositoryImpl(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo borrar el cliente.", cause = it) },
     )
+
+    override suspend fun generateInvitation(clientId: String): AppResult<String> = runCatching {
+        dataSource.generateInvitation(clientId).code
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo generar el código.", cause = it) },
+    )
 }

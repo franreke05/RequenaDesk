@@ -1,4 +1,4 @@
-package com.example.crmfreelance
+﻿package com.example.crmfreelance
 
 import com.requena.supportdesk.server.application.configureSupportDeskModule
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
@@ -10,6 +10,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -113,6 +114,36 @@ class ApplicationTest {
     }
 
     @Test
+    fun testClientCanEnterWithStoredEmailAndPortalCode() = testApplication {
+        application { testModule() }
+
+        val adminToken = client.accessToken()
+        val clientsResponse = client.get("/admin/clients") {
+            bearer(adminToken)
+        }
+        val portalCode = extractField(clientsResponse.bodyAsText(), "portalAccessCode")
+
+        val wrongEmailResponse = client.post("/client/auth/claim-code") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"other@northwind.dev","code":"$portalCode"}""")
+        }
+        val clientResponse = client.post("/client/auth/claim-code") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"ana@northwind.dev","code":"$portalCode"}""")
+        }
+        val clientToken = extractField(clientResponse.bodyAsText(), "accessToken")
+        val ownTickets = client.get("/client/tickets") {
+            bearer(clientToken)
+        }
+
+        assertEquals(HttpStatusCode.Unauthorized, wrongEmailResponse.status)
+        assertEquals(HttpStatusCode.OK, clientResponse.status)
+        assertTrue(clientResponse.bodyAsText().contains("\"role\":\"CLIENT\""))
+        assertEquals(HttpStatusCode.OK, ownTickets.status)
+        assertTrue(ownTickets.bodyAsText().contains("ticket-1"))
+    }
+
+    @Test
     fun testClientRoutesAreScopedToAuthenticatedClient() = testApplication {
         application { testModule() }
         val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
@@ -171,37 +202,26 @@ class ApplicationTest {
     }
 
     @Test
-    fun testTicketMessagesAreScopedAndUseAuthenticatedAuthor() = testApplication {
+    fun testTaskPinningIsAdminOnlyAndPinnedTasksSortFirst() = testApplication {
         application { testModule() }
         val adminToken = client.accessToken()
-        val partnerToken = client.accessToken(email = "admin2@orykai.dev", password = "Admin2Sanchez")
         val clientToken = client.accessToken(email = "ana@northwind.dev", password = "Client1234!")
 
-        val partnerPostsAdminTicket = client.post("/admin/tickets/ticket-1/messages") {
-            bearer(partnerToken)
-            contentType(ContentType.Application.Json)
-            setBody("""{"body":"cross tenant admin message"}""")
+        val pinTask = client.put("/admin/tasks/task-1/pin") {
+            bearer(adminToken)
         }
-        val clientPostsOtherTicket = client.post("/client/tickets/ticket-2/messages") {
-            bearer(clientToken)
-            contentType(ContentType.Application.Json)
-            setBody("""{"authorId":"client-user-2","body":"cross tenant client message"}""")
-        }
-        val clientPostsOwnTicket = client.post("/client/tickets/ticket-1/messages") {
-            bearer(clientToken)
-            contentType(ContentType.Application.Json)
-            setBody("""{"authorId":"client-user-2","body":"own scoped message"}""")
-        }
-        val ownTicket = client.get("/client/tickets/ticket-1") {
-            bearer(clientToken)
+        val tasks = client.get("/admin/tasks") {
+            bearer(adminToken)
         }.bodyAsText()
+        val clientCannotPinTask = client.put("/admin/tasks/task-1/pin") {
+            bearer(clientToken)
+        }
 
-        assertEquals(HttpStatusCode.NotFound, partnerPostsAdminTicket.status)
-        assertEquals(HttpStatusCode.NotFound, clientPostsOtherTicket.status)
-        assertEquals(HttpStatusCode.OK, clientPostsOwnTicket.status)
-        assertTrue(ownTicket.contains("own scoped message"))
-        assertTrue(ownTicket.contains("\"authorId\":\"client-user-1\""))
-        assertTrue(!ownTicket.contains("\"authorId\":\"client-user-2\""))
+        assertEquals(HttpStatusCode.OK, pinTask.status)
+        assertTrue(pinTask.bodyAsText().contains(""""pinnedAt":"2026-04-16T10:00:00Z""""))
+        assertTrue(tasks.indexOf(""""id":"task-1"""") >= 0)
+        assertTrue(tasks.indexOf(""""id":"task-1"""") < tasks.indexOf(""""id":"task-3""""))
+        assertEquals(HttpStatusCode.Forbidden, clientCannotPinTask.status)
     }
 
     @Test
@@ -366,7 +386,7 @@ class ApplicationTest {
     fun testDeleteLabelReturnsConflictWhenLabelIsInUse() = testApplication {
         application { testModule() }
 
-        val response = client.delete("/admin/labels/label-1") {
+        val response = client.delete("/admin/labels/label-2") {
             bearer(client.accessToken())
         }
 
@@ -402,7 +422,7 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.Created, createResponse.status)
         val createdBody = createResponse.bodyAsText()
         assertTrue(createdBody.contains("Backlog"))
-        assertTrue(createdBody.contains("\"ownerAdminId\":\"user-admin-2\""))
+        assertTrue(createdBody.contains("\"ownerAdminId\":\"\""))
 
         val labelId = extractField(createdBody, "id")
 
@@ -631,7 +651,7 @@ class ApplicationTest {
     }
 
     @Test
-    fun testLabelsRouteFiltersByAuthenticatedAdmin() = testApplication {
+    fun testLabelsRouteSharesLabelsAcrossAdmins() = testApplication {
         application { testModule() }
         val adminToken = client.accessToken()
         val partnerToken = client.accessToken(
@@ -649,9 +669,48 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.OK, adminResponse.status)
         assertEquals(HttpStatusCode.OK, partnerResponse.status)
         assertTrue(adminResponse.bodyAsText().contains("\"id\":\"label-1\""))
-        assertTrue(!adminResponse.bodyAsText().contains("\"id\":\"label-2\""))
+        assertTrue(adminResponse.bodyAsText().contains("\"id\":\"label-2\""))
         assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-2\""))
-        assertTrue(!partnerResponse.bodyAsText().contains("\"id\":\"label-1\""))
+        assertTrue(partnerResponse.bodyAsText().contains("\"id\":\"label-1\""))
+    }
+
+    @Test
+    fun testAdminCanUseLabelCreatedByAnotherAdmin() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(
+            email = "admin2@orykai.dev",
+            password = "Admin2Sanchez",
+        )
+
+        val createLabel = client.post("/admin/labels") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Compartida QA","colorHex":"#556677","ownerAdminId":"ignored"}""")
+        }
+        assertEquals(HttpStatusCode.Created, createLabel.status)
+        val labelId = extractField(createLabel.bodyAsText(), "id")
+
+        val partnerLabels = client.get("/admin/labels") {
+            bearer(partnerToken)
+        }.bodyAsText()
+        assertTrue(partnerLabels.contains(labelId))
+
+        val createPartnerTask = client.post("/admin/tasks") {
+            bearer(partnerToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "title":"Usar etiqueta compartida",
+                  "description":"Creada por otro admin",
+                  "labelId":"$labelId"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, createPartnerTask.status)
+        assertTrue(createPartnerTask.bodyAsText().contains("Compartida QA"))
     }
 
     @Test
@@ -685,3 +744,4 @@ class ApplicationTest {
         const val TEST_AUTH_SECRET = "supportdesk-test-secret-1234567890"
     }
 }
+

@@ -42,6 +42,12 @@ class DeleteTaskUseCase(
     suspend operator fun invoke(taskId: String) = repository.deleteTask(taskId)
 }
 
+class SetTaskPinnedUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(taskId: String, pinned: Boolean) = repository.setTaskPinned(taskId, pinned)
+}
+
 class CreateTaskLabelUseCase(
     private val repository: TasksRepository,
 ) {

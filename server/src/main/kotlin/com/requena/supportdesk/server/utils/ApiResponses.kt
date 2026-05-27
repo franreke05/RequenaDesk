@@ -60,6 +60,7 @@ fun sessionJson(session: ServerSession) = buildJsonObject {
     put("email", session.email)
     put("role", session.role)
     put("clientId", session.clientId)
+    put("companyName", session.companyName)
     put("accessToken", session.accessToken)
     put("refreshToken", session.refreshToken)
 }
@@ -90,20 +91,6 @@ fun ticketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
     put("assigneeName", ticket.assigneeName)
     put("createdAt", ticket.createdAt)
     put("updatedAt", ticket.updatedAt)
-    put("messages", buildJsonArray {
-        ticket.messages.forEach { message ->
-            add(
-                buildJsonObject {
-                    put("id", message.id)
-                    put("ticketId", message.ticketId)
-                    put("authorId", message.authorId)
-                    put("authorName", message.authorName)
-                    put("body", message.body)
-                    put("createdAt", message.createdAt)
-                },
-            )
-        }
-    })
     put("clientAcceptedCloseAt", ticket.clientAcceptedCloseAt)
     put("adminAcceptedCloseAt", ticket.adminAcceptedCloseAt)
     put("archivedAt", ticket.archivedAt)
@@ -127,6 +114,9 @@ fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("activeTicketCount", client.activeTicketCount)
     put("openTasksCount", client.openTasksCount)
     put("monthlyLoggedMinutes", client.monthlyLoggedMinutes)
+    put("portalAccessCode", client.portalAccessCode)
+    put("portalAccessStatus", client.portalAccessStatus)
+    put("portalAccessExpiresAt", client.portalAccessExpiresAt)
 }
 
 fun dashboardJson(dashboard: ServerDashboardSnapshot) = buildJsonObject {
@@ -175,6 +165,7 @@ fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("status", task.status)
     put("loggedMinutes", task.loggedMinutes)
     put("loggedSeconds", task.loggedSeconds)
+    put("pinnedAt", task.pinnedAt)
     put("createdAt", task.createdAt)
     put("updatedAt", task.updatedAt)
 }

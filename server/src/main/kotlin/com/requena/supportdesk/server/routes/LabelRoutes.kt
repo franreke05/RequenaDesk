@@ -23,22 +23,22 @@ import io.ktor.server.routing.route
 fun Route.labelRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/labels") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
-            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels(ownerAdminId))))
+            call.requireAdminIdentity(tokenService) ?: return@get
+            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels())))
         }
         post("/labels") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val request = call.receiveOrDefault(CreateTaskLabelRequest()).copy(ownerAdminId = ownerAdminId)
+            call.requireAdminIdentity(tokenService) ?: return@post
+            val request = call.receiveOrDefault(CreateTaskLabelRequest()).copy(ownerAdminId = "")
             if (request.name.isBlank()) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label name is required"))
             }
             call.respondJson(
                 HttpStatusCode.Created,
-                successResponse("/admin/labels", labelJson(service.createdTaskLabel(request, ownerAdminId))),
+                successResponse("/admin/labels", labelJson(service.createdTaskLabel(request))),
             )
         }
         patch("/labels/{labelId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
+            call.requireAdminIdentity(tokenService) ?: return@patch
             val labelId = call.parameters["labelId"].orEmpty()
             if (labelId.isBlank()) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label id is required"))
@@ -47,17 +47,17 @@ fun Route.labelRoutes(service: SupportDeskService, tokenService: SupportDeskToke
             call.respondJson(
                 body = successResponse(
                     "/admin/labels/$labelId",
-                    labelJson(service.updatedTaskLabel(labelId, request, ownerAdminId)),
+                    labelJson(service.updatedTaskLabel(labelId, request)),
                 ),
             )
         }
         delete("/labels/{labelId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            call.requireAdminIdentity(tokenService) ?: return@delete
             val labelId = call.parameters["labelId"].orEmpty()
             if (labelId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label id is required"))
             }
-            service.deletedTaskLabel(labelId, ownerAdminId)
+            service.deletedTaskLabel(labelId)
             call.respondJson(body = successResponse("/admin/labels/$labelId", messageJson("Label deleted")))
         }
     }

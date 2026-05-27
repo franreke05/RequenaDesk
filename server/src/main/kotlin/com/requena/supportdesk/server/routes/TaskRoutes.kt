@@ -18,16 +18,17 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 
 fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/tasks") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val clientId = call.request.queryParameters["clientId"]
             val labelId = call.request.queryParameters["labelId"]
             call.respondJson(
-                body = successResponse("/admin/tasks", tasksJson(service.tasks(clientId, labelId, ownerAdminId))),
+                body = successResponse("/admin/tasks", tasksJson(service.tasks(clientId, labelId, identity.userId, viewerUserId = identity.userId))),
             )
         }
         post("/tasks") {
@@ -60,6 +61,26 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
             }
             service.deletedTask(taskId, ownerAdminId)
             call.respondJson(body = successResponse("/admin/tasks/$taskId", messageJson("Task deleted")))
+        }
+        put("/tasks/{taskId}/pin") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@put
+            val taskId = call.parameters["taskId"].orEmpty()
+            if (taskId.isBlank()) {
+                return@put call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
+            }
+            call.respondJson(
+                body = successResponse("/admin/tasks/$taskId/pin", taskJson(service.updatedTaskPin(taskId, identity, pinned = true))),
+            )
+        }
+        delete("/tasks/{taskId}/pin") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@delete
+            val taskId = call.parameters["taskId"].orEmpty()
+            if (taskId.isBlank()) {
+                return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
+            }
+            call.respondJson(
+                body = successResponse("/admin/tasks/$taskId/pin", taskJson(service.updatedTaskPin(taskId, identity, pinned = false))),
+            )
         }
     }
 }

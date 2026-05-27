@@ -9,6 +9,7 @@ import com.requena.supportdesk.core.model.WaitingOn
 
 data class TicketsUiState(
     val tickets: List<Ticket> = emptyList(),
+    val allTickets: List<Ticket> = emptyList(),
     val selectedTicket: Ticket? = null,
     val searchQuery: String = "",
     val statusFilter: TicketStatus? = null,

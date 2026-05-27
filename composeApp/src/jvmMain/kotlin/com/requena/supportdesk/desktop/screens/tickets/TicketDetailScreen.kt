@@ -10,14 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.requena.supportdesk.core.model.Ticket
@@ -29,19 +24,15 @@ import com.requena.supportdesk.designsystem.components.badges.TicketCategoryBadg
 import com.requena.supportdesk.designsystem.components.badges.TicketPriorityBadge
 import com.requena.supportdesk.designsystem.components.badges.TicketStatusBadge
 import com.requena.supportdesk.designsystem.components.badges.WaitingOnBadge
-import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
-import com.requena.supportdesk.designsystem.components.layout.FormSection
 import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.components.layout.PageHeader
 import com.requena.supportdesk.designsystem.components.layout.VerticalSectionSpacer
 import com.requena.supportdesk.designsystem.components.tickets.AttachmentRow
 import com.requena.supportdesk.designsystem.components.tickets.CommentBubble
-import com.requena.supportdesk.designsystem.components.tickets.MessageBubble
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
@@ -66,7 +57,6 @@ fun TicketDetailScreen(
         return
     }
 
-    var replyDraft by rememberSaveable(ticket.id) { mutableStateOf("") }
     val statusOptions = remember {
         TicketStatus.entries.map { FilterOption(value = it, label = it.displayName()) }
     }
@@ -123,72 +113,6 @@ fun TicketDetailScreen(
                         )
                     }
 
-                    SectionCard(
-                        title = "Conversation",
-                        subtitle = "${ticket.messages.size} messages across client and admin updates.",
-                    ) {
-                        if (ticket.messages.isEmpty()) {
-                            EmptyState(
-                                title = "No messages yet",
-                                message = "The ticket exists, but the conversation has not started.",
-                            )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                                ticket.messages.forEach { message ->
-                                    MessageBubble(
-                                        authorName = message.authorName,
-                                        body = message.body,
-                                        timestamp = message.createdAt,
-                                        isOwnMessage = currentUserId != null && currentUserId == message.authorId,
-                                    )
-                                    if (message.attachments.isNotEmpty()) {
-                                        Column(
-                                            modifier = Modifier.padding(start = spacing.lg),
-                                            verticalArrangement = Arrangement.spacedBy(spacing.xs),
-                                        ) {
-                                            message.attachments.forEach { attachment ->
-                                                AttachmentRow(attachment)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    FormSection(
-                        title = "Quick reply",
-                        subtitle = "Keep the response short, ask for the next artifact, or confirm the next step.",
-                    ) {
-                        OutlinedTextField(
-                            value = replyDraft,
-                            onValueChange = { replyDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Reply") },
-                            placeholder = { Text("Share an update, ask for a log, or confirm the next step.") },
-                            minLines = 4,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                        ) {
-                            PrimaryButton(
-                                text = "Send reply",
-                                onClick = {
-                                    val message = replyDraft.ifBlank {
-                                        "Thanks for the update. I am reviewing the ticket and will follow up shortly."
-                                    }
-                                    onReply(message)
-                                    replyDraft = ""
-                                },
-                            )
-                            SecondaryButton(
-                                text = "Mark resolved",
-                                onClick = { onChangeStatus(TicketStatus.RESOLVED) },
-                            )
-                        }
-                    }
-
                     AnimatedVisibility(visible = currentRole == UserRole.ADMIN && ticket.internalComments.isNotEmpty()) {
                         SectionCard(
                             title = "Internal comments",
@@ -223,7 +147,6 @@ fun TicketDetailScreen(
                         )
                         InfoRow(label = "Created", value = formatSupportDeskDateTime(ticket.createdAt))
                         InfoRow(label = "Updated", value = formatSupportDeskDateTime(ticket.updatedAt))
-                        InfoRow(label = "Messages", value = ticket.messages.size.toString())
                         VerticalSectionSpacer()
                         if (currentRole == UserRole.ADMIN) {
                             Text(

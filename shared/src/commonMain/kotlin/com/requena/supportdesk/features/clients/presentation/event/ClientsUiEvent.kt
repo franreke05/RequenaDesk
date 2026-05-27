@@ -34,4 +34,6 @@ sealed interface ClientsUiEvent {
         val authorId: String,
         val authorName: String,
     ) : ClientsUiEvent
+    data class GenerateInvitation(val clientId: String) : ClientsUiEvent
+    data object DismissInvitation : ClientsUiEvent
 }

@@ -151,58 +151,6 @@ fun TicketListItem(
 }
 
 @Composable
-fun MessageBubble(
-    authorName: String,
-    body: String,
-    timestamp: String,
-    isOwnMessage: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val spacing = SupportDeskThemeTokens.spacing
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = if (isOwnMessage) Arrangement.End else Arrangement.Start,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.78f),
-            shape = MaterialTheme.shapes.large,
-            color = if (isOwnMessage) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-            tonalElevation = SupportDeskThemeTokens.elevations.subtle,
-        ) {
-            Column(
-                modifier = Modifier.padding(spacing.md),
-                verticalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = authorName,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = formatSupportDeskDateTime(timestamp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun CommentBubble(
     authorName: String,
     body: String,

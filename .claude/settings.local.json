@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.\\\\gradlew.bat :server:compileKotlin)",
+      "Bash(.\\\\gradlew.bat :composeApp:compileDebugSources)",
+      "Bash(./gradlew :composeApp:compileDebugSources)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\franr\\\\AndroidStudioProjects\\\\CRMFreelance\\\\composeApp\\\\src\\\\commonMain\\\\kotlin\\\\com\\\\requena\\\\supportdesk\\\\designsystem\" -Recurse -Filter \"*Entrance*\")",
+      "Bash(./gradlew :composeApp:compileKotlinJvm)"
+    ]
+  }
+}

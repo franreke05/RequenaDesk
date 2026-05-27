@@ -3,7 +3,6 @@ package com.requena.supportdesk.server.domain.repository
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
-import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
@@ -18,7 +17,6 @@ import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapsh
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
-import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -36,11 +34,11 @@ interface SupportDeskRepository {
     fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant)
     fun rotateRefreshToken(refreshToken: String, replacementRefreshToken: String, expiresAt: Instant): ServerAuthIdentity?
     fun revokeRefreshToken(refreshToken: String): Boolean
-    fun getTickets(ownerAdminId: String? = null, clientId: String? = null, limit: Int = 100, offset: Int = 0): List<ServerTicketSnapshot>
-    fun countClientTicketsCreatedOn(clientId: String, datePrefix: String): Int
-    fun getTicket(id: String, ownerAdminId: String? = null, clientId: String? = null): ServerTicketSnapshot?
+    fun getTickets(ownerAdminId: String? = null, clientId: String? = null, viewerUserId: String? = null, limit: Int = 100, offset: Int = 0): List<ServerTicketSnapshot>
+    fun countClientTicketsCreatedOn(clientId: String, datePrefix: String, priority: String? = null): Int
+    fun getTicket(id: String, ownerAdminId: String? = null, clientId: String? = null, viewerUserId: String? = null): ServerTicketSnapshot?
     fun createTicket(request: CreateTicketRequest, ownerAdminId: String? = null, requesterId: String? = null): ServerTicketSnapshot
-    fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated
+    fun deleteTicket(ticketId: String, ownerAdminId: String? = null)
     fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate
     fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate
     fun acceptTicketClose(ticketId: String, actorId: String, actorRole: String, resolutionSummary: String? = null): ServerTicketSnapshot
@@ -54,10 +52,11 @@ interface SupportDeskRepository {
     fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
     fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
     fun deleteTaskLabel(labelId: String, ownerAdminId: String? = null)
-    fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): List<ServerTaskSnapshot>
+    fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null, viewerUserId: String? = null): List<ServerTaskSnapshot>
     fun createTask(request: CreateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
     fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
     fun deleteTask(taskId: String, ownerAdminId: String? = null)
+    fun setTaskPinned(taskId: String, userId: String, ownerAdminId: String, pinned: Boolean)
     fun getTimeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null, limit: Int = 100, offset: Int = 0): List<ServerTimeLogSnapshot>
     fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String? = null): ServerTimeLogSnapshot
     fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot

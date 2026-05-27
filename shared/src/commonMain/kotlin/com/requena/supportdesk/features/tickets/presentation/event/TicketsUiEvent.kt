@@ -19,8 +19,8 @@ sealed interface TicketsUiEvent {
     data class SelectTicket(val ticketId: String) : TicketsUiEvent
     data class CreateTicket(val input: CreateTicketInput) : TicketsUiEvent
     object CreateSampleTicket : TicketsUiEvent
-    data class ReplyToSelected(val message: String) : TicketsUiEvent
     data class ChangeSelectedStatus(val status: TicketStatus) : TicketsUiEvent
+    data class ChangeTicketStatus(val ticketId: String, val status: TicketStatus) : TicketsUiEvent
     data class ChangeSelectedPriority(val priority: TicketPriority) : TicketsUiEvent
     data class AcceptSelectedClose(val resolutionSummary: String? = null) : TicketsUiEvent
     data class RateSelected(val rating: Int) : TicketsUiEvent
@@ -36,4 +36,5 @@ sealed interface TicketsUiEvent {
         val authorId: String,
         val authorName: String,
     ) : TicketsUiEvent
+    data class DeleteTicket(val ticketId: String) : TicketsUiEvent
 }

@@ -5,7 +5,6 @@ import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeCreateRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
-import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
@@ -35,7 +34,7 @@ class SupportDeskService(
     }
 
     fun claimClientAccessCode(request: ClientAccessCodeClaimRequest): ServerSession? {
-        if (request.code.isBlank() || request.email.isBlank() || request.password.length < 8) return null
+        if (request.code.isBlank() || request.email.isBlank()) return null
         val identity = repository.claimClientAccessCode(request) ?: return null
         return createSession(identity)
     }
@@ -53,6 +52,7 @@ class SupportDeskService(
             email = identity.email,
             role = identity.role,
             clientId = identity.clientId,
+            companyName = identity.companyName,
             accessToken = tokenService.createAccessToken(identity),
             refreshToken = refreshToken,
         )
@@ -72,6 +72,7 @@ class SupportDeskService(
             email = identity.email,
             role = identity.role,
             clientId = identity.clientId,
+            companyName = identity.companyName,
             accessToken = tokenService.createAccessToken(identity),
             refreshToken = replacementToken,
         )
@@ -82,14 +83,14 @@ class SupportDeskService(
         return repository.revokeRefreshToken(request.refreshToken)
     }
 
-    fun tickets(ownerAdminId: String? = null, limit: Int = 100, offset: Int = 0) =
-        repository.getTickets(ownerAdminId = ownerAdminId, limit = limit.boundedLimit(MAX_LIST_LIMIT), offset = offset.boundedOffset())
+    fun tickets(ownerAdminId: String? = null, viewerUserId: String? = ownerAdminId, limit: Int = 100, offset: Int = 0) =
+        repository.getTickets(ownerAdminId = ownerAdminId, viewerUserId = viewerUserId, limit = limit.boundedLimit(MAX_LIST_LIMIT), offset = offset.boundedOffset())
 
-    fun clientTickets(clientId: String, limit: Int = 100, offset: Int = 0) =
-        repository.getTickets(clientId = clientId, limit = limit.boundedLimit(CLIENT_TICKET_LIST_LIMIT), offset = offset.boundedOffset())
+    fun clientTickets(clientId: String, viewerUserId: String? = null, limit: Int = 100, offset: Int = 0) =
+        repository.getTickets(clientId = clientId, viewerUserId = viewerUserId, limit = limit.boundedLimit(CLIENT_TICKET_LIST_LIMIT), offset = offset.boundedOffset())
 
-    fun ticket(id: String, ownerAdminId: String? = null, clientId: String? = null) =
-        repository.getTicket(id, ownerAdminId = ownerAdminId, clientId = clientId)
+    fun ticket(id: String, ownerAdminId: String? = null, clientId: String? = null, viewerUserId: String? = ownerAdminId) =
+        repository.getTicket(id, ownerAdminId = ownerAdminId, clientId = clientId, viewerUserId = viewerUserId)
 
     fun createdAdminTicket(request: CreateTicketRequest, ownerAdminId: String) =
         repository.createTicket(request, ownerAdminId = ownerAdminId)
@@ -101,27 +102,19 @@ class SupportDeskService(
         if (todayTicketCount >= CLIENT_DAILY_TICKET_LIMIT) {
             throw ServerValidationException("Daily ticket limit reached")
         }
+        if (request.priority.equals("URGENT", ignoreCase = true)) {
+            val todayUrgentCount = repository.countClientTicketsCreatedOn(clientId = clientId, datePrefix = today, priority = "URGENT")
+            if (todayUrgentCount >= CLIENT_DAILY_URGENT_LIMIT) {
+                throw ServerValidationException("Daily urgent ticket limit reached")
+            }
+        }
         return repository.createTicket(
-            request.copy(clientId = clientId, priority = "MEDIUM"),
+            request.copy(clientId = clientId),
             requesterId = identity.userId,
         )
     }
 
-    fun createdAdminMessage(ticketId: String, ownerAdminId: String, request: CreateTicketMessageRequest): com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated {
-        val scopedTicket = ticket(ticketId, ownerAdminId = ownerAdminId)
-            ?: throw com.requena.supportdesk.server.domain.model.ServerNotFoundException("Ticket not found")
-        return repository.createTicketMessage(scopedTicket.id, request)
-    }
-
-    fun createdClientMessage(ticketId: String, identity: ServerAuthIdentity, request: CreateTicketMessageRequest): com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated {
-        val clientId = identity.clientId ?: throw ServerValidationException("Client identity is required")
-        val scopedTicket = ticket(ticketId, clientId = clientId)
-            ?: throw com.requena.supportdesk.server.domain.model.ServerNotFoundException("Ticket not found")
-        return repository.createTicketMessage(scopedTicket.id, request.copy(authorId = identity.userId))
-    }
-
-    fun createdMessage(ticketId: String, request: CreateTicketMessageRequest) =
-        repository.createTicketMessage(ticketId, request)
+    fun deletedTicket(ticketId: String, ownerAdminId: String? = null) = repository.deleteTicket(ticketId, ownerAdminId)
 
     fun updatedStatus(ticketId: String, request: UpdateTicketStatusRequest) =
         repository.updateTicketStatus(ticketId, request)
@@ -158,7 +151,7 @@ class SupportDeskService(
     fun createdClient(request: CreateClientRequest, ownerAdminId: String? = null) = repository.createClient(request, ownerAdminId)
 
     fun createdClientAccessCode(clientId: String, ownerAdminId: String, request: ClientAccessCodeCreateRequest): String =
-        repository.createClientAccessCode(clientId, ownerAdminId, request.expiresInDays)
+        repository.createClientAccessCode(clientId, ownerAdminId, request.expiresInDays.coerceIn(1, CLIENT_ACCESS_CODE_MAX_DAYS))
 
     fun updatedClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null) =
         repository.updateClient(clientId, request, ownerAdminId)
@@ -175,8 +168,8 @@ class SupportDeskService(
 
     fun deletedTaskLabel(labelId: String, ownerAdminId: String? = null) = repository.deleteTaskLabel(labelId, ownerAdminId)
 
-    fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
-        repository.getTasks(clientId, labelId, ownerAdminId)
+    fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null, viewerUserId: String? = ownerAdminId) =
+        repository.getTasks(clientId, labelId, ownerAdminId, viewerUserId)
 
     fun createdTask(request: CreateTaskRequest, ownerAdminId: String? = null): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
         validateTaskDueDate(request.dueDate)
@@ -187,6 +180,14 @@ class SupportDeskService(
         repository.updateTask(taskId, request, ownerAdminId)
 
     fun deletedTask(taskId: String, ownerAdminId: String? = null) = repository.deleteTask(taskId, ownerAdminId)
+
+    fun updatedTaskPin(taskId: String, identity: ServerAuthIdentity, pinned: Boolean): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
+        if (identity.role != "ADMIN") throw ServerValidationException("Admin role is required")
+        repository.setTaskPinned(taskId, identity.userId, identity.userId, pinned)
+        return repository.getTasks(ownerAdminId = identity.userId, viewerUserId = identity.userId)
+            .firstOrNull { it.id == taskId }
+            ?: throw com.requena.supportdesk.server.domain.model.ServerNotFoundException("Task not found")
+    }
 
     fun timeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null, limit: Int = 100, offset: Int = 0) =
         repository.getTimeLogs(clientId, taskId, ownerAdminId, limit.boundedLimit(MAX_LIST_LIMIT), offset.boundedOffset())
@@ -227,7 +228,9 @@ class SupportDeskService(
 
     private companion object {
         const val CLIENT_DAILY_TICKET_LIMIT = 15
+        const val CLIENT_DAILY_URGENT_LIMIT = 3
         const val CLIENT_TICKET_LIST_LIMIT = 100
+        const val CLIENT_ACCESS_CODE_MAX_DAYS = 3650
         const val ALERT_LIST_LIMIT = 100
         const val MAX_LIST_LIMIT = 200
     }

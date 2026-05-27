@@ -7,7 +7,7 @@ import com.requena.supportdesk.app.LocalSupportDeskThemeController
 fun ThemeModeButton() {
     val controller = LocalSupportDeskThemeController.current
     SecondaryButton(
-        text = if (controller.isDarkMode) "Light mode" else "Dark mode",
+        text = if (controller.isDarkMode) "Tema claro" else "Tema oscuro",
         onClick = controller.toggleDarkMode,
     )
 }

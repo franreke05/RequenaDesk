@@ -38,7 +38,6 @@ import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
-import com.requena.supportdesk.designsystem.components.NetworkLogPanel
 import com.requena.supportdesk.designsystem.components.navigation.AdminBottomBar
 import com.requena.supportdesk.designsystem.components.navigation.AdminNavigationRail
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
@@ -49,6 +48,8 @@ import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
@@ -91,9 +92,27 @@ fun AdminWorkspaceApp() {
         onDispose { module.clear() }
     }
 
-    LaunchedEffect(ticketsState.tickets) {
-        if (isAdmin && ticketsState.tickets.isNotEmpty()) {
-            module.boardsViewModel.updateTickets(ticketsState.tickets)
+    LaunchedEffect(clientsState.clients, currentUser?.id, isAdmin) {
+        val ownerAdminId = currentUser?.takeIf { it.role == UserRole.ADMIN }?.id
+        if (ownerAdminId != null) {
+            module.boardsViewModel.updateClients(
+                clients = clientsState.clients,
+                ownerAdminId = ownerAdminId,
+            )
+        } else {
+            module.boardsViewModel.clear()
+        }
+    }
+
+    LaunchedEffect(ticketsState.allTickets) {
+        if (isAdmin) {
+            module.boardsViewModel.updateTickets(ticketsState.allTickets)
+        }
+    }
+
+    LaunchedEffect(tasksState.tasks) {
+        if (isAdmin) {
+            module.boardsViewModel.updateTasks(tasksState.tasks)
         }
     }
 
@@ -105,7 +124,7 @@ fun AdminWorkspaceApp() {
                         navigation = navigation.copy(destination = AppDestination.Dashboard)
                         statusMessage = "Sesion iniciada como admin"
                     }
-                    is AuthUiEffect.ShowMessage -> statusMessage = effect.message
+                    is AuthUiEffect.ShowMessage -> statusMessage = effect.message.toHumanAdminStatus()
                 }
             }
         }
@@ -116,14 +135,14 @@ fun AdminWorkspaceApp() {
             launch {
                 module.clientsViewModel.effects.collect { effect ->
                     when (effect) {
-                        is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
+                        is ClientsUiEffect.ShowMessage -> statusMessage = effect.message.toHumanAdminStatus()
                     }
                 }
             }
             launch {
                 module.ticketsViewModel.effects.collect { effect ->
                     when (effect) {
-                        is TicketsUiEffect.ShowMessage -> statusMessage = effect.message
+                        is TicketsUiEffect.ShowMessage -> statusMessage = effect.message.toHumanAdminStatus()
                         is TicketsUiEffect.TicketSelected -> navigation = navigation.copy(destination = AppDestination.TicketDetail(effect.ticketId))
                     }
                 }
@@ -181,6 +200,7 @@ fun AdminWorkspaceApp() {
         } else if (currentUser.role == UserRole.CLIENT) {
             ClientPortalScreen(
                 clientName = currentUser.name,
+                companyName = currentUser.companyName,
                 state = ticketsState,
                 onEvent = module.ticketsViewModel::onEvent,
                 onRefresh = { module.ticketsViewModel.onEvent(TicketsUiEvent.Load) },
@@ -213,7 +233,7 @@ fun AdminWorkspaceApp() {
                     NavigationItemSpec(
                         key = AppDestination.Tickets,
                         title = "Tickets",
-                        supportingText = "Tablero, chat y prioridad",
+                        supportingText = "Tablero, estado y prioridad",
                     ),
                     NavigationItemSpec(
                         key = AppDestination.Labels,
@@ -403,7 +423,15 @@ private fun AdminContentArea(
 
             AppDestination.Boards -> AdminBoardsScreen(
                 state = boardsState,
+                tasks = tasksState.tasks,
+                categories = tasksState.categories,
                 onEvent = module.boardsViewModel::onEvent,
+                onTicketStatusChange = { ticketId, status ->
+                    module.ticketsViewModel.onEvent(TicketsUiEvent.ChangeTicketStatus(ticketId, status))
+                },
+                onTaskStatusChange = { taskId, status ->
+                    module.tasksViewModel.onEvent(TasksUiEvent.ChangeTaskStatus(taskId, status))
+                },
                 modifier = Modifier.weight(1f),
             )
 
@@ -465,7 +493,6 @@ private fun AdminContentArea(
             )
         }
 
-        NetworkLogPanel(modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -504,6 +531,13 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
     AppDestination.Tickets,
     AppDestination.CreateTicket,
-    is AppDestination.TicketDetail -> "Tablero de soporte, prioridad y chat por cliente."
+    is AppDestination.TicketDetail -> "Tablero de soporte, prioridad y seguimiento por cliente."
     AppDestination.Login -> "Workspace admin para organizar trabajo compartido."
 }
+
+private fun String.toHumanAdminStatus(): String =
+    if (contains("unexpected", ignoreCase = true) || contains("server", ignoreCase = true)) {
+        "No se pudo conectar con el servidor"
+    } else {
+        this
+    }

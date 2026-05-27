@@ -26,3 +26,9 @@ class DeleteClientUseCase(
 ) {
     suspend operator fun invoke(clientId: String) = repository.deleteClient(clientId)
 }
+
+class GenerateInvitationUseCase(
+    private val repository: ClientsRepository,
+) {
+    suspend operator fun invoke(clientId: String) = repository.generateInvitation(clientId)
+}

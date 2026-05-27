@@ -21,7 +21,6 @@ data class Ticket(
     val createdAt: String,
     val updatedAt: String,
     val attachments: List<Attachment> = emptyList(),
-    val messages: List<TicketMessage> = emptyList(),
     val internalComments: List<InternalComment> = emptyList(),
     val timeEntries: List<TimeEntry> = emptyList(),
     val events: List<TicketEvent> = emptyList(),

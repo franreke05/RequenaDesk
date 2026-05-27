@@ -24,12 +24,6 @@ class CreateTicketUseCase(
     suspend operator fun invoke(input: CreateTicketInput) = repository.createTicket(input)
 }
 
-class ReplyTicketUseCase(
-    private val repository: TicketsRepository,
-) {
-    suspend operator fun invoke(ticketId: String, message: String) = repository.replyTicket(ticketId, message)
-}
-
 class ChangeTicketStatusUseCase(
     private val repository: TicketsRepository,
 ) {
@@ -53,4 +47,10 @@ class RateTicketUseCase(
     private val repository: TicketsRepository,
 ) {
     suspend operator fun invoke(ticketId: String, rating: Int) = repository.rateTicket(ticketId, rating)
+}
+
+class DeleteTicketUseCase(
+    private val repository: TicketsRepository,
+) {
+    suspend operator fun invoke(ticketId: String) = repository.deleteTicket(ticketId)
 }

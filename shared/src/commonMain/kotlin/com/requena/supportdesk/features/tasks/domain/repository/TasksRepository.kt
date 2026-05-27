@@ -16,6 +16,7 @@ interface TasksRepository {
     suspend fun createTask(input: TaskDraft): AppResult<WorkTask>
     suspend fun updateTask(taskId: String, input: TaskUpdateInput): AppResult<WorkTask>
     suspend fun deleteTask(taskId: String): AppResult<Unit>
+    suspend fun setTaskPinned(taskId: String, pinned: Boolean): AppResult<WorkTask>
     suspend fun createLabel(input: TaskLabelDraft): AppResult<TaskCategory>
     suspend fun updateLabel(labelId: String, input: TaskLabelDraft): AppResult<TaskCategory>
     suspend fun deleteLabel(labelId: String): AppResult<Unit>

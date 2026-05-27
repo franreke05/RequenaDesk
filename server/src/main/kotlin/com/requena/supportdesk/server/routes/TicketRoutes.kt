@@ -1,6 +1,5 @@
 package com.requena.supportdesk.server.routes
 
-import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.TicketCloseAcceptanceRequest
 import com.requena.supportdesk.server.domain.model.TicketSatisfactionRequest
@@ -19,9 +18,11 @@ import com.requena.supportdesk.server.utils.ticketJson
 import com.requena.supportdesk.server.utils.ticketsJson
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -35,12 +36,12 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val limit = call.request.queryParameters.boundedInt("limit", default = 100, max = 200)
             val offset = call.request.queryParameters.boundedInt("offset", default = 0, max = 10_000)
-            call.respondJson(body = successResponse("/tickets", ticketsJson(service.tickets(ownerAdminId = identity.userId, limit = limit, offset = offset))))
+            call.respondJson(body = successResponse("/tickets", ticketsJson(service.tickets(ownerAdminId = identity.userId, viewerUserId = identity.userId, limit = limit, offset = offset))))
         }
         get("/{id}") {
             val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val ticket = service.ticket(id, ownerAdminId = identity.userId)
+            val ticket = service.ticket(id, ownerAdminId = identity.userId, viewerUserId = identity.userId)
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             call.respondJson(body = successResponse("/tickets/$id", ticketJson(ticket)))
         }
@@ -53,12 +54,12 @@ private fun Route.adminTicketRoutes(service: SupportDeskService, tokenService: S
             val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val limit = call.request.queryParameters.boundedInt("limit", default = 100, max = 200)
             val offset = call.request.queryParameters.boundedInt("offset", default = 0, max = 10_000)
-            call.respondJson(body = successResponse("/admin/tickets", ticketsJson(service.tickets(ownerAdminId = identity.userId, limit = limit, offset = offset))))
+            call.respondJson(body = successResponse("/admin/tickets", ticketsJson(service.tickets(ownerAdminId = identity.userId, viewerUserId = identity.userId, limit = limit, offset = offset))))
         }
         get("/{id}") {
             val identity = call.requireAdminIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val ticket = service.ticket(id, ownerAdminId = identity.userId)
+            val ticket = service.ticket(id, ownerAdminId = identity.userId, viewerUserId = identity.userId)
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             call.respondJson(body = successResponse("/admin/tickets/$id", ticketJson(ticket)))
         }
@@ -72,16 +73,6 @@ private fun Route.adminTicketRoutes(service: SupportDeskService, tokenService: S
                 HttpStatusCode.Created,
                 successResponse("/admin/tickets", ticketJson(service.createdAdminTicket(request, identity.userId))),
             )
-        }
-        post("/{id}/messages") {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@post
-            val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = call.receiveOrDefault(CreateTicketMessageRequest()).copy(authorId = identity.userId)
-            if (request.body.isBlank()) {
-                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket message payload"))
-            }
-            val result = service.createdAdminMessage(id, identity.userId, request)
-            call.respondJson(body = ticketMessageCreatedJson("/admin/tickets/$id/messages", result.ticketId, result.messageId))
         }
         patch("/{id}/status") {
             val identity = call.requireAdminIdentity(tokenService) ?: return@patch
@@ -141,6 +132,14 @@ private fun Route.adminTicketRoutes(service: SupportDeskService, tokenService: S
                 ),
             )
         }
+        delete("/{id}") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@delete
+            val id = call.parameters["id"] ?: return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            val ticket = service.ticket(id, ownerAdminId = identity.userId)
+                ?: return@delete call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
+            service.deletedTicket(ticket.id, identity.userId)
+            call.respondJson(body = successResponse("/admin/tickets/$id", buildJsonObject { put("ticketId", id) }))
+        }
     }
 }
 
@@ -151,12 +150,13 @@ private fun Route.clientTicketRoutes(service: SupportDeskService, tokenService: 
             val clientId = identity.clientId ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("Client identity is required"))
             val limit = call.request.queryParameters.boundedInt("limit", default = 100, max = 100)
             val offset = call.request.queryParameters.boundedInt("offset", default = 0, max = 10_000)
-            call.respondJson(body = successResponse("/client/tickets", ticketsJson(service.clientTickets(clientId, limit = limit, offset = offset))))
+            call.respondJson(body = successResponse("/client/tickets", ticketsJson(service.clientTickets(clientId, viewerUserId = identity.userId, limit = limit, offset = offset))))
         }
         get("/{id}") {
             val identity = call.requireClientIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val ticket = service.ticket(id, clientId = identity.clientId)
+            val clientId = identity.clientId ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("Client identity is required"))
+            val ticket = service.ticket(id, clientId = clientId, viewerUserId = identity.userId)
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             call.respondJson(body = successResponse("/client/tickets/$id", ticketJson(ticket)))
         }
@@ -168,16 +168,6 @@ private fun Route.clientTicketRoutes(service: SupportDeskService, tokenService: 
             }
             val ticket = service.createdClientTicket(request, identity)
             call.respondJson(HttpStatusCode.Created, successResponse("/client/tickets", ticketJson(ticket)))
-        }
-        post("/{id}/messages") {
-            val identity = call.requireClientIdentity(tokenService) ?: return@post
-            val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val request = call.receiveOrDefault(CreateTicketMessageRequest()).copy(authorId = identity.userId)
-            if (request.body.isBlank()) {
-                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket message payload"))
-            }
-            val result = service.createdClientMessage(id, identity, request)
-            call.respondJson(body = ticketMessageCreatedJson("/client/tickets/$id/messages", result.ticketId, result.messageId))
         }
         post("/{id}/accept-close") {
             val identity = call.requireClientIdentity(tokenService) ?: return@post
@@ -211,16 +201,6 @@ private fun CreateTicketRequest.isValidForClient(): Boolean =
         description.isNotBlank() &&
         category in allowedTicketCategories &&
         platform in allowedPlatforms
-
-private fun ticketMessageCreatedJson(path: String, ticketId: String, messageId: String) =
-    successResponse(
-        path,
-        buildJsonObject {
-            put("ticketId", ticketId)
-            put("messageId", messageId)
-            put("message", "Reply stored")
-        },
-    )
 
 private fun fieldUpdateJson(path: String, field: String, ticketId: String, value: String) =
     successResponse(

@@ -34,12 +34,6 @@ data class CreateTicketRequest(
 )
 
 @Serializable
-data class CreateTicketMessageRequest(
-    val authorId: String = "",
-    val body: String = "",
-)
-
-@Serializable
 data class UpdateTicketStatusRequest(
     val status: String = "IN_PROGRESS",
 )
@@ -52,14 +46,12 @@ data class UpdateTicketPriorityRequest(
 @Serializable
 data class ClientAccessCodeClaimRequest(
     val code: String = "",
-    val name: String = "",
     val email: String = "",
-    val password: String = "",
 )
 
 @Serializable
 data class ClientAccessCodeCreateRequest(
-    val expiresInDays: Int = 14,
+    val expiresInDays: Int = 3650,
 )
 
 @Serializable
@@ -145,7 +137,6 @@ data class UploadAttachmentRequest(
     val contentType: String = "application/octet-stream",
     val storageKey: String = "",
     val sizeBytes: Long = 0,
-    val messageId: String? = null,
 )
 
 @Serializable

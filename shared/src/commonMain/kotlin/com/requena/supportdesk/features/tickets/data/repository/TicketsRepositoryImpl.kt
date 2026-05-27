@@ -1,15 +1,10 @@
 package com.requena.supportdesk.features.tickets.data.repository
 
 import com.requena.supportdesk.core.model.Ticket
-import com.requena.supportdesk.core.model.TicketMessage
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
-import com.requena.supportdesk.core.model.User
-import com.requena.supportdesk.core.model.UserRole
-import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.data.datasource.TicketsDataSource
-import com.requena.supportdesk.features.tickets.data.dto.CreateTicketMessageRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketCloseAcceptanceRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketSatisfactionRequestDto
@@ -68,28 +63,6 @@ class TicketsRepositoryImpl(
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo crear el ticket.", cause = it) },
     )
 
-    override suspend fun replyTicket(ticketId: String, message: String): AppResult<TicketMessage> = runCatching {
-        val authorId = AdminSessionContext.currentUserId() ?: "unknown-user"
-        val authorName = AdminSessionContext.currentUser()?.name ?: "Admin"
-        dataSource.replyTicket(
-            ticketId = ticketId,
-            request = CreateTicketMessageRequestDto(
-                body = message,
-            ),
-        )
-        TicketMessage(
-            id = "remote-reply-$ticketId",
-            ticketId = ticketId,
-            authorId = authorId,
-            authorName = authorName,
-            body = message,
-            createdAt = "now",
-        )
-    }.fold(
-        onSuccess = { AppResult.Success(it) },
-        onFailure = { AppResult.Error(message = it.message ?: "No se pudo enviar la respuesta.", cause = it) },
-    )
-
     override suspend fun changeStatus(ticketId: String, status: TicketStatus): AppResult<Ticket> = runCatching {
         dataSource.changeStatus(ticketId, UpdateTicketStatusRequestDto(status.name))
         dataSource.getTicket(ticketId)?.let(TicketsMapper::fromDto)
@@ -120,5 +93,12 @@ class TicketsRepositoryImpl(
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo guardar la satisfaccion.", cause = it) },
+    )
+
+    override suspend fun deleteTicket(ticketId: String): AppResult<Unit> = runCatching {
+        dataSource.deleteTicket(ticketId)
+    }.fold(
+        onSuccess = { AppResult.Success(Unit) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo eliminar el ticket.", cause = it) },
     )
 }

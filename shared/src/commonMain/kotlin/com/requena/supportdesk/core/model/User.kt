@@ -6,4 +6,5 @@ data class User(
     val email: String,
     val role: UserRole,
     val clientId: String? = null,
+    val companyName: String = "",
 )

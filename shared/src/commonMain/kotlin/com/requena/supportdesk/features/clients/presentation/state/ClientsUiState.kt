@@ -8,6 +8,8 @@ data class ClientsUiState(
     val query: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val generatedCode: String? = null,
+    val isGeneratingCode: Boolean = false,
 ) {
     val selectedClient: Client?
         get() = clients.firstOrNull { it.id == selectedClientId } ?: clients.firstOrNull()

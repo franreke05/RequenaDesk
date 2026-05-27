@@ -5,6 +5,7 @@ import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
+import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.core.time.isPastIsoDate
@@ -20,6 +21,7 @@ import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLabelsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.SetTaskPinnedUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
@@ -39,6 +41,7 @@ class TasksViewModel(
     private val createTaskUseCase: CreateTaskUseCase,
     private val updateTaskUseCase: UpdateTaskUseCase,
     private val deleteTaskUseCase: DeleteTaskUseCase,
+    private val setTaskPinnedUseCase: SetTaskPinnedUseCase,
     private val createTaskLabelUseCase: CreateTaskLabelUseCase,
     private val updateTaskLabelUseCase: UpdateTaskLabelUseCase,
     private val deleteTaskLabelUseCase: DeleteTaskLabelUseCase,
@@ -71,7 +74,9 @@ class TasksViewModel(
             is TasksUiEvent.UpdateTaskClient -> updateTaskClient(event.taskId, event.clientId)
             is TasksUiEvent.UpdateTask -> updateTask(event)
             is TasksUiEvent.DeleteTask -> deleteTask(event.taskId)
+            is TasksUiEvent.ToggleTaskPin -> toggleTaskPin(event.taskId, event.pinned)
             is TasksUiEvent.ToggleTaskCompletion -> toggleCompletion(event.taskId)
+            is TasksUiEvent.ChangeTaskStatus -> changeTaskStatus(event.taskId, event.status)
             is TasksUiEvent.StartTimer -> startTimer(event.taskId)
             TasksUiEvent.PauseTimer -> pauseTimer()
             TasksUiEvent.StopTimer -> stopTimer()
@@ -258,6 +263,19 @@ class TasksViewModel(
         }
     }
 
+    private fun toggleTaskPin(taskId: String, pinned: Boolean) {
+        launch {
+            when (val result = setTaskPinnedUseCase(taskId, pinned)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> {
+                    tasks = tasks.map { if (it.id == taskId) result.data else it }
+                        .sortedWith(compareByDescending<WorkTask> { it.pinnedAt ?: "" }.thenBy { it.completed }.thenByDescending { it.updatedAt })
+                    publish(selectedTaskId = taskId, statusMessage = if (pinned) "Tarea fijada" else "Tarea desfijada")
+                }
+            }
+        }
+    }
+
     private fun toggleCompletion(taskId: String) {
         val current = tasks.firstOrNull { it.id == taskId } ?: return
         executeTaskUpdate(
@@ -271,6 +289,23 @@ class TasksViewModel(
                 completed = !current.completed,
             ),
             successMessage = "Estado de tarea actualizado",
+        )
+    }
+
+    private fun changeTaskStatus(taskId: String, status: WorkTaskStatus) {
+        val current = tasks.firstOrNull { it.id == taskId } ?: return
+        executeTaskUpdate(
+            taskId = taskId,
+            input = TaskUpdateInput(
+                title = current.title,
+                description = current.description,
+                clientId = current.clientId,
+                categoryId = current.categoryId,
+                dueDate = current.dueDate,
+                completed = status == WorkTaskStatus.DONE,
+                status = status.name,
+            ),
+            successMessage = "Tarea movida",
         )
     }
 
@@ -295,10 +330,6 @@ class TasksViewModel(
 
     private fun startTimer(taskId: String) {
         val current = state.value
-        if (!current.canTrackSelectedDay) {
-            publish(statusMessage = "Solo puedes registrar horas en el dia actual.")
-            return
-        }
         if (current.isTimerRunning && current.activeTaskId == taskId) return
         if (current.isTimerRunning && current.activeTaskId != taskId) {
             pauseTimer()
@@ -340,17 +371,6 @@ class TasksViewModel(
     private fun stopTimer() {
         val current = state.value
         val taskId = current.activeTaskId ?: return
-        if (!current.canTrackSelectedDay) {
-            timerJob?.cancel()
-            timerJob = null
-            publish(
-                activeTaskId = null,
-                activeTaskSeconds = 0,
-                isTimerRunning = false,
-                statusMessage = "Solo puedes registrar horas en el dia actual.",
-            )
-            return
-        }
         timerJob?.cancel()
         timerJob = null
 
@@ -368,7 +388,7 @@ class TasksViewModel(
             return
         }
 
-        val workDate = current.selectedDay ?: currentIsoDate()
+        val workDate = current.timeTrackingDate
         launch {
             when (
                 val result = createTimeLogUseCase(
@@ -393,12 +413,12 @@ class TasksViewModel(
                     )
                 }
                 is AppResult.Success -> loadWorkspace(
-                    selectedDay = workDate,
+                    selectedDay = current.selectedDay,
                     selectedTaskId = taskId,
                     activeTaskId = null,
                     activeTaskSeconds = 0,
                     isTimerRunning = false,
-                    statusMessage = "Contador detenido",
+                    statusMessage = "Contador detenido. Tiempo registrado para hoy.",
                 )
             }
         }
@@ -480,10 +500,6 @@ class TasksViewModel(
     private fun selectDay(dayIsoDate: String) {
         if (isPastIsoDate(dayIsoDate)) {
             publish(statusMessage = "Los dias anteriores estan bloqueados.")
-            return
-        }
-        if (state.value.isTimerRunning && dayIsoDate != currentIsoDate()) {
-            publish(statusMessage = "Deten el contador antes de cambiar a una fecha futura.")
             return
         }
         publish(

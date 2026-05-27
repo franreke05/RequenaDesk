@@ -7,7 +7,6 @@ import com.requena.supportdesk.core.network.NetworkLogger
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
-import com.requena.supportdesk.features.tickets.data.dto.CreateTicketMessageRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketCloseAcceptanceRequestDto
@@ -15,6 +14,7 @@ import com.requena.supportdesk.features.tickets.data.dto.TicketSatisfactionReque
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketPriorityRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketStatusRequestDto
 import io.ktor.client.HttpClient
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -24,11 +24,11 @@ interface TicketsDataSource {
     suspend fun getTickets(): List<TicketDto>
     suspend fun getTicket(id: String): TicketDto?
     suspend fun createTicket(request: CreateTicketRequestDto): TicketDto
-    suspend fun replyTicket(ticketId: String, request: CreateTicketMessageRequestDto)
     suspend fun changeStatus(ticketId: String, request: UpdateTicketStatusRequestDto)
     suspend fun changePriority(ticketId: String, request: UpdateTicketPriorityRequestDto)
     suspend fun acceptClose(ticketId: String, request: TicketCloseAcceptanceRequestDto): TicketDto
     suspend fun rateTicket(ticketId: String, request: TicketSatisfactionRequestDto): TicketDto
+    suspend fun deleteTicket(ticketId: String)
 }
 
 class RemoteTicketsDataSource(
@@ -65,19 +65,6 @@ class RemoteTicketsDataSource(
             }.requireApiData()
         } catch (e: Exception) {
             NetworkLogger.addLog("[ERROR] createTicket failed: ${e.message} at $url")
-            throw e
-        }
-    }
-
-    override suspend fun replyTicket(ticketId: String, request: CreateTicketMessageRequestDto) {
-        val url = "${supportDeskBaseUrl()}${ticketsPath()}/$ticketId/messages"
-        try {
-            println("[DEBUG] POST $url")
-            httpClient.post(url) {
-                setBody(jsonRequestBody(request))
-            }.requireSuccess()
-        } catch (e: Exception) {
-            NetworkLogger.addLog("[ERROR] replyTicket($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }
@@ -130,6 +117,17 @@ class RemoteTicketsDataSource(
             }.requireApiData()
         } catch (e: Exception) {
             NetworkLogger.addLog("[ERROR] rateTicket($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
+
+    override suspend fun deleteTicket(ticketId: String) {
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId"
+        try {
+            println("[DEBUG] DELETE $url")
+            httpClient.delete(url).requireSuccess()
+        } catch (e: Exception) {
+            NetworkLogger.addLog("[ERROR] deleteTicket($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }

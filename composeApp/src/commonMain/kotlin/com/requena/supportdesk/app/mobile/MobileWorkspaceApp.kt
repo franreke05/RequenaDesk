@@ -52,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.Ticket
+import com.requena.supportdesk.core.model.TicketPriority
+import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.theme.displayName
@@ -90,6 +93,10 @@ private enum class MobileTab(
     TASKS(
         title = "Tareas",
         navLabel = "Tareas",
+    ),
+    AGENDA(
+        title = "Agenda",
+        navLabel = "Agenda",
     ),
     SETTINGS(
         title = "Ajustes",
@@ -229,6 +236,7 @@ fun MobileWorkspaceApp() {
                 onRefresh = {
                     module.tasksViewModel.onEvent(TasksUiEvent.Load)
                     module.clientsViewModel.onEvent(ClientsUiEvent.Load)
+                    module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
                     statusMessage = "Actualizando."
                 },
                 onSignOut = {
@@ -237,8 +245,10 @@ fun MobileWorkspaceApp() {
                 },
                 tasksState = tasksState,
                 clientsState = clientsState,
+                ticketsState = ticketsState,
                 onTasksEvent = module.tasksViewModel::onEvent,
                 onClientsEvent = module.clientsViewModel::onEvent,
+                onTicketsEvent = module.ticketsViewModel::onEvent,
             )
         }
     }
@@ -358,8 +368,10 @@ private fun MobileReadOnlyShell(
     onSignOut: () -> Unit,
     tasksState: TasksUiState,
     clientsState: ClientsUiState,
+    ticketsState: TicketsUiState,
     onTasksEvent: (TasksUiEvent) -> Unit,
     onClientsEvent: (ClientsUiEvent) -> Unit,
+    onTicketsEvent: (TicketsUiEvent) -> Unit,
 ) {
     Scaffold(
         containerColor = Color.Transparent,
@@ -408,10 +420,21 @@ private fun MobileReadOnlyShell(
                         onTasksEvent = onTasksEvent,
                     )
 
-                    MobileTab.TICKETS -> MobileTicketsScreen()
+                    MobileTab.TICKETS -> MobileTicketsScreen(
+                        state = ticketsState,
+                        clients = clientsState.clients,
+                        onEvent = onTicketsEvent,
+                    )
 
                     MobileTab.TASKS -> MobileTasksScreen(
                         tasksState = tasksState,
+                        clients = clientsState.clients,
+                        onTasksEvent = onTasksEvent,
+                    )
+
+                    MobileTab.AGENDA -> MobileAgendaScreen(
+                        tasksState = tasksState,
+                        ticketsState = ticketsState,
                         clients = clientsState.clients,
                         onTasksEvent = onTasksEvent,
                     )
@@ -539,6 +562,7 @@ private fun MobileBottomBar(
                                     MobileTab.CALENDAR -> "📅"
                                     MobileTab.TICKETS -> "🎫"
                                     MobileTab.TASKS -> "✓"
+                                    MobileTab.AGENDA -> "📋"
                                     MobileTab.SETTINGS -> "⚙️"
                                 },
                                 style = MaterialTheme.typography.headlineMedium,
@@ -1009,7 +1033,16 @@ private fun MobileCalendarScreen(
 }
 
 @Composable
-private fun MobileTicketsScreen() {
+private fun MobileTicketsScreen(
+    state: TicketsUiState,
+    clients: List<Client>,
+    onEvent: (TicketsUiEvent) -> Unit,
+) {
+    val clientsById = remember(clients) { clients.associateBy { it.id } }
+    val tickets = remember(state.tickets) {
+        state.tickets.sortedWith(compareBy({ it.status.ordinal }, { it.priority.ordinal }))
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1017,7 +1050,264 @@ private fun MobileTicketsScreen() {
         item {
             PhoneCard(modifier = Modifier.fillMaxWidth()) {
                 CardHeader(title = "Tickets")
-                EmptyPhoneState(title = "Sin tickets")
+                val openCount = state.tickets.count { it.status == TicketStatus.OPEN }
+                val inProgressCount = state.tickets.count { it.status == TicketStatus.IN_PROGRESS }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TagChip(
+                        text = "$openCount abiertos",
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    TagChip(
+                        text = "$inProgressCount en progreso",
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
+        }
+        if (tickets.isEmpty()) {
+            item {
+                PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                    EmptyPhoneState(title = "Sin tickets")
+                }
+            }
+        } else {
+            items(tickets, key = { it.id }) { ticket ->
+                TicketRowCard(
+                    ticket = ticket,
+                    client = ticket.clientId.let(clientsById::get),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TicketRowCard(
+    ticket: Ticket,
+    client: Client?,
+) {
+    val statusColor = when (ticket.status) {
+        TicketStatus.OPEN -> MaterialTheme.colorScheme.primaryContainer
+        TicketStatus.IN_PROGRESS -> MaterialTheme.colorScheme.tertiaryContainer
+        TicketStatus.PENDING_CLIENT -> MaterialTheme.colorScheme.secondaryContainer
+        TicketStatus.RESOLVED -> MaterialTheme.colorScheme.secondaryContainer
+        TicketStatus.CLOSED -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val priorityColor = when (ticket.priority) {
+        TicketPriority.LOW -> MaterialTheme.colorScheme.surfaceVariant
+        TicketPriority.MEDIUM -> MaterialTheme.colorScheme.primaryContainer
+        TicketPriority.HIGH -> MaterialTheme.colorScheme.tertiaryContainer
+        TicketPriority.URGENT -> MaterialTheme.colorScheme.errorContainer
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TagChip(
+                        text = ticketStatusLabel(ticket.status),
+                        containerColor = statusColor,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    )
+                    TagChip(
+                        text = ticketPriorityLabel(ticket.priority),
+                        containerColor = priorityColor,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Text(
+                    text = "#${ticket.ticketNumber}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                text = ticket.subject,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = client?.companyName ?: ticket.requester.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = formatSupportDeskDateTime(ticket.updatedAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileAgendaScreen(
+    tasksState: TasksUiState,
+    ticketsState: TicketsUiState,
+    clients: List<Client>,
+    onTasksEvent: (TasksUiEvent) -> Unit,
+) {
+    val selectedDay = tasksState.selectedDay ?: tasksState.todayIsoDate
+    val weekDays = remember(selectedDay) { buildWeekDays(selectedDay) }
+    val clientsById = remember(clients) { clients.associateBy { it.id } }
+    val categoriesById = remember(tasksState.categories) { tasksState.categories.associateBy { it.id } }
+    val dayTasks = remember(tasksState.tasks, selectedDay) {
+        tasksState.tasks
+            .filter { it.dueDate == selectedDay }
+            .sortedByDescending { it.updatedAt }
+    }
+    val activeTickets = remember(ticketsState.tickets) {
+        ticketsState.tickets
+            .filter { it.status == TicketStatus.OPEN || it.status == TicketStatus.IN_PROGRESS }
+            .sortedBy { it.priority.ordinal }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                CardHeader(title = "Semana")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(weekDays) { dayIso ->
+                        val isSelected = dayIso == selectedDay
+                        val parts = dayIso.split("-")
+                        val dayNum = parts.getOrNull(2)?.trimStart('0') ?: ""
+                        val dayOfWeekIdx = dayOfWeekMondayIndex(
+                            year = parts.getOrNull(0)?.toIntOrNull() ?: 2026,
+                            month = parts.getOrNull(1)?.toIntOrNull() ?: 1,
+                            day = parts.getOrNull(2)?.toIntOrNull() ?: 1,
+                        )
+                        val dayName = SPANISH_WEEKDAY_SHORT.getOrElse(dayOfWeekIdx) { "?" }
+                        Surface(
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.medium)
+                                .clickable { onTasksEvent(TasksUiEvent.SelectDay(dayIso)) },
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                            },
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = dayName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                                Text(
+                                    text = dayNum,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                CardHeader(
+                    title = "Tareas del día",
+                    subtitle = "${dayTasks.size} tareas con vencimiento",
+                )
+                if (dayTasks.isEmpty()) {
+                    EmptyPhoneState(title = "Sin tareas para este día")
+                }
+            }
+        }
+
+        items(dayTasks, key = { "agenda-task-${it.id}" }) { task ->
+            val category = categoriesById[task.categoryId]
+            val client = task.clientId?.let(clientsById::get)
+            TaskRowCard(
+                task = task,
+                client = client,
+                category = category,
+                selected = false,
+                onClick = {},
+            )
+        }
+
+        if (tasksState.selectedDayLogs.isNotEmpty()) {
+            item {
+                PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                    CardHeader(
+                        title = "Tiempo registrado",
+                        subtitle = formatSupportDeskDuration(tasksState.selectedDayMinutes),
+                    )
+                    tasksState.selectedDayLogs.forEach { log ->
+                        val logTask = tasksState.tasks.firstOrNull { it.id == log.taskId }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = logTask?.title ?: "Tarea eliminada",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = formatSupportDeskDuration(log.minutes),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (activeTickets.isNotEmpty()) {
+            item {
+                PhoneCard(modifier = Modifier.fillMaxWidth()) {
+                    CardHeader(
+                        title = "Tickets activos",
+                        subtitle = "${activeTickets.size} pendientes",
+                    )
+                }
+            }
+            items(activeTickets, key = { "agenda-ticket-${it.id}" }) { ticket ->
+                val client = clientsById[ticket.clientId]
+                TicketRowCard(ticket = ticket, client = client)
             }
         }
     }
@@ -2125,7 +2415,50 @@ private fun parseColor(
     fallback
 }
 
+private fun buildWeekDays(isoDate: String): List<String> {
+    val parts = isoDate.split("-")
+    val year = parts.getOrNull(0)?.toIntOrNull() ?: return emptyList()
+    val month = parts.getOrNull(1)?.toIntOrNull() ?: return emptyList()
+    val day = parts.getOrNull(2)?.toIntOrNull() ?: return emptyList()
+    val mondayOffset = dayOfWeekMondayIndex(year, month, day)
+    return (0..6).map { i -> addDaysToIsoDate(year, month, day, i - mondayOffset) }
+}
+
+private fun addDaysToIsoDate(year: Int, month: Int, day: Int, delta: Int): String {
+    var d = day + delta
+    var m = month
+    var y = year
+    while (d < 1) {
+        m--
+        if (m < 1) { m = 12; y-- }
+        d += daysInMonth(y, m)
+    }
+    while (d > daysInMonth(y, m)) {
+        d -= daysInMonth(y, m)
+        m++
+        if (m > 12) { m = 1; y++ }
+    }
+    return isoDate(y, m, d)
+}
+
+private fun ticketStatusLabel(status: TicketStatus): String = when (status) {
+    TicketStatus.OPEN -> "Abierto"
+    TicketStatus.IN_PROGRESS -> "En progreso"
+    TicketStatus.PENDING_CLIENT -> "Pendiente"
+    TicketStatus.RESOLVED -> "Resuelto"
+    TicketStatus.CLOSED -> "Cerrado"
+}
+
+private fun ticketPriorityLabel(priority: TicketPriority): String = when (priority) {
+    TicketPriority.LOW -> "Baja"
+    TicketPriority.MEDIUM -> "Media"
+    TicketPriority.HIGH -> "Alta"
+    TicketPriority.URGENT -> "Urgente"
+}
+
 private val SPANISH_WEEKDAY_LABELS = listOf("L", "M", "X", "J", "V", "S", "D")
+
+private val SPANISH_WEEKDAY_SHORT = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 
 private val SPANISH_MONTH_NAMES = listOf(
     "enero",

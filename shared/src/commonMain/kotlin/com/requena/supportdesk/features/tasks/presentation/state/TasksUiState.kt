@@ -27,6 +27,12 @@ data class TasksUiState(
     val todayIsoDate: String
         get() = currentIsoDate()
 
+    val effectiveSelectedDay: String
+        get() = selectedDay ?: todayIsoDate
+
+    val timeTrackingDate: String
+        get() = todayIsoDate
+
     val activeTask: WorkTask?
         get() = tasks.firstOrNull { it.id == activeTaskId }
 
@@ -37,10 +43,7 @@ data class TasksUiState(
         get() = categories.firstOrNull { it.id == selectedCategoryId }
 
     val selectedDayLogs: List<TaskLog>
-        get() {
-            val day = selectedDay ?: return emptyList()
-            return logs.filter { it.workDate == day }
-        }
+        get() = logs.filter { it.workDate == effectiveSelectedDay }
 
     val selectedDayMinutes: Int
         get() = selectedDayLogs.sumOf { it.minutes }
@@ -49,7 +52,7 @@ data class TasksUiState(
         get() = selectedDayLogs.sumOf { it.seconds }
 
     val selectedDayIsToday: Boolean
-        get() = selectedDay?.let(::isTodayIsoDate) == true
+        get() = selectedDay?.let(::isTodayIsoDate) ?: true
 
     val selectedDayIsPast: Boolean
         get() = selectedDay?.let(::isPastIsoDate) == true
@@ -58,7 +61,7 @@ data class TasksUiState(
         get() = selectedDay?.let(::isFutureIsoDate) == true
 
     val canTrackSelectedDay: Boolean
-        get() = selectedDayIsToday
+        get() = selectedDay == null || selectedDayIsToday
 
     val filteredTasks: List<WorkTask>
         get() = tasks.filter { task ->

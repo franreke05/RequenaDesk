@@ -47,7 +47,7 @@ fun Route.authRoutes(service: SupportDeskService) {
         post("/claim-code") {
             val request = call.receiveOrDefault(ClientAccessCodeClaimRequest())
             val session = service.claimClientAccessCode(request)
-                ?: return@post call.respondJson(HttpStatusCode.Unauthorized, errorResponse("Invalid or expired client invitation code"))
+                ?: return@post call.respondJson(HttpStatusCode.Unauthorized, errorResponse("Invalid client email or portal code"))
             call.respondJson(body = successResponse("/client/auth/claim-code", sessionJson(session)))
         }
     }

@@ -2,8 +2,6 @@ package com.requena.supportdesk.features.tickets.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.model.InternalComment
-import com.requena.supportdesk.core.time.currentIsoDate
-import com.requena.supportdesk.core.time.currentIsoDateTime
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketEvent
 import com.requena.supportdesk.core.model.TicketPriority
@@ -11,15 +9,17 @@ import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.core.model.WaitingOn
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.core.time.currentIsoDate
+import com.requena.supportdesk.core.time.currentIsoDateTime
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.domain.model.TicketFilters
+import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketStatusUseCase
-import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.DeleteTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
-import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.RateTicketUseCase
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
@@ -31,16 +31,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 class TicketsViewModel(
     private val getTicketsUseCase: GetTicketsUseCase,
     private val getTicketUseCase: GetTicketUseCase,
     private val createTicketUseCase: CreateTicketUseCase,
-    private val replyTicketUseCase: ReplyTicketUseCase,
     private val changeTicketStatusUseCase: ChangeTicketStatusUseCase,
     private val changeTicketPriorityUseCase: ChangeTicketPriorityUseCase,
     private val acceptTicketCloseUseCase: AcceptTicketCloseUseCase,
     private val rateTicketUseCase: RateTicketUseCase,
+    private val deleteTicketUseCase: DeleteTicketUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TicketsUiState())
     val state: StateFlow<TicketsUiState> = _state.asStateFlow()
@@ -85,13 +86,14 @@ class TicketsViewModel(
             is TicketsUiEvent.SelectTicket -> selectTicket(event.ticketId)
             is TicketsUiEvent.CreateTicket -> createTicket(event.input)
             TicketsUiEvent.CreateSampleTicket -> createTicket()
-            is TicketsUiEvent.ReplyToSelected -> replyToSelected(event.message)
             is TicketsUiEvent.ChangeSelectedStatus -> changeSelectedStatus(event.status)
+            is TicketsUiEvent.ChangeTicketStatus -> changeTicketStatus(event.ticketId, event.status)
             is TicketsUiEvent.ChangeSelectedPriority -> changeSelectedPriority(event.priority)
             is TicketsUiEvent.AcceptSelectedClose -> acceptSelectedClose(event.resolutionSummary)
             is TicketsUiEvent.RateSelected -> rateSelected(event.rating)
             is TicketsUiEvent.AddInternalNote -> addInternalNote(event)
             is TicketsUiEvent.AddTimeEntry -> addTimeEntry(event)
+            is TicketsUiEvent.DeleteTicket -> deleteTicket(event.ticketId)
         }
     }
 
@@ -148,23 +150,6 @@ class TicketsViewModel(
         }
     }
 
-    private fun replyToSelected(message: String) {
-        val selected = state.value.selectedTicket ?: return
-        if (message.isBlank()) return
-        launch {
-            when (val result = replyTicketUseCase(selected.id, message)) {
-                is AppResult.Error -> {
-                    _state.update { it.copy(errorMessage = result.message) }
-                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
-                }
-                is AppResult.Success -> {
-                    selectTicket(result.data.ticketId)
-                    loadTickets()
-                }
-            }
-        }
-    }
-
     private fun changeSelectedStatus(status: TicketStatus) {
         val selected = state.value.selectedTicket ?: return
         launch {
@@ -176,6 +161,18 @@ class TicketsViewModel(
                 is AppResult.Success -> {
                     ticketOverrides[selected.id] = mergeWithLocal(result.data)
                     renderTickets(selectId = selected.id)
+                }
+            }
+        }
+    }
+
+    private fun changeTicketStatus(ticketId: String, status: TicketStatus) {
+        launch {
+            when (val result = changeTicketStatusUseCase(ticketId, status)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> {
+                    ticketOverrides[ticketId] = mergeWithLocal(result.data)
+                    renderTickets()
                 }
             }
         }
@@ -274,6 +271,20 @@ class TicketsViewModel(
         renderTickets(selectId = selected.id)
     }
 
+    private fun deleteTicket(ticketId: String) {
+        launch {
+            when (val result = deleteTicketUseCase(ticketId)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> {
+                    sourceTickets = sourceTickets.filterNot { it.id == ticketId }
+                    ticketOverrides.remove(ticketId)
+                    renderTickets(selectId = null)
+                    _effects.emit(TicketsUiEffect.ShowMessage("Ticket eliminado"))
+                }
+            }
+        }
+    }
+
     private fun currentFilters(): TicketFilters = TicketFilters(
         query = state.value.searchQuery,
         status = state.value.statusFilter,
@@ -287,54 +298,33 @@ class TicketsViewModel(
 
     private fun mergeWithLocal(ticket: Ticket): Ticket {
         val local = ticketOverrides[ticket.id]
-        if (local == null) {
-            return ticket
-        }
-        return ticket.copy(
-            internalComments = local.internalComments.distinctBy { it.id },
-            timeEntries = local.timeEntries.distinctBy { it.id },
-            events = local.events.distinctBy { it.id },
-            messages = local.messages.distinctBy { it.id },
-            status = local.status,
-            priority = local.priority,
-            waitingOn = local.waitingOn,
-            updatedAt = local.updatedAt,
-            resolutionSummary = local.resolutionSummary,
-            clientAcceptedCloseAt = local.clientAcceptedCloseAt,
-            adminAcceptedCloseAt = local.adminAcceptedCloseAt,
-            archivedAt = local.archivedAt,
-            satisfactionRating = local.satisfactionRating,
-        )
+        return local ?: ticket
     }
 
-    private fun renderTickets(
-        errorMessage: String? = state.value.errorMessage,
-        selectId: String? = state.value.selectedTicket?.id,
-    ) {
-        val filters = currentFilters()
-        val filtered = mergedTickets().filter { ticket ->
-            val queryMatches = filters.query.isBlank() || listOf(
-                ticket.ticketNumber,
-                ticket.subject,
-                ticket.description,
-                ticket.affectedApp,
-                ticket.requester.name,
-            ).any { value -> value.contains(filters.query, ignoreCase = true) }
-            queryMatches &&
-                (filters.status == null || ticket.status == filters.status) &&
-                (filters.priority == null || ticket.priority == filters.priority) &&
-                (filters.category == null || ticket.category == filters.category) &&
-                (filters.platform == null || ticket.platform == filters.platform) &&
-                (filters.waitingOn == null || ticket.waitingOn == filters.waitingOn)
-        }
-        val selected = selectId?.let { id -> filtered.firstOrNull { it.id == id } } ?: filtered.firstOrNull()
+    private fun renderTickets(selectId: String? = state.value.selectedTicket?.id, errorMessage: String? = null) {
+        val filtered = mergedTickets()
+            .filter { it.matchesSearchAndFilters(state.value) }
+            .sortedWith(compareBy<Ticket> { it.status == TicketStatus.CLOSED }.thenByDescending { it.updatedAt })
+        val selected = selectId?.let { id -> filtered.firstOrNull { it.id == id } }
+            ?: state.value.selectedTicket?.let { selected -> filtered.firstOrNull { it.id == selected.id } }
+            ?: filtered.firstOrNull()
         _state.update {
             it.copy(
+                tickets = filtered,
+                allTickets = mergedTickets(),
+                selectedTicket = selected,
                 isLoading = false,
                 errorMessage = errorMessage,
-                tickets = filtered,
-                selectedTicket = selected,
             )
         }
     }
+
+    private fun Ticket.matchesSearchAndFilters(state: TicketsUiState): Boolean =
+        (state.searchQuery.isBlank() || listOf(subject, ticketNumber, affectedApp, clientReference.orEmpty())
+            .any { it.contains(state.searchQuery, ignoreCase = true) }) &&
+            (state.statusFilter == null || status == state.statusFilter) &&
+            (state.priorityFilter == null || priority == state.priorityFilter) &&
+            (state.categoryFilter == null || category == state.categoryFilter) &&
+            (state.platformFilter == null || platform == state.platformFilter) &&
+            (state.waitingOnFilter == null || waitingOn == state.waitingOnFilter)
 }

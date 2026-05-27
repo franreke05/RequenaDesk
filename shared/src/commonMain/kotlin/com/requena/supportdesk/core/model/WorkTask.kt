@@ -11,6 +11,7 @@ data class WorkTask(
     val status: WorkTaskStatus = if (completed) WorkTaskStatus.DONE else WorkTaskStatus.TODO,
     val loggedMinutes: Int = 0,
     val loggedSeconds: Int = loggedMinutes * 60,
+    val pinnedAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )

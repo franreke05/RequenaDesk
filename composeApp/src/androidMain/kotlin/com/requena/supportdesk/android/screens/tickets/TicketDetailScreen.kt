@@ -22,7 +22,6 @@ import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.components.layout.PageHeader
 import com.requena.supportdesk.designsystem.components.tickets.AttachmentRow
-import com.requena.supportdesk.designsystem.components.tickets.MessageBubble
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 
@@ -97,28 +96,6 @@ fun TicketDetailScreen(
                     text = ticket.resolutionSummary.orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-            }
-        }
-        SectionCard(
-            title = "Conversation",
-            subtitle = "${ticket.messages.size} updates in the thread.",
-        ) {
-            if (ticket.messages.isEmpty()) {
-                EmptyState(
-                    title = "No messages yet",
-                    message = "The message timeline will appear here once the ticket starts receiving updates.",
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                    ticket.messages.forEach { message ->
-                        MessageBubble(
-                            authorName = message.authorName,
-                            body = message.body,
-                            timestamp = message.createdAt,
-                            isOwnMessage = currentUserId != null && currentUserId == message.authorId,
-                        )
-                    }
-                }
             }
         }
         SectionCard(

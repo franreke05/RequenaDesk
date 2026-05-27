@@ -43,8 +43,8 @@ class AuthViewModel(
         when (event) {
             is AuthUiEvent.EmailChanged -> _state.update { it.copy(email = event.value, errorMessage = null) }
             is AuthUiEvent.PasswordChanged -> _state.update { it.copy(password = event.value, errorMessage = null) }
+            is AuthUiEvent.ClientEmailChanged -> _state.update { it.copy(clientEmail = event.value, errorMessage = null) }
             is AuthUiEvent.ClientAccessCodeChanged -> _state.update { it.copy(clientAccessCode = event.value, errorMessage = null) }
-            is AuthUiEvent.DisplayNameChanged -> _state.update { it.copy(displayName = event.value, errorMessage = null) }
             AuthUiEvent.Logout -> {
                 clearSessionUseCase()
                 _state.update {
@@ -94,9 +94,7 @@ class AuthViewModel(
             when (
                 val result = claimClientAccessUseCase(
                     code = current.clientAccessCode,
-                    name = current.displayName,
-                    email = current.email,
-                    password = current.password,
+                    email = current.clientEmail,
                 )
             ) {
                 is AppResult.Error -> {

@@ -8,7 +8,6 @@ import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
-import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
@@ -23,8 +22,6 @@ import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapsh
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
-import com.requena.supportdesk.server.domain.model.ServerTicketMessageSnapshot
-import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -54,6 +51,13 @@ class InMemorySupportDeskRepository(
         val name: String,
         val email: String,
         val password: String,
+        val companyName: String = "",
+    )
+
+    private data class LocalClientAccessCode(
+        val clientId: String,
+        val ownerAdminId: String,
+        val code: String,
     )
 
     private val adminAccounts = listOf(
@@ -77,6 +81,7 @@ class InMemorySupportDeskRepository(
             name = "Ana Northwind",
             email = "ana@northwind.dev",
             password = "Client1234!",
+            companyName = "Northwind Studio",
         ),
         LocalClientAccount(
             userId = "client-user-2",
@@ -84,6 +89,7 @@ class InMemorySupportDeskRepository(
             name = "David Pixel",
             email = "david@pixelforge.dev",
             password = "Client1234!",
+            companyName = "Pixel Forge",
         ),
     )
 
@@ -93,30 +99,8 @@ class InMemorySupportDeskRepository(
         "client-2" to "user-admin-2",
     )
     private val labels = mutableListOf(
-        ServerTaskLabelSnapshot("label-1", "user-admin", "Hoy", "#6B7A5B", 1),
-        ServerTaskLabelSnapshot("label-2", "user-admin-2", "Seguimiento", "#A67C52", 1),
-    )
-    private val ticketMessages = mutableMapOf(
-        "ticket-1" to mutableListOf(
-            ServerTicketMessageSnapshot(
-                id = "message-1",
-                ticketId = "ticket-1",
-                authorId = "client-user-1",
-                authorName = "Ana Northwind",
-                body = "La app se queda en blanco al arrancar.",
-                createdAt = "2026-04-15T09:00:00Z",
-            ),
-        ),
-        "ticket-2" to mutableListOf(
-            ServerTicketMessageSnapshot(
-                id = "message-2",
-                ticketId = "ticket-2",
-                authorId = "user-admin-2",
-                authorName = "Admin Sanchez",
-                body = "Necesito confirmar el formato exacto del campo.",
-                createdAt = "2026-04-15T10:00:00Z",
-            ),
-        ),
+        ServerTaskLabelSnapshot("label-1", "", "Hoy", "#6B7A5B", 1),
+        ServerTaskLabelSnapshot("label-2", "", "Seguimiento", "#A67C52", 1),
     )
     private val tickets = dataSource.tickets().mapIndexed { index, entity ->
         val clientId = if (index == 0) "client-1" else "client-2"
@@ -131,10 +115,10 @@ class InMemorySupportDeskRepository(
             assigneeName = adminAccounts.firstOrNull { it.userId == ownerId }?.name,
             createdAt = "2026-04-15T08:00:00Z",
             updatedAt = "2026-04-15T10:00:00Z",
-            messages = ticketMessages[entity.id].orEmpty(),
         )
     }.toMutableList()
-    private val clientAccessCodes = mutableMapOf<String, Pair<String, String>>()
+    private val clientAccessCodes = mutableMapOf<String, LocalClientAccessCode>()
+    private val pinnedTasks = mutableMapOf<String, MutableMap<String, String>>()
     private val tasks = mutableListOf(
         ServerTaskSnapshot(
             id = "task-1",
@@ -270,36 +254,48 @@ class InMemorySupportDeskRepository(
                 email = account.email,
                 role = "CLIENT",
                 clientId = account.clientId,
+                companyName = account.companyName,
             )
         }
         return null
     }
 
     override fun claimClientAccessCode(request: ClientAccessCodeClaimRequest): ServerAuthIdentity? {
-        val (clientId, ownerAdminId) = clientAccessCodes.remove(request.code.trim().uppercase()) ?: return null
-        val client = clients.firstOrNull { it.id == clientId && clientOwners[it.id] == ownerAdminId } ?: return null
+        val normalizedCode = request.code.trim().uppercase()
+        val accessCode = clientAccessCodes[normalizedCode] ?: return null
+        val client = clients.firstOrNull {
+            it.id == accessCode.clientId &&
+                clientOwners[it.id] == accessCode.ownerAdminId &&
+                it.email.equals(request.email.trim(), ignoreCase = true) &&
+                it.accountStatus == "ACTIVE"
+        } ?: return null
+        val existingIndex = clientAccounts.indexOfFirst { it.email.equals(client.email, ignoreCase = true) }
         val account = LocalClientAccount(
-            userId = "client-user-${clientAccounts.size + 1}",
+            userId = existingIndex.takeIf { it >= 0 }?.let { clientAccounts[it].userId } ?: "client-user-${clientAccounts.size + 1}",
             clientId = client.id,
-            name = request.name.ifBlank { client.contactName.ifBlank { client.companyName } },
-            email = request.email.ifBlank { client.email },
-            password = request.password,
+            name = client.contactName.ifBlank { client.companyName },
+            email = client.email,
+            password = normalizedCode,
+            companyName = client.companyName,
         )
-        clientAccounts.add(account)
+        if (existingIndex >= 0) {
+            clientAccounts[existingIndex] = account
+        } else {
+            clientAccounts.add(account)
+        }
         return ServerAuthIdentity(
             userId = account.userId,
             name = account.name,
             email = account.email,
             role = "CLIENT",
             clientId = account.clientId,
+            companyName = account.companyName,
         )
     }
 
     override fun createClientAccessCode(clientId: String, ownerAdminId: String, expiresInDays: Int): String {
         requireClientOwnership(clientId, ownerAdminId)
-        val code = "ORY-${clientId.takeLast(3).uppercase()}-${clientAccessCodes.size + 1}".uppercase()
-        clientAccessCodes[code] = clientId to ownerAdminId
-        return code
+        return ensureLocalPortalCode(clientId, ownerAdminId, forceNew = true)
     }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
@@ -328,6 +324,7 @@ class InMemorySupportDeskRepository(
                 email = account.email,
                 role = "CLIENT",
                 clientId = account.clientId,
+                companyName = account.companyName,
             )
         }
         return null
@@ -336,25 +333,25 @@ class InMemorySupportDeskRepository(
     override fun revokeRefreshToken(refreshToken: String): Boolean =
         refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) != null
 
-    override fun getTickets(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<ServerTicketSnapshot> = tickets
+    override fun getTickets(ownerAdminId: String?, clientId: String?, viewerUserId: String?, limit: Int, offset: Int): List<ServerTicketSnapshot> = tickets
         .filter { ticket ->
             (ownerAdminId == null || clientOwners[ticket.clientId] == ownerAdminId) &&
                 (clientId == null || ticket.clientId == clientId)
         }
+        .sortedByDescending { it.updatedAt }
         .drop(offset.coerceAtLeast(0))
         .take(limit.coerceIn(1, 200))
-        .map { it.copy(messages = ticketMessages[it.id].orEmpty()) }
 
-    override fun countClientTicketsCreatedOn(clientId: String, datePrefix: String): Int =
-        tickets.count { it.clientId == clientId && it.createdAt.startsWith(datePrefix) }
+    override fun countClientTicketsCreatedOn(clientId: String, datePrefix: String, priority: String?): Int =
+        tickets.count { it.clientId == clientId && it.createdAt.startsWith(datePrefix) && (priority == null || it.priority.equals(priority, ignoreCase = true)) }
 
-    override fun getTicket(id: String, ownerAdminId: String?, clientId: String?): ServerTicketSnapshot? = tickets
+    override fun getTicket(id: String, ownerAdminId: String?, clientId: String?, viewerUserId: String?): ServerTicketSnapshot? = tickets
         .firstOrNull { ticket ->
             (ticket.id == id || ticket.ticketNumber == id) &&
                 (ownerAdminId == null || clientOwners[ticket.clientId] == ownerAdminId) &&
                 (clientId == null || ticket.clientId == clientId)
         }
-        ?.let { it.copy(messages = ticketMessages[it.id].orEmpty()) }
+        
 
     override fun createTicket(request: CreateTicketRequest, ownerAdminId: String?, requesterId: String?): ServerTicketSnapshot {
         if (ownerAdminId != null) requireClientOwnership(request.clientId, ownerAdminId)
@@ -401,40 +398,14 @@ class InMemorySupportDeskRepository(
         return ticket
     }
 
-    override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated {
-        val ticket = getTicket(ticketId, null, null) ?: throw ServerNotFoundException("Ticket not found")
-        val authorName = adminAccounts.firstOrNull { it.userId == request.authorId }?.name
-            ?: clientAccounts.firstOrNull { it.userId == request.authorId }?.name
-            ?: "Usuario"
-        val message = ServerTicketMessageSnapshot(
-            id = "message-${ticketMessages.values.sumOf { it.size } + 1}",
-            ticketId = ticket.id,
-            authorId = request.authorId,
-            authorName = authorName,
-            body = request.body,
-            createdAt = "2026-04-16T10:00:00Z",
-        )
-        ticketMessages.getOrPut(ticket.id) { mutableListOf() }.add(message)
-        val index = tickets.indexOfFirst { it.id == ticket.id }
-        if (index >= 0) tickets[index] = tickets[index].copy(updatedAt = message.createdAt)
-        listOfNotNull(clientOwners[ticket.clientId], ticket.requesterId)
-            .filter { it.isNotBlank() && it != request.authorId }
-            .distinct()
-            .forEach { recipientId ->
-                alerts.add(
-                    0,
-                    ServerNotificationAlertSnapshot(
-                        id = "alert-${alerts.size + 1}",
-                        userId = recipientId,
-                        ticketId = ticket.id,
-                        type = "NEW_MESSAGE",
-                        title = "Nuevo mensaje",
-                        body = ticket.subject,
-                        createdAt = message.createdAt,
-                    ),
-                )
-            }
-        return ServerTicketMessageCreated(ticketId = ticket.id, messageId = message.id)
+    override fun deleteTicket(ticketId: String, ownerAdminId: String?) {
+        val index = tickets.indexOfFirst { ticket ->
+            (ticket.id == ticketId || ticket.ticketNumber == ticketId) &&
+                (ownerAdminId == null || clientOwners[ticket.clientId] == ownerAdminId)
+        }
+        if (index < 0) throw ServerNotFoundException("Ticket not found")
+        val ticket = tickets.removeAt(index)
+        alerts.removeAll { it.ticketId == ticket.id }
     }
 
     override fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate {
@@ -471,7 +442,7 @@ class InMemorySupportDeskRepository(
             }
         }.copy(updatedAt = acceptedAt)
         tickets[index] = updated
-        return updated.copy(messages = ticketMessages[updated.id].orEmpty())
+        return updated
     }
 
     override fun rateTicket(ticketId: String, clientId: String, rating: Int): ServerTicketSnapshot {
@@ -487,11 +458,16 @@ class InMemorySupportDeskRepository(
     override fun getClients(ownerAdminId: String?): List<ServerClientSnapshot> = clients
         .filter { ownerAdminId == null || clientOwners[it.id] == ownerAdminId }
         .map { client ->
-        client.copy(
-            openTasksCount = tasks.count { it.clientId == client.id && !it.completed },
-            monthlyLoggedMinutes = timeLogs.filter { it.clientId == client.id }.sumOf { it.minutes },
-        )
-    }
+            val ownerId = clientOwners.getValue(client.id)
+            val portalCode = ensureLocalPortalCode(client.id, ownerId)
+            client.copy(
+                openTasksCount = tasks.count { it.clientId == client.id && !it.completed },
+                monthlyLoggedMinutes = timeLogs.filter { it.clientId == client.id }.sumOf { it.minutes },
+                portalAccessCode = portalCode,
+                portalAccessStatus = "ACTIVE",
+                portalAccessExpiresAt = "2036-05-20T00:00:00Z",
+            )
+        }
 
     override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
@@ -511,7 +487,12 @@ class InMemorySupportDeskRepository(
         )
         clients.add(0, created)
         clientOwners[created.id] = resolvedOwnerAdminId
-        return created
+        val portalCode = ensureLocalPortalCode(created.id, resolvedOwnerAdminId)
+        return created.copy(
+            portalAccessCode = portalCode,
+            portalAccessStatus = "ACTIVE",
+            portalAccessExpiresAt = "2036-05-20T00:00:00Z",
+        )
     }
 
     override fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String?): ServerClientSnapshot {
@@ -527,7 +508,12 @@ class InMemorySupportDeskRepository(
             preferredContactChannel = request.preferredContactChannel ?: current.preferredContactChannel,
         )
         clients[index] = updated
-        return updated
+        val portalCode = ensureLocalPortalCode(updated.id, clientOwners.getValue(updated.id))
+        return updated.copy(
+            portalAccessCode = portalCode,
+            portalAccessStatus = "ACTIVE",
+            portalAccessExpiresAt = "2036-05-20T00:00:00Z",
+        )
     }
 
     override fun deleteClient(clientId: String, ownerAdminId: String?) {
@@ -547,16 +533,18 @@ class InMemorySupportDeskRepository(
     }
 
     override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = labels
-        .filter { ownerAdminId == null || it.ownerAdminId == ownerAdminId }
         .map { label ->
-            label.copy(tasksCount = tasks.count { it.labelId == label.id && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) })
+            label.copy(tasksCount = tasks.count { it.labelId == label.id })
         }
 
     override fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String?): ServerTaskLabelSnapshot {
+        if (labels.any { it.name.equals(request.name.trim(), ignoreCase = true) }) {
+            throw ServerConflictException("Label already exists")
+        }
         val label = ServerTaskLabelSnapshot(
             id = "label-${labels.size + 1}",
-            ownerAdminId = ownerAdminId ?: request.ownerAdminId.ifBlank { "user-admin" },
-            name = request.name,
+            ownerAdminId = "",
+            name = request.name.trim(),
             colorHex = request.colorHex,
             tasksCount = 0,
         )
@@ -565,10 +553,15 @@ class InMemorySupportDeskRepository(
     }
 
     override fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String?): ServerTaskLabelSnapshot {
-        val index = requireLabelIndex(labelId, ownerAdminId)
+        val index = requireLabelIndex(labelId)
         val current = labels[index]
+        request.name?.trim()?.takeIf { it.isNotBlank() }?.let { newName ->
+            if (labels.any { it.id != labelId && it.name.equals(newName, ignoreCase = true) }) {
+                throw ServerConflictException("Label already exists")
+            }
+        }
         val updated = current.copy(
-            name = request.name ?: current.name,
+            name = request.name?.trim()?.takeIf { it.isNotBlank() } ?: current.name,
             colorHex = request.colorHex ?: current.colorHex,
             tasksCount = tasks.count { it.labelId == labelId },
         )
@@ -577,23 +570,25 @@ class InMemorySupportDeskRepository(
     }
 
     override fun deleteTaskLabel(labelId: String, ownerAdminId: String?) {
-        requireLabelIndex(labelId, ownerAdminId)
-        if (tasks.any { it.labelId == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) }) {
+        requireLabelIndex(labelId)
+        if (tasks.any { it.labelId == labelId }) {
             throw ServerConflictException("Label is in use by tasks and cannot be deleted")
         }
-        labels.removeAll { it.id == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId) }
+        labels.removeAll { it.id == labelId }
     }
 
-    override fun getTasks(clientId: String?, labelId: String?, ownerAdminId: String?): List<ServerTaskSnapshot> =
+    override fun getTasks(clientId: String?, labelId: String?, ownerAdminId: String?, viewerUserId: String?): List<ServerTaskSnapshot> =
         tasks.filter { task ->
             (ownerAdminId == null || taskOwners[task.id] == ownerAdminId) &&
             (clientId == null || task.clientId == clientId) &&
                 (labelId == null || task.labelId == labelId)
         }
+            .map { it.copy(pinnedAt = viewerUserId?.let { userId -> pinnedTasks[userId]?.get(it.id) }) }
+            .sortedWith(compareByDescending<ServerTaskSnapshot> { it.pinnedAt ?: "" }.thenBy { it.completed }.thenByDescending { it.updatedAt })
 
     override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
-        val label = labels.firstOrNull { it.id == request.labelId && it.ownerAdminId == resolvedOwnerAdminId }
+        val label = labels.firstOrNull { it.id == request.labelId }
             ?: throw ServerNotFoundException("Label not found")
         val client = request.clientId?.let { clientId ->
             clients.firstOrNull { it.id == clientId }?.also {
@@ -635,7 +630,7 @@ class InMemorySupportDeskRepository(
                 requireClientOwnership(clientId, ownerAdminId)
             } ?: throw ServerNotFoundException("Client not found")
         }
-        val label = labels.firstOrNull { it.id == (request.labelId ?: current.labelId) && it.ownerAdminId == current.ownerAdminId }
+        val label = labels.firstOrNull { it.id == (request.labelId ?: current.labelId) }
             ?: throw ServerNotFoundException("Label not found")
         val updated = current.copy(
             title = request.title ?: current.title,
@@ -659,6 +654,17 @@ class InMemorySupportDeskRepository(
         tasks.removeAt(index)
         taskOwners.remove(taskId)
         timeLogs.removeAll { it.taskId == taskId }
+        pinnedTasks.values.forEach { it.remove(taskId) }
+    }
+
+    override fun setTaskPinned(taskId: String, userId: String, ownerAdminId: String, pinned: Boolean) {
+        requireTaskOwnership(taskId, ownerAdminId)
+        val userPins = pinnedTasks.getOrPut(userId) { mutableMapOf() }
+        if (pinned) {
+            userPins[taskId] = "2026-04-16T10:00:00Z"
+        } else {
+            userPins.remove(taskId)
+        }
     }
 
     override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?, limit: Int, offset: Int): List<ServerTimeLogSnapshot> =
@@ -703,7 +709,7 @@ class InMemorySupportDeskRepository(
 
     override fun getDashboard(clientId: String?, labelId: String?, ownerAdminId: String?): ServerDashboardSnapshot {
         val visibleClients = getClients(ownerAdminId)
-        val filteredTasks = getTasks(clientId, labelId, ownerAdminId)
+        val filteredTasks = getTasks(clientId, labelId, ownerAdminId, ownerAdminId)
         val filteredLogs = getTimeLogs(clientId, null, ownerAdminId)
         return ServerDashboardSnapshot(
             openTickets = 3,
@@ -752,7 +758,7 @@ class InMemorySupportDeskRepository(
         .takeIf { it >= 0 } ?: throw ServerNotFoundException("Client not found")
 
     private fun requireLabelIndex(labelId: String, ownerAdminId: String? = null): Int = labels.indexOfFirst {
-        it.id == labelId && (ownerAdminId == null || it.ownerAdminId == ownerAdminId)
+        it.id == labelId
     }
         .takeIf { it >= 0 } ?: throw ServerNotFoundException("Label not found")
 
@@ -765,6 +771,22 @@ class InMemorySupportDeskRepository(
         if (ownerAdminId != null && clientOwners[clientId] != ownerAdminId) {
             throw ServerNotFoundException("Client not found")
         }
+    }
+
+    private fun ensureLocalPortalCode(clientId: String, ownerAdminId: String, forceNew: Boolean = false): String {
+        if (!forceNew) {
+            clientAccessCodes.values.firstOrNull { it.clientId == clientId && it.ownerAdminId == ownerAdminId }?.let {
+                return it.code
+            }
+        }
+        clientAccessCodes.entries.removeAll { it.value.clientId == clientId && it.value.ownerAdminId == ownerAdminId }
+        val code = "ORY-${clientId.takeLast(3).uppercase()}-${clientAccessCodes.size + 1}".uppercase()
+        clientAccessCodes[code] = LocalClientAccessCode(
+            clientId = clientId,
+            ownerAdminId = ownerAdminId,
+            code = code,
+        )
+        return code
     }
 
     private fun requireTaskOwnership(taskId: String, ownerAdminId: String?) {

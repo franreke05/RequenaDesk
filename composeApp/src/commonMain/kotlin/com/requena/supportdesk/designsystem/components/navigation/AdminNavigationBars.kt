@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,7 +64,7 @@ fun <T> AdminNavigationRail(
                         .fillMaxWidth()
                         .clickable { onSelect(item.key) },
                     color = containerColor.value,
-                    shape = MaterialTheme.shapes.medium,
+                    shape = RoundedCornerShape(50.dp),
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.md),
@@ -125,7 +126,7 @@ fun <T> AdminBottomBar(
                         .weight(1f)
                         .clickable { onSelect(item.key) },
                     color = containerColor.value,
-                    shape = MaterialTheme.shapes.medium,
+                    shape = RoundedCornerShape(50.dp),
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = spacing.xs, vertical = spacing.sm),

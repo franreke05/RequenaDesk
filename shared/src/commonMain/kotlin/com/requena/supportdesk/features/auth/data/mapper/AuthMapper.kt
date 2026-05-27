@@ -11,5 +11,6 @@ object AuthMapper {
         email = dto.email,
         role = if (dto.role == "ADMIN") UserRole.ADMIN else UserRole.CLIENT,
         clientId = dto.clientId,
+        companyName = dto.companyName,
     )
 }

@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS client_access_codes (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id uuid NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     owner_admin_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    code_plain text,
     code_hash text NOT NULL UNIQUE,
     expires_at timestamptz NOT NULL,
     used_at timestamptz,
@@ -163,10 +164,14 @@ CREATE TABLE IF NOT EXISTS client_access_codes (
     created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE client_access_codes
+    ADD COLUMN IF NOT EXISTS code_plain text;
+
 CREATE TABLE IF NOT EXISTS ticket_messages (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id uuid NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     author_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    client_message_id text,
     body text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT NOW()
 );
@@ -220,12 +225,11 @@ CREATE TABLE IF NOT EXISTS notification_devices (
 
 CREATE TABLE IF NOT EXISTS task_labels (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_admin_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT,
     name varchar(120) NOT NULL UNIQUE,
     color_hex varchar(7) NOT NULL,
     created_at timestamptz NOT NULL DEFAULT NOW(),
-    updated_at timestamptz NOT NULL DEFAULT NOW(),
-    CONSTRAINT task_labels_name_owner_unique UNIQUE (owner_admin_id, name)
+    updated_at timestamptz NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -246,6 +250,20 @@ CREATE TABLE IF NOT EXISTS tasks (
     CONSTRAINT tasks_logged_seconds_check CHECK (logged_seconds >= 0),
     CONSTRAINT tasks_status_check
         CHECK (status IN ('TODO', 'IN_PROGRESS', 'WAITING_CLIENT', 'REVIEW', 'DONE', 'ARCHIVED'))
+);
+
+CREATE TABLE IF NOT EXISTS pinned_ticket_threads (
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ticket_id uuid NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    pinned_at timestamptz NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, ticket_id)
+);
+
+CREATE TABLE IF NOT EXISTS pinned_tasks (
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_id uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    pinned_at timestamptz NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, task_id)
 );
 
 CREATE TABLE IF NOT EXISTS notification_alerts (
@@ -286,7 +304,10 @@ ALTER TABLE task_labels
     ADD COLUMN IF NOT EXISTS owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT;
 
 ALTER TABLE task_labels
-    ALTER COLUMN owner_admin_id SET NOT NULL;
+    ALTER COLUMN owner_admin_id DROP NOT NULL;
+
+ALTER TABLE task_labels
+    DROP CONSTRAINT IF EXISTS task_labels_name_owner_unique;
 
 ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS owner_admin_id uuid REFERENCES users(id) ON DELETE RESTRICT;
@@ -325,6 +346,9 @@ ALTER TABLE tickets
 ALTER TABLE time_logs
     ADD COLUMN IF NOT EXISTS seconds integer NOT NULL DEFAULT 0;
 
+ALTER TABLE ticket_messages
+    ADD COLUMN IF NOT EXISTS client_message_id text;
+
 UPDATE time_logs
 SET seconds = CASE
     WHEN seconds <= 0 THEN minutes * 60
@@ -345,8 +369,7 @@ SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
 WHERE owner_admin_id IS NULL;
 
 UPDATE task_labels
-SET owner_admin_id = CAST('22222222-2222-2222-2222-222222222222' AS uuid)
-WHERE owner_admin_id IS NULL;
+SET owner_admin_id = NULL;
 
 UPDATE tasks t
 SET owner_admin_id = c.owner_admin_id
@@ -389,7 +412,7 @@ $$;
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_clients_owner_admin_id ON clients(owner_admin_id);
-CREATE INDEX IF NOT EXISTS idx_task_labels_owner_admin_id ON task_labels(owner_admin_id);
+DROP INDEX IF EXISTS idx_task_labels_owner_admin_id;
 
 CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_client_created_at ON tickets(client_id, created_at DESC);
@@ -412,8 +435,26 @@ CREATE INDEX IF NOT EXISTS idx_tickets_ticket_number_trgm ON tickets USING gin (
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id_created_at
     ON ticket_messages(ticket_id, created_at);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_messages_client_message_id_unique
+    ON ticket_messages(ticket_id, author_id, client_message_id)
+    WHERE client_message_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id_created_at_desc
+    ON ticket_messages(ticket_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pinned_ticket_threads_user_pinned_at
+    ON pinned_ticket_threads(user_id, pinned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pinned_ticket_threads_ticket_id
+    ON pinned_ticket_threads(ticket_id);
+
+CREATE INDEX IF NOT EXISTS idx_pinned_tasks_user_pinned_at
+    ON pinned_tasks(user_id, pinned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pinned_tasks_task_id
+    ON pinned_tasks(task_id);
+
 CREATE INDEX IF NOT EXISTS idx_client_access_codes_client_id ON client_access_codes(client_id);
 CREATE INDEX IF NOT EXISTS idx_client_access_codes_owner_admin_id ON client_access_codes(owner_admin_id);
+CREATE INDEX IF NOT EXISTS idx_client_access_codes_code_plain ON client_access_codes(code_plain);
 CREATE INDEX IF NOT EXISTS idx_client_access_codes_code_hash ON client_access_codes(code_hash);
 CREATE INDEX IF NOT EXISTS idx_client_access_codes_expires_at ON client_access_codes(expires_at);
 
@@ -435,6 +476,8 @@ CREATE INDEX IF NOT EXISTS idx_notification_alerts_ticket_id
     ON notification_alerts(ticket_id);
 
 CREATE INDEX IF NOT EXISTS idx_task_labels_name ON task_labels(name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_labels_name_lower_unique
+    ON task_labels (LOWER(BTRIM(name)));
 CREATE INDEX IF NOT EXISTS idx_tasks_client_id ON tasks(client_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_admin_id ON tasks(owner_admin_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_label_id ON tasks(label_id);

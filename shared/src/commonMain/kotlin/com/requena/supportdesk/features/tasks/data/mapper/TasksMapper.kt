@@ -29,6 +29,7 @@ object TasksMapper {
         },
         loggedMinutes = dto.loggedMinutes,
         loggedSeconds = dto.loggedSeconds,
+        pinnedAt = dto.pinnedAt,
         createdAt = dto.createdAt,
         updatedAt = dto.updatedAt,
     )

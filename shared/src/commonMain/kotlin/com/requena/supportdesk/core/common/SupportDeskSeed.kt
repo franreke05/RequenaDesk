@@ -16,7 +16,6 @@ import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketEvent
-import com.requena.supportdesk.core.model.TicketMessage
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.TimeEntry
@@ -210,6 +209,7 @@ object SupportDeskSeed {
     val clients = listOf(
         Client(
             id = "client-1",
+            ownerAdminId = adminUser.id,
             companyName = "Northwind Studio",
             productName = "Northwind Desk",
             contactName = "Ana Torres",
@@ -224,6 +224,7 @@ object SupportDeskSeed {
         ),
         Client(
             id = "client-2",
+            ownerAdminId = partnerAdminUser.id,
             companyName = "Pixel Forge",
             productName = "Forge Flow",
             contactName = "David Vega",
@@ -258,26 +259,6 @@ object SupportDeskSeed {
             uploadedAt = "2026-03-19T08:30:00Z",
         )
 
-        val firstTicketMessages = listOf(
-            TicketMessage(
-                id = "message-1",
-                ticketId = "ticket-1",
-                authorId = clientUser.id,
-                authorName = clientUser.name,
-                body = "La aplicacion de escritorio no arranca despues de actualizar.",
-                createdAt = "2026-03-19T08:30:00Z",
-                attachments = listOf(firstAttachment),
-            ),
-            TicketMessage(
-                id = "message-2",
-                ticketId = "ticket-1",
-                authorId = adminUser.id,
-                authorName = adminUser.name,
-                body = "He revisado el problema y estoy preparando un parche.",
-                createdAt = "2026-03-19T09:10:00Z",
-            ),
-        )
-
         return listOf(
             Ticket(
                 id = "ticket-1",
@@ -299,7 +280,6 @@ object SupportDeskSeed {
                 createdAt = "2026-03-19T08:30:00Z",
                 updatedAt = "2026-03-19T09:10:00Z",
                 attachments = listOf(firstAttachment),
-                messages = firstTicketMessages,
                 internalComments = listOf(
                     InternalComment(
                         id = "comment-1",
@@ -356,16 +336,6 @@ object SupportDeskSeed {
                 createdAt = "2026-03-18T16:00:00Z",
                 updatedAt = "2026-03-19T07:50:00Z",
                 resolutionSummary = "Pending client confirmation about the exact reference format.",
-                messages = listOf(
-                    TicketMessage(
-                        id = "message-3",
-                        ticketId = "ticket-2",
-                        authorId = "user-client-2",
-                        authorName = "David Vega",
-                        body = "Adjunto mockup y comportamiento esperado.",
-                        createdAt = "2026-03-18T16:05:00Z",
-                    ),
-                ),
                 internalComments = listOf(
                     InternalComment(
                         id = "comment-2",

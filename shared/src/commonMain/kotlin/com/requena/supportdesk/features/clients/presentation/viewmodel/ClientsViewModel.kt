@@ -2,11 +2,15 @@ package com.requena.supportdesk.features.clients.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.ClientAccountStatus
+import com.requena.supportdesk.core.model.ClientServiceTier
+import com.requena.supportdesk.core.model.PreferredContactChannel
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.core.utils.matchesQuery
 import com.requena.supportdesk.features.clients.domain.model.ClientDraft
 import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.DeleteClientUseCase
+import com.requena.supportdesk.features.clients.domain.usecase.GenerateInvitationUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.GetClientsUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientUseCase
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
@@ -25,6 +29,7 @@ class ClientsViewModel(
     private val createClientUseCase: CreateClientUseCase,
     private val updateClientUseCase: UpdateClientUseCase,
     private val deleteClientUseCase: DeleteClientUseCase,
+    private val generateInvitationUseCase: GenerateInvitationUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(ClientsUiState())
     val state: StateFlow<ClientsUiState> = _state.asStateFlow()
@@ -52,6 +57,8 @@ class ClientsViewModel(
             is ClientsUiEvent.AddClientNote -> {
                 // Notes are out of scope for the current remote CRUD flow.
             }
+            is ClientsUiEvent.GenerateInvitation -> generateInvitation(event.clientId)
+            ClientsUiEvent.DismissInvitation -> _state.update { it.copy(generatedCode = null) }
         }
     }
 
@@ -155,6 +162,22 @@ class ClientsViewModel(
         }
     }
 
+    private fun generateInvitation(clientId: String) {
+        launch {
+            _state.update { it.copy(isGeneratingCode = true) }
+            when (val result = generateInvitationUseCase(clientId)) {
+                is AppResult.Success -> {
+                    _state.update { it.copy(generatedCode = result.data, isGeneratingCode = false) }
+                    loadClients(preferredSelectedId = clientId)
+                }
+                is AppResult.Error -> {
+                    _state.update { it.copy(isGeneratingCode = false) }
+                    _effects.emit(ClientsUiEffect.ShowMessage(result.message))
+                }
+            }
+        }
+    }
+
     private fun nextSelectionAfterDelete(clientId: String): String? {
         val clients = state.value.clients
         val index = clients.indexOfFirst { it.id == clientId }
@@ -162,25 +185,8 @@ class ClientsViewModel(
         return clients.getOrNull(index + 1)?.id ?: clients.getOrNull(index - 1)?.id
     }
 
-    private fun ClientsUiEvent.CreateClient.toDraft(): ClientDraft = ClientDraft(
-        companyName = companyName.trim(),
-        productName = productName.trim(),
-        contactName = contactName.trim(),
-        email = email.trim(),
-        accountStatus = accountStatus,
-        serviceTier = serviceTier,
-        preferredContactChannel = preferredContactChannel,
-    )
-
-    private fun ClientsUiEvent.UpdateClient.toDraft(): ClientDraft = ClientDraft(
-        companyName = companyName.trim(),
-        productName = productName.trim(),
-        contactName = contactName.trim(),
-        email = email.trim(),
-        accountStatus = accountStatus,
-        serviceTier = serviceTier,
-        preferredContactChannel = preferredContactChannel,
-    )
+    private fun ClientsUiEvent.CreateClient.toDraft(): ClientDraft = toDraftFrom(companyName, productName, contactName, email, accountStatus, serviceTier, preferredContactChannel)
+    private fun ClientsUiEvent.UpdateClient.toDraft(): ClientDraft = toDraftFrom(companyName, productName, contactName, email, accountStatus, serviceTier, preferredContactChannel)
 
     private fun ClientDraft.isValid(): Boolean =
         companyName.isNotBlank() &&
@@ -188,3 +194,21 @@ class ClientsViewModel(
             contactName.isNotBlank() &&
             email.isNotBlank()
 }
+
+private fun toDraftFrom(
+    companyName: String,
+    productName: String,
+    contactName: String,
+    email: String,
+    accountStatus: ClientAccountStatus,
+    serviceTier: ClientServiceTier,
+    preferredContactChannel: PreferredContactChannel,
+): ClientDraft = ClientDraft(
+    companyName = companyName.trim(),
+    productName = productName.trim(),
+    contactName = contactName.trim(),
+    email = email.trim(),
+    accountStatus = accountStatus,
+    serviceTier = serviceTier,
+    preferredContactChannel = preferredContactChannel,
+)

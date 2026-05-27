@@ -27,6 +27,7 @@ data class TaskDto(
     val status: String = if (completed) "DONE" else "TODO",
     val loggedMinutes: Int,
     val loggedSeconds: Int = loggedMinutes * 60,
+    val pinnedAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )

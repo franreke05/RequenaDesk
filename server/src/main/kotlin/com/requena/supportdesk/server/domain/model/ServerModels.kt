@@ -6,6 +6,7 @@ data class ServerSession(
     val email: String,
     val role: String,
     val clientId: String? = null,
+    val companyName: String = "",
     val accessToken: String,
     val refreshToken: String,
 )
@@ -16,6 +17,7 @@ data class ServerAuthIdentity(
     val email: String,
     val role: String,
     val clientId: String? = null,
+    val companyName: String = "",
 )
 
 data class ServerTicketSnapshot(
@@ -40,20 +42,10 @@ data class ServerTicketSnapshot(
     val assigneeName: String? = null,
     val createdAt: String = "",
     val updatedAt: String = "",
-    val messages: List<ServerTicketMessageSnapshot> = emptyList(),
     val clientAcceptedCloseAt: String? = null,
     val adminAcceptedCloseAt: String? = null,
     val archivedAt: String? = null,
     val satisfactionRating: Int? = null,
-)
-
-data class ServerTicketMessageSnapshot(
-    val id: String,
-    val ticketId: String,
-    val authorId: String,
-    val authorName: String,
-    val body: String,
-    val createdAt: String,
 )
 
 data class ServerClientSnapshot(
@@ -69,6 +61,9 @@ data class ServerClientSnapshot(
     val activeTicketCount: Int,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+    val portalAccessCode: String? = null,
+    val portalAccessStatus: String = "MISSING",
+    val portalAccessExpiresAt: String? = null,
 )
 
 data class ServerDashboardSnapshot(
@@ -109,6 +104,7 @@ data class ServerTaskSnapshot(
     val status: String = if (completed) "DONE" else "TODO",
     val loggedMinutes: Int,
     val loggedSeconds: Int = loggedMinutes * 60,
+    val pinnedAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -154,11 +150,6 @@ data class ServerNotificationAlertSnapshot(
     val body: String,
     val readAt: String? = null,
     val createdAt: String,
-)
-
-data class ServerTicketMessageCreated(
-    val ticketId: String,
-    val messageId: String,
 )
 
 data class ServerTicketFieldUpdate(

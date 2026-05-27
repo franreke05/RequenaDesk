@@ -1,5 +1,7 @@
 package com.requena.supportdesk.features.tasks.presentation.event
 
+import com.requena.supportdesk.core.model.WorkTaskStatus
+
 sealed interface TasksUiEvent {
     object Load : TasksUiEvent
     data class SelectDay(val dayIsoDate: String) : TasksUiEvent
@@ -26,7 +28,9 @@ sealed interface TasksUiEvent {
         val dueDate: String? = null,
     ) : TasksUiEvent
     data class DeleteTask(val taskId: String) : TasksUiEvent
+    data class ToggleTaskPin(val taskId: String, val pinned: Boolean) : TasksUiEvent
     data class ToggleTaskCompletion(val taskId: String) : TasksUiEvent
+    data class ChangeTaskStatus(val taskId: String, val status: WorkTaskStatus) : TasksUiEvent
     data class StartTimer(val taskId: String) : TasksUiEvent
     object PauseTimer : TasksUiEvent
     object StopTimer : TasksUiEvent

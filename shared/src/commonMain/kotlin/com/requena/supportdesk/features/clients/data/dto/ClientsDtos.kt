@@ -16,6 +16,9 @@ data class ClientDto(
     val activeTicketCount: Int = 0,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+    val portalAccessCode: String? = null,
+    val portalAccessStatus: String = "MISSING",
+    val portalAccessExpiresAt: String? = null,
 )
 
 @Serializable
@@ -38,4 +41,10 @@ data class UpdateClientRequestDto(
     val accountStatus: String,
     val serviceTier: String,
     val preferredContactChannel: String,
+)
+
+@Serializable
+data class InvitationCodeDto(
+    val code: String,
+    val expiresInDays: Int = 3650,
 )

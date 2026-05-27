@@ -17,6 +17,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 
 interface TasksDataSource {
@@ -26,6 +27,7 @@ interface TasksDataSource {
     suspend fun createTask(request: CreateTaskRequestDto): TaskDto
     suspend fun updateTask(taskId: String, request: UpdateTaskRequestDto): TaskDto
     suspend fun deleteTask(taskId: String)
+    suspend fun setTaskPinned(taskId: String, pinned: Boolean): TaskDto
     suspend fun createLabel(request: CreateTaskLabelRequestDto): TaskLabelDto
     suspend fun updateLabel(labelId: String, request: UpdateTaskLabelRequestDto): TaskLabelDto
     suspend fun deleteLabel(labelId: String)
@@ -56,6 +58,15 @@ class RemoteTasksDataSource(
 
     override suspend fun deleteTask(taskId: String) {
         httpClient.delete("${supportDeskBaseUrl()}/admin/tasks/$taskId").requireSuccess()
+    }
+
+    override suspend fun setTaskPinned(taskId: String, pinned: Boolean): TaskDto {
+        val url = "${supportDeskBaseUrl()}/admin/tasks/$taskId/pin"
+        return if (pinned) {
+            httpClient.put(url).requireApiData()
+        } else {
+            httpClient.delete(url).requireApiData()
+        }
     }
 
     override suspend fun createLabel(request: CreateTaskLabelRequestDto): TaskLabelDto =

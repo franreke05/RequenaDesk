@@ -39,7 +39,8 @@ data class BoardColumn(
 data class BoardCard(
     val id: String,
     val boardId: String,
-    val ticketId: String,
+    val ticketId: String? = null,
+    val taskId: String? = null,
     val columnId: String,
     val position: Int,
     val isHidden: Boolean = false,

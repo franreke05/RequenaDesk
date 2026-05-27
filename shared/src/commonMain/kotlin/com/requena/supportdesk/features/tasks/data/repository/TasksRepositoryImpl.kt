@@ -81,6 +81,13 @@ class TasksRepositoryImpl(
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo borrar la tarea.", cause = it) },
     )
 
+    override suspend fun setTaskPinned(taskId: String, pinned: Boolean): AppResult<WorkTask> = runCatching {
+        dataSource.setTaskPinned(taskId, pinned).let(TasksMapper::fromTaskDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo actualizar el fijado.", cause = it) },
+    )
+
     override suspend fun createLabel(input: TaskLabelDraft): AppResult<TaskCategory> = runCatching {
         dataSource.createLabel(
             CreateTaskLabelRequestDto(

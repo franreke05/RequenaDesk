@@ -14,6 +14,7 @@ import com.requena.supportdesk.features.clients.data.datasource.RemoteClientsDat
 import com.requena.supportdesk.features.clients.data.repository.ClientsRepositoryImpl
 import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.DeleteClientUseCase
+import com.requena.supportdesk.features.clients.domain.usecase.GenerateInvitationUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.GetClientsUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientUseCase
 import com.requena.supportdesk.features.clients.presentation.viewmodel.ClientsViewModel
@@ -35,6 +36,7 @@ import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLabelsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.SetTaskPinnedUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
 import com.requena.supportdesk.features.tickets.data.datasource.RemoteTicketsDataSource
@@ -45,7 +47,7 @@ import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketClose
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
-import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.DeleteTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.RateTicketUseCase
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
@@ -70,21 +72,23 @@ object SupportDeskSharedModule {
     private val getTicketsUseCase = GetTicketsUseCase(ticketsRepository)
     private val getTicketUseCase = GetTicketUseCase(ticketsRepository)
     private val createTicketUseCase = CreateTicketUseCase(ticketsRepository)
-    private val replyTicketUseCase = ReplyTicketUseCase(ticketsRepository)
     private val changeTicketStatusUseCase = ChangeTicketStatusUseCase(ticketsRepository)
     private val changeTicketPriorityUseCase = ChangeTicketPriorityUseCase(ticketsRepository)
     private val acceptTicketCloseUseCase = AcceptTicketCloseUseCase(ticketsRepository)
     private val rateTicketUseCase = RateTicketUseCase(ticketsRepository)
+    private val deleteTicketUseCase = DeleteTicketUseCase(ticketsRepository)
     private val getClientsUseCase = GetClientsUseCase(clientsRepository)
     private val createClientUseCase = CreateClientUseCase(clientsRepository)
     private val updateClientUseCase = UpdateClientUseCase(clientsRepository)
     private val deleteClientUseCase = DeleteClientUseCase(clientsRepository)
+    private val generateInvitationUseCase = GenerateInvitationUseCase(clientsRepository)
     private val getTaskLabelsUseCase = GetTaskLabelsUseCase(tasksRepository)
     private val getTasksUseCase = GetTasksUseCase(tasksRepository)
     private val getTaskLogsUseCase = GetTaskLogsUseCase(tasksRepository)
     private val createTaskUseCase = CreateTaskUseCase(tasksRepository)
     private val updateTaskUseCase = UpdateTaskUseCase(tasksRepository)
     private val deleteTaskUseCase = DeleteTaskUseCase(tasksRepository)
+    private val setTaskPinnedUseCase = SetTaskPinnedUseCase(tasksRepository)
     private val createTaskLabelUseCase = CreateTaskLabelUseCase(tasksRepository)
     private val updateTaskLabelUseCase = UpdateTaskLabelUseCase(tasksRepository)
     private val deleteTaskLabelUseCase = DeleteTaskLabelUseCase(tasksRepository)
@@ -103,11 +107,11 @@ object SupportDeskSharedModule {
         getTicketsUseCase = getTicketsUseCase,
         getTicketUseCase = getTicketUseCase,
         createTicketUseCase = createTicketUseCase,
-        replyTicketUseCase = replyTicketUseCase,
         changeTicketStatusUseCase = changeTicketStatusUseCase,
         changeTicketPriorityUseCase = changeTicketPriorityUseCase,
         acceptTicketCloseUseCase = acceptTicketCloseUseCase,
         rateTicketUseCase = rateTicketUseCase,
+        deleteTicketUseCase = deleteTicketUseCase,
     )
 
     fun createClientsViewModel(): ClientsViewModel = ClientsViewModel(
@@ -115,6 +119,7 @@ object SupportDeskSharedModule {
         createClientUseCase = createClientUseCase,
         updateClientUseCase = updateClientUseCase,
         deleteClientUseCase = deleteClientUseCase,
+        generateInvitationUseCase = generateInvitationUseCase,
     )
 
     fun createDashboardViewModel(): DashboardViewModel = DashboardViewModel(getDashboardSummaryUseCase)
@@ -128,6 +133,7 @@ object SupportDeskSharedModule {
         createTaskUseCase = createTaskUseCase,
         updateTaskUseCase = updateTaskUseCase,
         deleteTaskUseCase = deleteTaskUseCase,
+        setTaskPinnedUseCase = setTaskPinnedUseCase,
         createTaskLabelUseCase = createTaskLabelUseCase,
         updateTaskLabelUseCase = updateTaskLabelUseCase,
         deleteTaskLabelUseCase = deleteTaskLabelUseCase,

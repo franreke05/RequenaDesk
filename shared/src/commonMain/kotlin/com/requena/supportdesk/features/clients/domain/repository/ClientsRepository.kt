@@ -9,4 +9,5 @@ interface ClientsRepository {
     suspend fun createClient(input: ClientDraft): AppResult<Client>
     suspend fun updateClient(clientId: String, input: ClientDraft): AppResult<Client>
     suspend fun deleteClient(clientId: String): AppResult<Unit>
+    suspend fun generateInvitation(clientId: String): AppResult<String>
 }

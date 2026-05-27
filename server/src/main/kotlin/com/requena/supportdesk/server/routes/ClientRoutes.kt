@@ -91,7 +91,7 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                     "/admin/clients/$clientId/invitation",
                     buildJsonObject {
                         put("code", code)
-                        put("expiresInDays", request.expiresInDays.coerceIn(1, 60))
+                        put("expiresInDays", request.expiresInDays.coerceIn(1, 3650))
                     },
                 ),
             )
