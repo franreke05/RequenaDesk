@@ -46,6 +46,7 @@ import com.requena.supportdesk.designsystem.components.navigation.NavigationItem
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
+import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
@@ -270,6 +271,7 @@ fun AdminWorkspaceApp() {
                         onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                         currentAdminId = currentUser.id,
                         currentAdminName = currentUser.name,
+                        authState = authState,
                         clientsState = clientsState,
                         tasksState = tasksState,
                         ticketsState = ticketsState,
@@ -295,6 +297,7 @@ fun AdminWorkspaceApp() {
                                 onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                                 currentAdminId = currentUser.id,
                                 currentAdminName = currentUser.name,
+                                authState = authState,
                                 clientsState = clientsState,
                                 tasksState = tasksState,
                                 ticketsState = ticketsState,
@@ -312,6 +315,7 @@ fun AdminWorkspaceApp() {
                             onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                             currentAdminId = currentUser.id,
                             currentAdminName = currentUser.name,
+                            authState = authState,
                             clientsState = clientsState,
                             tasksState = tasksState,
                             ticketsState = ticketsState,
@@ -340,6 +344,7 @@ private fun AdminContentArea(
     onSignOut: () -> Unit,
     currentAdminId: String,
     currentAdminName: String,
+    authState: AuthUiState,
     clientsState: com.requena.supportdesk.features.clients.presentation.state.ClientsUiState,
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
     ticketsState: com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState,
