@@ -8,14 +8,29 @@ import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsVi
 
 class DesktopAppModule {
     val authViewModel: AuthViewModel = SupportDeskSharedModule.createAuthViewModel()
-    val ticketsViewModel: TicketsViewModel = SupportDeskSharedModule.createTicketsViewModel()
-    val clientsViewModel: ClientsViewModel = SupportDeskSharedModule.createClientsViewModel()
-    val dashboardViewModel: DashboardViewModel = SupportDeskSharedModule.createDashboardViewModel()
+    private val ticketsViewModelDelegate = lazy { SupportDeskSharedModule.createTicketsViewModel() }
+    private val clientsViewModelDelegate = lazy { SupportDeskSharedModule.createClientsViewModel() }
+    private val dashboardViewModelDelegate = lazy { SupportDeskSharedModule.createDashboardViewModel() }
+
+    val ticketsViewModel: TicketsViewModel
+        get() = ticketsViewModelDelegate.value
+
+    val clientsViewModel: ClientsViewModel
+        get() = clientsViewModelDelegate.value
+
+    val dashboardViewModel: DashboardViewModel
+        get() = dashboardViewModelDelegate.value
 
     fun clear() {
         authViewModel.clear()
-        ticketsViewModel.clear()
-        clientsViewModel.clear()
-        dashboardViewModel.clear()
+        if (ticketsViewModelDelegate.isInitialized()) {
+            ticketsViewModelDelegate.value.clear()
+        }
+        if (clientsViewModelDelegate.isInitialized()) {
+            clientsViewModelDelegate.value.clear()
+        }
+        if (dashboardViewModelDelegate.isInitialized()) {
+            dashboardViewModelDelegate.value.clear()
+        }
     }
 }

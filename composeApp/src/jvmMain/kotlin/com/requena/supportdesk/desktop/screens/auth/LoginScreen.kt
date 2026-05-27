@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -49,7 +49,7 @@ fun LoginScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionCard(
-                modifier = Modifier.width(420.dp),
+                modifier = Modifier.widthIn(min = 360.dp, max = 460.dp),
                 title = "OryKai software",
                 subtitle = "A clean desktop CRM for freelance support. One workspace, two roles, less friction.",
             ) {
@@ -70,7 +70,7 @@ fun LoginScreen(
                 }
             }
             SectionCard(
-                modifier = Modifier.width(440.dp),
+                modifier = Modifier.widthIn(min = 360.dp, max = 460.dp),
                 title = "Sign in",
                 subtitle = "Use one of the configured admin accounts to enter the workspace.",
             ) {

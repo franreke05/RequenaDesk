@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.core.model.ClientServiceTier
 import com.requena.supportdesk.designsystem.components.badges.ClientAccountStatusBadge
 import com.requena.supportdesk.designsystem.components.badges.ClientServiceTierBadge
 import com.requena.supportdesk.designsystem.components.badges.PreferredContactChannelBadge
@@ -34,7 +37,7 @@ fun ClientListScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val activeLoad = state.clients.count { it.activeTicketCount > 0 }
-    val priorityTier = state.clients.count { it.serviceTier.name == "PRIORITY" || it.serviceTier.name == "VIP" }
+    val priorityTier = state.clients.count { it.serviceTier == ClientServiceTier.PRIORITY || it.serviceTier == ClientServiceTier.VIP }
     val errorMessage = state.errorMessage
 
     Column(
@@ -92,10 +95,18 @@ fun ClientListScreen(
                 )
                 else -> {
                     ClientHeaderRow()
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        state.clients.forEach { client ->
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        items(state.clients, key = { it.id }) { client ->
+                            val index = state.clients.indexOf(client)
+                            val rowBg = if (index % 2 == 0)
+                                MaterialTheme.colorScheme.surface
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().background(rowBg),
                                 horizontalArrangement = Arrangement.spacedBy(spacing.md),
                             ) {
                                 Column(

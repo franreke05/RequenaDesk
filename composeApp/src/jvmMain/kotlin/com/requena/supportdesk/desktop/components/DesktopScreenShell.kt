@@ -20,10 +20,10 @@ fun DesktopScreenShell(
     actions: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -92,7 +93,7 @@ fun AdminWorkspaceApp() {
         onDispose { module.clear() }
     }
 
-    LaunchedEffect(clientsState.clients, currentUser?.id, isAdmin) {
+    LaunchedEffect(clientsState.clients.size, currentUser?.id, isAdmin) {
         val ownerAdminId = currentUser?.takeIf { it.role == UserRole.ADMIN }?.id
         if (ownerAdminId != null) {
             module.boardsViewModel.updateClients(
@@ -104,13 +105,13 @@ fun AdminWorkspaceApp() {
         }
     }
 
-    LaunchedEffect(ticketsState.allTickets) {
+    LaunchedEffect(ticketsState.allTickets.size) {
         if (isAdmin) {
             module.boardsViewModel.updateTickets(ticketsState.allTickets)
         }
     }
 
-    LaunchedEffect(tasksState.tasks) {
+    LaunchedEffect(tasksState.tasks.size) {
         if (isAdmin) {
             module.boardsViewModel.updateTasks(tasksState.tasks)
         }
@@ -407,6 +408,7 @@ private fun AdminContentArea(
                     text = statusMessage,
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.widthIn(max = 320.dp),
                 )
                 ThemeModeButton()
                 SecondaryButton(text = "Cerrar sesion", onClick = onSignOut)
@@ -487,7 +489,7 @@ private fun AdminContentArea(
             )
 
             AppDestination.Login -> AdminLoginScreen(
-                state = module.authViewModel.state.value,
+                state = authState,
                 onEvent = module.authViewModel::onEvent,
                 modifier = Modifier.weight(1f),
             )

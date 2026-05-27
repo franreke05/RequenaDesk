@@ -2,15 +2,18 @@ package com.requena.supportdesk.desktop.screens.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.requena.supportdesk.core.model.DashboardSummary
 import com.requena.supportdesk.core.model.Ticket
+import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.cards.MetricCard
@@ -21,6 +24,7 @@ import com.requena.supportdesk.designsystem.components.layout.PageHeader
 import com.requena.supportdesk.designsystem.components.tickets.TicketListItem
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     summary: DashboardSummary?,
@@ -59,28 +63,25 @@ fun DashboardScreen(
                 message = "The summary will appear here once the shared dashboard state is available.",
             )
             else -> {
-                listOf(
-                    DashboardMetric("Open tickets", summary.openTickets.toString(), "Active work that still needs attention."),
-                    DashboardMetric("Pending client", summary.pendingClientTickets.toString(), "Tickets blocked waiting on client input."),
-                    DashboardMetric("Resolved today", summary.resolvedToday.toString(), "Closed or fixed during the current day."),
-                    DashboardMetric("Urgent focus", recentTickets.count { it.priority.name == "URGENT" }.toString(), "High pressure items surfaced from the queue."),
-                    DashboardMetric("Active clients", summary.activeClients.toString(), "Accounts with current project activity."),
-                ).chunked(3).forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.md),
-                    ) {
-                        rowItems.forEach { metric ->
-                            MetricCard(
-                                label = metric.label,
-                                value = metric.value,
-                                supportingText = metric.supportingText,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        repeat(3 - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(spacing.md),
+                    maxItemsInEachRow = Int.MAX_VALUE,
+                ) {
+                    listOf(
+                        DashboardMetric("Open tickets", summary.openTickets.toString(), "Active work that still needs attention."),
+                        DashboardMetric("Pending client", summary.pendingClientTickets.toString(), "Tickets blocked waiting on client input."),
+                        DashboardMetric("Resolved today", summary.resolvedToday.toString(), "Closed or fixed during the current day."),
+                        DashboardMetric("Urgent focus", recentTickets.count { it.priority == TicketPriority.URGENT }.toString(), "High pressure items surfaced from the queue."),
+                        DashboardMetric("Active clients", summary.activeClients.toString(), "Accounts with current project activity."),
+                    ).forEach { metric ->
+                        MetricCard(
+                            label = metric.label,
+                            value = metric.value,
+                            supportingText = metric.supportingText,
+                            modifier = Modifier.widthIn(min = 220.dp).weight(1f),
+                        )
                     }
                 }
 

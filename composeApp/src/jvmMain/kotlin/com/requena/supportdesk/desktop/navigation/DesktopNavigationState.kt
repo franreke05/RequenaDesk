@@ -4,7 +4,7 @@ import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.core.navigation.AppDestination
 
 data class DesktopNavigationState(
-    val role: UserRole? = UserRole.ADMIN,
+    val role: UserRole? = null,
     val destination: AppDestination = AppDestination.Dashboard,
 )
 

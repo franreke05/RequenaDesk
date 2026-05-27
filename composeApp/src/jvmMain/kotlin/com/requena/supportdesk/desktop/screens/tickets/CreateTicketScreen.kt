@@ -237,6 +237,28 @@ fun CreateTicketScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        PrimaryButton(
+            text = "Create ticket",
+            onClick = {
+                showErrors = true
+                if (isValid) {
+                    onCreateTicket(
+                        CreateTicketInput(
+                            subject = subject,
+                            description = description,
+                            category = selectedCategory,
+                            affectedApp = affectedApp,
+                            platform = selectedPlatform,
+                            appVersion = appVersion,
+                            stepsToReproduce = stepsToReproduce,
+                            clientReference = clientReference,
+                        ),
+                    )
+                }
+            },
+            fullWidth = true,
+        )
     }
 
     ConfirmDialog(
