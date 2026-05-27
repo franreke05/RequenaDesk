@@ -1,5 +1,6 @@
 package com.requena.supportdesk.server.utils
 
+import com.requena.supportdesk.server.domain.model.InternalComment
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
@@ -8,6 +9,7 @@ import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapshot
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
+import com.requena.supportdesk.server.domain.model.TicketTimeEntry
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
@@ -214,6 +216,31 @@ fun deviceJson(device: ServerDeviceRegistration) = buildJsonObject {
 
 fun alertsJson(alerts: List<ServerNotificationAlertSnapshot>) = buildJsonArray {
     alerts.forEach { add(alertJson(it)) }
+}
+
+fun ticketTimeEntriesJson(entries: List<TicketTimeEntry>) = buildJsonArray {
+    entries.forEach { add(ticketTimeEntryJson(it)) }
+}
+
+fun ticketTimeEntryJson(entry: TicketTimeEntry) = buildJsonObject {
+    put("id", entry.id)
+    put("ticketId", entry.ticketId)
+    put("authorId", entry.authorId)
+    put("authorName", entry.authorName)
+    put("minutes", entry.minutes)
+    put("workDate", entry.workDate)
+    put("note", entry.note)
+    put("billable", entry.billable)
+    put("createdAt", entry.createdAt)
+}
+
+fun internalCommentJson(comment: InternalComment) = buildJsonObject {
+    put("id", comment.id)
+    put("ticketId", comment.ticketId)
+    put("authorId", comment.authorId)
+    put("authorName", comment.authorName)
+    put("body", comment.body)
+    put("createdAt", comment.createdAt)
 }
 
 fun alertJson(alert: ServerNotificationAlertSnapshot) = buildJsonObject {

@@ -1,19 +1,18 @@
 package com.requena.supportdesk.features.tickets.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.model.InternalComment
 import com.requena.supportdesk.core.model.Ticket
-import com.requena.supportdesk.core.model.TicketEvent
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
-import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.core.model.WaitingOn
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.core.time.currentIsoDate
-import com.requena.supportdesk.core.time.currentIsoDateTime
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.domain.model.TicketFilters
 import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AddInternalCommentUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AddTicketTimeEntryUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketAssigneeUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketStatusUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
@@ -42,6 +41,9 @@ class TicketsViewModel(
     private val acceptTicketCloseUseCase: AcceptTicketCloseUseCase,
     private val rateTicketUseCase: RateTicketUseCase,
     private val deleteTicketUseCase: DeleteTicketUseCase,
+    private val addTicketTimeEntryUseCase: AddTicketTimeEntryUseCase,
+    private val addInternalCommentUseCase: AddInternalCommentUseCase,
+    private val changeTicketAssigneeUseCase: ChangeTicketAssigneeUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TicketsUiState())
     val state: StateFlow<TicketsUiState> = _state.asStateFlow()
@@ -94,6 +96,7 @@ class TicketsViewModel(
             is TicketsUiEvent.AddInternalNote -> addInternalNote(event)
             is TicketsUiEvent.AddTimeEntry -> addTimeEntry(event)
             is TicketsUiEvent.DeleteTicket -> deleteTicket(event.ticketId)
+            is TicketsUiEvent.ChangeAssignee -> changeAssignee(event.ticketId, event.newAssigneeId)
         }
     }
 
@@ -224,51 +227,55 @@ class TicketsViewModel(
         val selected = state.value.selectedTicket ?: return
         val body = event.body.trim()
         if (body.isBlank()) return
-        val note = InternalComment(
-            id = "comment-local-${selected.internalComments.size + 1}",
-            ticketId = selected.id,
-            authorId = event.authorId,
-            authorName = event.authorName,
-            body = body,
-            createdAt = currentIsoDateTime(),
-        )
-        ticketOverrides[selected.id] = selected.copy(
-            internalComments = listOf(note) + selected.internalComments,
-            updatedAt = currentIsoDateTime(),
-        )
-        renderTickets(selectId = selected.id)
+        launch {
+            when (val result = addInternalCommentUseCase(selected.id, body)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> reloadTicket(selected.id)
+            }
+        }
     }
 
     private fun addTimeEntry(event: TicketsUiEvent.AddTimeEntry) {
         val selected = state.value.selectedTicket ?: return
         val noteBody = event.note.trim()
         if (event.minutes <= 0 || noteBody.isBlank()) return
-        val entry = TimeEntry(
-            id = "time-local-${selected.timeEntries.size + 1}",
-            clientId = selected.clientId,
-            ticketId = selected.id,
-            authorId = event.authorId,
-            authorName = event.authorName,
-            minutes = event.minutes,
-            workDate = currentIsoDate(),
-            note = noteBody,
-            billable = event.billable,
-            createdAt = currentIsoDateTime(),
-        )
-        val eventLog = TicketEvent(
-            id = "event-local-${selected.events.size + 1}",
-            ticketId = selected.id,
-            type = "TIME_LOGGED",
-            description = "${event.authorName} registro ${event.minutes} min",
-            actorName = event.authorName,
-            createdAt = currentIsoDateTime(),
-        )
-        ticketOverrides[selected.id] = selected.copy(
-            timeEntries = listOf(entry) + selected.timeEntries,
-            events = listOf(eventLog) + selected.events,
-            updatedAt = currentIsoDateTime(),
-        )
-        renderTickets(selectId = selected.id)
+        launch {
+            when (val result = addTicketTimeEntryUseCase(
+                ticketId = selected.id,
+                minutes = event.minutes,
+                workDate = currentIsoDate(),
+                note = noteBody,
+                billable = event.billable,
+            )) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> reloadTicket(selected.id)
+            }
+        }
+    }
+
+    private fun changeAssignee(ticketId: String, newAssigneeId: String) {
+        launch {
+            when (val result = changeTicketAssigneeUseCase(ticketId, newAssigneeId)) {
+                is AppResult.Error -> _effects.emit(TicketsUiEffect.ShowMessage(result.message))
+                is AppResult.Success -> {
+                    val updatedTicket = result.data
+                    ticketOverrides[updatedTicket.id] = mergeWithLocal(updatedTicket)
+                    renderTickets(selectId = if (_state.value.selectedTicket?.id == updatedTicket.id) updatedTicket.id else _state.value.selectedTicket?.id)
+                }
+            }
+        }
+    }
+
+    private fun reloadTicket(ticketId: String) {
+        launch {
+            when (val result = getTicketUseCase(ticketId)) {
+                is AppResult.Error -> { /* silently ignore, keep local state */ }
+                is AppResult.Success -> {
+                    ticketOverrides[ticketId] = result.data
+                    renderTickets(selectId = ticketId)
+                }
+            }
+        }
     }
 
     private fun deleteTicket(ticketId: String) {

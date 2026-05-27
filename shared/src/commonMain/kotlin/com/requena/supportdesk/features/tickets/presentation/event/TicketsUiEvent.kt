@@ -37,4 +37,5 @@ sealed interface TicketsUiEvent {
         val authorName: String,
     ) : TicketsUiEvent
     data class DeleteTicket(val ticketId: String) : TicketsUiEvent
+    data class ChangeAssignee(val ticketId: String, val newAssigneeId: String) : TicketsUiEvent
 }

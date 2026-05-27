@@ -2,6 +2,9 @@ package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.mapper.SupportDeskMapper
+import com.requena.supportdesk.server.domain.model.AddInternalCommentRequest
+import com.requena.supportdesk.server.domain.model.AddTicketTimeEntryRequest
+import com.requena.supportdesk.server.domain.model.ChangeTicketAssigneeRequest
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.ServerConflictException
@@ -11,6 +14,7 @@ import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.InternalComment
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -22,6 +26,7 @@ import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapsh
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
+import com.requena.supportdesk.server.domain.model.TicketTimeEntry
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -794,4 +799,15 @@ class InMemorySupportDeskRepository(
             throw ServerNotFoundException("Task not found")
         }
     }
+
+    override fun addTicketTimeEntry(ticketId: String, authorId: String, request: AddTicketTimeEntryRequest): TicketTimeEntry =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
+
+    override fun getTicketTimeEntries(ticketId: String): List<TicketTimeEntry> = emptyList()
+
+    override fun addInternalComment(ticketId: String, authorId: String, request: AddInternalCommentRequest): InternalComment =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
+
+    override fun changeTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest): ServerTicketSnapshot =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
 }

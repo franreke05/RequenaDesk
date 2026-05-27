@@ -161,3 +161,24 @@ data class ServerAttachmentCreated(
     val ticketId: String,
     val attachmentId: String,
 )
+
+data class TicketTimeEntry(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val minutes: Int,
+    val workDate: String,
+    val note: String,
+    val billable: Boolean,
+    val createdAt: String,
+)
+
+data class InternalComment(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val body: String,
+    val createdAt: String,
+)

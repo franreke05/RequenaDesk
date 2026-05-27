@@ -936,6 +936,37 @@ private fun WorkflowSection(ticket: Ticket, onEvent: (TicketsUiEvent) -> Unit) {
             allLabel = "Actual",
             wrap = true,
         )
+        Text("Asignado a", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        ticket.assignee?.name?.let { assigneeName ->
+            Text(
+                text = "Actual: $assigneeName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        var assigneeIdInput by remember(ticket.id) { mutableStateOf(ticket.assignee?.id ?: "") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = assigneeIdInput,
+                onValueChange = { assigneeIdInput = it },
+                label = { Text("Asignado a (ID)") },
+                placeholder = { Text("UUID del admin asignado") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            PrimaryButton(
+                text = "Asignar",
+                onClick = {
+                    if (assigneeIdInput.isNotBlank()) {
+                        onEvent(TicketsUiEvent.ChangeAssignee(ticket.id, assigneeIdInput.trim()))
+                    }
+                },
+            )
+        }
         ticket.resolutionSummary?.takeIf { it.isNotBlank() }?.let { summary ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),

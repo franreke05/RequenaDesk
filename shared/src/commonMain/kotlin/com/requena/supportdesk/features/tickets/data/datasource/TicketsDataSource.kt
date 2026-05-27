@@ -7,10 +7,14 @@ import com.requena.supportdesk.core.network.NetworkLogger
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
+import com.requena.supportdesk.features.tickets.data.dto.AddInternalCommentRequest
+import com.requena.supportdesk.features.tickets.data.dto.AddTimeEntryRequest
+import com.requena.supportdesk.features.tickets.data.dto.ChangeAssigneeRequest
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketCloseAcceptanceRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketSatisfactionRequestDto
+import com.requena.supportdesk.features.tickets.data.dto.TicketTimeEntryDto
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketPriorityRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.UpdateTicketStatusRequestDto
 import io.ktor.client.HttpClient
@@ -29,6 +33,10 @@ interface TicketsDataSource {
     suspend fun acceptClose(ticketId: String, request: TicketCloseAcceptanceRequestDto): TicketDto
     suspend fun rateTicket(ticketId: String, request: TicketSatisfactionRequestDto): TicketDto
     suspend fun deleteTicket(ticketId: String)
+    suspend fun addTimeEntry(ticketId: String, request: AddTimeEntryRequest): TicketTimeEntryDto
+    suspend fun getTimeEntries(ticketId: String): List<TicketTimeEntryDto>
+    suspend fun addInternalComment(ticketId: String, request: AddInternalCommentRequest)
+    suspend fun changeAssignee(ticketId: String, request: ChangeAssigneeRequest): TicketDto
 }
 
 class RemoteTicketsDataSource(
@@ -128,6 +136,56 @@ class RemoteTicketsDataSource(
             httpClient.delete(url).requireSuccess()
         } catch (e: Exception) {
             NetworkLogger.addLog("[ERROR] deleteTicket($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
+
+    override suspend fun addTimeEntry(ticketId: String, request: AddTimeEntryRequest): TicketTimeEntryDto {
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/time-entries"
+        return try {
+            NetworkLogger.addLog("[DEBUG] POST $url")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireApiData()
+        } catch (e: Exception) {
+            NetworkLogger.addLog("[ERROR] addTimeEntry($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
+
+    override suspend fun getTimeEntries(ticketId: String): List<TicketTimeEntryDto> {
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/time-entries"
+        return try {
+            NetworkLogger.addLog("[DEBUG] GET $url")
+            httpClient.get(url).requireApiData()
+        } catch (e: Exception) {
+            NetworkLogger.addLog("[ERROR] getTimeEntries($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
+
+    override suspend fun addInternalComment(ticketId: String, request: AddInternalCommentRequest) {
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/internal-comment"
+        try {
+            NetworkLogger.addLog("[DEBUG] POST $url")
+            httpClient.post(url) {
+                setBody(jsonRequestBody(request))
+            }.requireSuccess()
+        } catch (e: Exception) {
+            NetworkLogger.addLog("[ERROR] addInternalComment($ticketId) failed: ${e.message} at $url")
+            throw e
+        }
+    }
+
+    override suspend fun changeAssignee(ticketId: String, request: ChangeAssigneeRequest): TicketDto {
+        val url = "${supportDeskBaseUrl()}/admin/tickets/$ticketId/assignee"
+        return try {
+            NetworkLogger.addLog("[DEBUG] PATCH $url")
+            httpClient.patch(url) {
+                setBody(jsonRequestBody(request))
+            }.requireApiData()
+        } catch (e: Exception) {
+            NetworkLogger.addLog("[ERROR] changeAssignee($ticketId) failed: ${e.message} at $url")
             throw e
         }
     }

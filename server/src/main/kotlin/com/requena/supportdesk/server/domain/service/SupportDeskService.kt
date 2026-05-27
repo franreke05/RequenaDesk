@@ -1,5 +1,8 @@
 package com.requena.supportdesk.server.domain.service
 
+import com.requena.supportdesk.server.domain.model.AddInternalCommentRequest
+import com.requena.supportdesk.server.domain.model.AddTicketTimeEntryRequest
+import com.requena.supportdesk.server.domain.model.ChangeTicketAssigneeRequest
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeCreateRequest
@@ -207,6 +210,18 @@ class SupportDeskService(
 
     fun readAlert(alertId: String, userId: String) =
         repository.markAlertRead(alertId, userId)
+
+    fun addedTicketTimeEntry(ticketId: String, authorId: String, request: AddTicketTimeEntryRequest) =
+        repository.addTicketTimeEntry(ticketId, authorId, request)
+
+    fun ticketTimeEntries(ticketId: String) =
+        repository.getTicketTimeEntries(ticketId)
+
+    fun addedInternalComment(ticketId: String, authorId: String, request: AddInternalCommentRequest) =
+        repository.addInternalComment(ticketId, authorId, request)
+
+    fun changedTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest) =
+        repository.changeTicketAssignee(ticketId, request)
 
     private fun validateTaskDueDate(dueDate: String?) {
         val normalized = dueDate?.trim().orEmpty()

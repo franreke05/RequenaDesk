@@ -54,3 +54,18 @@ class DeleteTicketUseCase(
 ) {
     suspend operator fun invoke(ticketId: String) = repository.deleteTicket(ticketId)
 }
+
+class AddTicketTimeEntryUseCase(private val repository: TicketsRepository) {
+    suspend operator fun invoke(ticketId: String, minutes: Int, workDate: String, note: String, billable: Boolean) =
+        repository.addTimeEntry(ticketId, minutes, workDate, note, billable)
+}
+
+class AddInternalCommentUseCase(private val repository: TicketsRepository) {
+    suspend operator fun invoke(ticketId: String, body: String) =
+        repository.addInternalComment(ticketId, body)
+}
+
+class ChangeTicketAssigneeUseCase(private val repository: TicketsRepository) {
+    suspend operator fun invoke(ticketId: String, newAssigneeId: String) =
+        repository.changeAssignee(ticketId, newAssigneeId)
+}

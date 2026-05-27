@@ -1,6 +1,9 @@
 package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
+import com.requena.supportdesk.server.domain.model.AddInternalCommentRequest
+import com.requena.supportdesk.server.domain.model.AddTicketTimeEntryRequest
+import com.requena.supportdesk.server.domain.model.ChangeTicketAssigneeRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -12,6 +15,7 @@ import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
+import com.requena.supportdesk.server.domain.model.InternalComment
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
@@ -21,6 +25,7 @@ import com.requena.supportdesk.server.domain.model.ServerNotificationAlertSnapsh
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
+import com.requena.supportdesk.server.domain.model.TicketTimeEntry
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -1542,6 +1547,117 @@ class PostgresSupportDeskRepository(
                 if (resultSet.next()) alertSnapshot(resultSet) else null
             }
         }
+    }
+
+    override fun addTicketTimeEntry(ticketId: String, authorId: String, request: AddTicketTimeEntryRequest): TicketTimeEntry = dataSource.withConnection { connection ->
+        val resolvedWorkDate = request.workDate.trim().takeIf { it.isNotBlank() }
+            ?: java.time.LocalDate.now().toString()
+        val created = connection.prepareStatement(
+            """
+            INSERT INTO ticket_time_entries (ticket_id, author_id, minutes, work_date, note, billable)
+            VALUES (CAST(? AS uuid), CAST(? AS uuid), ?, CAST(? AS date), ?, ?)
+            RETURNING id::text AS id, ticket_id::text AS ticket_id, author_id::text AS author_id,
+                      minutes, work_date::text AS work_date, note, billable, created_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.setString(2, authorId)
+            statement.setInt(3, request.minutes)
+            statement.setString(4, resolvedWorkDate)
+            statement.setString(5, request.note)
+            statement.setBoolean(6, request.billable)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                val authorName = resolveAuthorName(connection, authorId)
+                TicketTimeEntry(
+                    id = resultSet.getString("id"),
+                    ticketId = resultSet.getString("ticket_id"),
+                    authorId = resultSet.getString("author_id"),
+                    authorName = authorName,
+                    minutes = resultSet.getInt("minutes"),
+                    workDate = resultSet.getString("work_date"),
+                    note = resultSet.getString("note") ?: "",
+                    billable = resultSet.getBoolean("billable"),
+                    createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                )
+            }
+        }
+        created
+    }
+
+    override fun getTicketTimeEntries(ticketId: String): List<TicketTimeEntry> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT tte.id::text AS id, tte.ticket_id::text AS ticket_id, tte.author_id::text AS author_id,
+                   u.name AS author_name, tte.minutes, tte.work_date::text AS work_date,
+                   tte.note, tte.billable, tte.created_at
+            FROM ticket_time_entries tte
+            JOIN users u ON u.id = tte.author_id
+            WHERE tte.ticket_id::text = ?
+            ORDER BY tte.work_date DESC, tte.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            TicketTimeEntry(
+                                id = resultSet.getString("id"),
+                                ticketId = resultSet.getString("ticket_id"),
+                                authorId = resultSet.getString("author_id"),
+                                authorName = resultSet.getString("author_name"),
+                                minutes = resultSet.getInt("minutes"),
+                                workDate = resultSet.getString("work_date"),
+                                note = resultSet.getString("note") ?: "",
+                                billable = resultSet.getBoolean("billable"),
+                                createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun addInternalComment(ticketId: String, authorId: String, request: AddInternalCommentRequest): InternalComment = dataSource.withConnection { connection ->
+        val created = connection.prepareStatement(
+            """
+            INSERT INTO internal_comments (ticket_id, author_id, body)
+            VALUES (CAST(? AS uuid), CAST(? AS uuid), ?)
+            RETURNING id::text AS id, ticket_id::text AS ticket_id, author_id::text AS author_id, body, created_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.setString(2, authorId)
+            statement.setString(3, request.body)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                val authorName = resolveAuthorName(connection, authorId)
+                InternalComment(
+                    id = resultSet.getString("id"),
+                    ticketId = resultSet.getString("ticket_id"),
+                    authorId = resultSet.getString("author_id"),
+                    authorName = authorName,
+                    body = resultSet.getString("body"),
+                    createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                )
+            }
+        }
+        created
+    }
+
+    override fun changeTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest): ServerTicketSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE tickets SET assignee_id = CAST(? AS uuid), updated_at = NOW() WHERE id::text = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.assigneeId.takeIf { it.isNotBlank() })
+            statement.setString(2, ticketId)
+            statement.executeUpdate()
+        }
+        getTicket(ticketId) ?: throw ServerNotFoundException("Ticket not found")
     }
 
     private fun updateLastLogin(connection: Connection, userId: String) {

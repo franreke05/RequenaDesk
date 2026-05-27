@@ -145,3 +145,21 @@ data class RegisterDeviceRequest(
     val token: String = "",
     val platform: String = "ANDROID",
 )
+
+@Serializable
+data class AddTicketTimeEntryRequest(
+    val minutes: Int = 0,
+    val workDate: String = "",
+    val note: String = "",
+    val billable: Boolean = false,
+)
+
+@Serializable
+data class AddInternalCommentRequest(
+    val body: String = "",
+)
+
+@Serializable
+data class ChangeTicketAssigneeRequest(
+    val assigneeId: String = "",
+)

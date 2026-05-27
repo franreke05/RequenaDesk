@@ -65,3 +65,34 @@ data class TicketCloseAcceptanceRequestDto(
 data class TicketSatisfactionRequestDto(
     val rating: Int,
 )
+
+@Serializable
+data class TicketTimeEntryDto(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val minutes: Int,
+    val workDate: String,
+    val note: String,
+    val billable: Boolean,
+    val createdAt: String,
+)
+
+@Serializable
+data class AddTimeEntryRequest(
+    val minutes: Int,
+    val workDate: String,
+    val note: String = "",
+    val billable: Boolean = false,
+)
+
+@Serializable
+data class AddInternalCommentRequest(
+    val body: String,
+)
+
+@Serializable
+data class ChangeAssigneeRequest(
+    val assigneeId: String,
+)

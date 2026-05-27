@@ -3,6 +3,7 @@ package com.requena.supportdesk.features.tickets.domain.repository
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.domain.model.TicketFilters
@@ -16,4 +17,7 @@ interface TicketsRepository {
     suspend fun acceptClose(ticketId: String, resolutionSummary: String? = null): AppResult<Ticket>
     suspend fun rateTicket(ticketId: String, rating: Int): AppResult<Ticket>
     suspend fun deleteTicket(ticketId: String): AppResult<Unit>
+    suspend fun addTimeEntry(ticketId: String, minutes: Int, workDate: String, note: String, billable: Boolean): AppResult<TimeEntry>
+    suspend fun addInternalComment(ticketId: String, body: String): AppResult<Unit>
+    suspend fun changeAssignee(ticketId: String, newAssigneeId: String): AppResult<Ticket>
 }

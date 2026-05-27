@@ -1,5 +1,8 @@
 package com.requena.supportdesk.server.domain.repository
 
+import com.requena.supportdesk.server.domain.model.AddInternalCommentRequest
+import com.requena.supportdesk.server.domain.model.AddTicketTimeEntryRequest
+import com.requena.supportdesk.server.domain.model.ChangeTicketAssigneeRequest
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
@@ -7,6 +10,7 @@ import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.ClientAccessCodeClaimRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.InternalComment
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -18,6 +22,7 @@ import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
+import com.requena.supportdesk.server.domain.model.TicketTimeEntry
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
@@ -64,4 +69,8 @@ interface SupportDeskRepository {
     fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration
     fun getAlerts(userId: String, limit: Int = 50, offset: Int = 0): List<ServerNotificationAlertSnapshot>
     fun markAlertRead(alertId: String, userId: String): ServerNotificationAlertSnapshot?
+    fun addTicketTimeEntry(ticketId: String, authorId: String, request: AddTicketTimeEntryRequest): TicketTimeEntry
+    fun getTicketTimeEntries(ticketId: String): List<TicketTimeEntry>
+    fun addInternalComment(ticketId: String, authorId: String, request: AddInternalCommentRequest): InternalComment
+    fun changeTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest): ServerTicketSnapshot
 }

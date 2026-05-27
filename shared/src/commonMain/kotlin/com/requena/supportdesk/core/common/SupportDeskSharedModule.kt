@@ -41,9 +41,12 @@ import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseC
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
 import com.requena.supportdesk.features.tickets.data.datasource.RemoteTicketsDataSource
 import com.requena.supportdesk.features.tickets.data.repository.TicketsRepositoryImpl
+import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AddInternalCommentUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.AddTicketTimeEntryUseCase
+import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketAssigneeUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketStatusUseCase
-import com.requena.supportdesk.features.tickets.domain.usecase.AcceptTicketCloseUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
@@ -77,6 +80,9 @@ object SupportDeskSharedModule {
     private val acceptTicketCloseUseCase = AcceptTicketCloseUseCase(ticketsRepository)
     private val rateTicketUseCase = RateTicketUseCase(ticketsRepository)
     private val deleteTicketUseCase = DeleteTicketUseCase(ticketsRepository)
+    private val addTicketTimeEntryUseCase = AddTicketTimeEntryUseCase(ticketsRepository)
+    private val addInternalCommentUseCase = AddInternalCommentUseCase(ticketsRepository)
+    private val changeTicketAssigneeUseCase = ChangeTicketAssigneeUseCase(ticketsRepository)
     private val getClientsUseCase = GetClientsUseCase(clientsRepository)
     private val createClientUseCase = CreateClientUseCase(clientsRepository)
     private val updateClientUseCase = UpdateClientUseCase(clientsRepository)
@@ -112,6 +118,9 @@ object SupportDeskSharedModule {
         acceptTicketCloseUseCase = acceptTicketCloseUseCase,
         rateTicketUseCase = rateTicketUseCase,
         deleteTicketUseCase = deleteTicketUseCase,
+        addTicketTimeEntryUseCase = addTicketTimeEntryUseCase,
+        addInternalCommentUseCase = addInternalCommentUseCase,
+        changeTicketAssigneeUseCase = changeTicketAssigneeUseCase,
     )
 
     fun createClientsViewModel(): ClientsViewModel = ClientsViewModel(

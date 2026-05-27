@@ -1,5 +1,8 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.domain.model.AddInternalCommentRequest
+import com.requena.supportdesk.server.domain.model.AddTicketTimeEntryRequest
+import com.requena.supportdesk.server.domain.model.ChangeTicketAssigneeRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.TicketCloseAcceptanceRequest
 import com.requena.supportdesk.server.domain.model.TicketSatisfactionRequest
@@ -14,7 +17,10 @@ import com.requena.supportdesk.server.utils.requireClientIdentity
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
+import com.requena.supportdesk.server.utils.internalCommentJson
 import com.requena.supportdesk.server.utils.ticketJson
+import com.requena.supportdesk.server.utils.ticketTimeEntriesJson
+import com.requena.supportdesk.server.utils.ticketTimeEntryJson
 import com.requena.supportdesk.server.utils.ticketsJson
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.Route
@@ -139,6 +145,45 @@ private fun Route.adminTicketRoutes(service: SupportDeskService, tokenService: S
                 ?: return@delete call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             service.deletedTicket(ticket.id, identity.userId)
             call.respondJson(body = successResponse("/admin/tickets/$id", buildJsonObject { put("ticketId", id) }))
+        }
+        post("/{id}/time-entries") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@post
+            val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            val request = call.receiveOrDefault(AddTicketTimeEntryRequest())
+            if (request.minutes <= 0) {
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("minutes must be greater than 0"))
+            }
+            val entry = service.addedTicketTimeEntry(id, identity.userId, request)
+            call.respondJson(
+                HttpStatusCode.Created,
+                successResponse("/admin/tickets/$id/time-entries", ticketTimeEntryJson(entry)),
+            )
+        }
+        get("/{id}/time-entries") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@get
+            val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            val entries = service.ticketTimeEntries(id)
+            call.respondJson(body = successResponse("/admin/tickets/$id/time-entries", ticketTimeEntriesJson(entries)))
+        }
+        post("/{id}/internal-comment") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@post
+            val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            val request = call.receiveOrDefault(AddInternalCommentRequest())
+            if (request.body.isBlank()) {
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Comment body must not be blank"))
+            }
+            val comment = service.addedInternalComment(id, identity.userId, request)
+            call.respondJson(
+                HttpStatusCode.Created,
+                successResponse("/admin/tickets/$id/internal-comment", internalCommentJson(comment)),
+            )
+        }
+        patch("/{id}/assignee") {
+            val identity = call.requireAdminIdentity(tokenService) ?: return@patch
+            val id = call.parameters["id"] ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            val request = call.receiveOrDefault(ChangeTicketAssigneeRequest())
+            val ticket = service.changedTicketAssignee(id, request)
+            call.respondJson(body = successResponse("/admin/tickets/$id/assignee", ticketJson(ticket)))
         }
     }
 }

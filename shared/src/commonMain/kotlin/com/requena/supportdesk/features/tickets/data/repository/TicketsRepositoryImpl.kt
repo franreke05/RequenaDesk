@@ -3,8 +3,12 @@ package com.requena.supportdesk.features.tickets.data.repository
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.data.datasource.TicketsDataSource
+import com.requena.supportdesk.features.tickets.data.dto.AddInternalCommentRequest
+import com.requena.supportdesk.features.tickets.data.dto.AddTimeEntryRequest
+import com.requena.supportdesk.features.tickets.data.dto.ChangeAssigneeRequest
 import com.requena.supportdesk.features.tickets.data.dto.CreateTicketRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketCloseAcceptanceRequestDto
 import com.requena.supportdesk.features.tickets.data.dto.TicketSatisfactionRequestDto
@@ -100,5 +104,34 @@ class TicketsRepositoryImpl(
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo eliminar el ticket.", cause = it) },
+    )
+
+    override suspend fun addTimeEntry(
+        ticketId: String,
+        minutes: Int,
+        workDate: String,
+        note: String,
+        billable: Boolean,
+    ): AppResult<TimeEntry> = runCatching {
+        val dto = dataSource.addTimeEntry(ticketId, AddTimeEntryRequest(minutes = minutes, workDate = workDate, note = note, billable = billable))
+        val ticket = dataSource.getTicket(ticketId)
+        TicketsMapper.timeEntryFromDto(dto, clientId = ticket?.clientId ?: "")
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo registrar el tiempo.", cause = it) },
+    )
+
+    override suspend fun addInternalComment(ticketId: String, body: String): AppResult<Unit> = runCatching {
+        dataSource.addInternalComment(ticketId, AddInternalCommentRequest(body = body))
+    }.fold(
+        onSuccess = { AppResult.Success(Unit) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo guardar el comentario interno.", cause = it) },
+    )
+
+    override suspend fun changeAssignee(ticketId: String, newAssigneeId: String): AppResult<Ticket> = runCatching {
+        dataSource.changeAssignee(ticketId, ChangeAssigneeRequest(assigneeId = newAssigneeId)).let(TicketsMapper::fromDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo cambiar el asignado.", cause = it) },
     )
 }

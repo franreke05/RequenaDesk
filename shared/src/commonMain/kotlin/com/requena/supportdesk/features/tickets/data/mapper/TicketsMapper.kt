@@ -8,9 +8,23 @@ import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.WaitingOn
+import com.requena.supportdesk.core.model.TimeEntry
 import com.requena.supportdesk.features.tickets.data.dto.TicketDto
+import com.requena.supportdesk.features.tickets.data.dto.TicketTimeEntryDto
 
 object TicketsMapper {
+    fun timeEntryFromDto(dto: TicketTimeEntryDto, clientId: String = ""): TimeEntry = TimeEntry(
+        id = dto.id,
+        clientId = clientId,
+        ticketId = dto.ticketId,
+        authorId = dto.authorId,
+        authorName = dto.authorName,
+        minutes = dto.minutes,
+        workDate = dto.workDate,
+        note = dto.note,
+        billable = dto.billable,
+        createdAt = dto.createdAt,
+    )
     fun fromDto(dto: TicketDto): Ticket {
         return Ticket(
             id = dto.id,
