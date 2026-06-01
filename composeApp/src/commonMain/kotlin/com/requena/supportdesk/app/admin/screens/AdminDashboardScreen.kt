@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.Ticket
+import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.designsystem.components.badges.ClientAccountStatusBadge
@@ -83,6 +85,10 @@ import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
+import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedTextField
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -91,6 +97,10 @@ fun AdminDashboardScreen(
     clients: List<Client>,
     tasksState: TasksUiState,
     onTasksEvent: (TasksUiEvent) -> Unit,
+    ticketsState: TicketsUiState,
+    onTicketsEvent: (TicketsUiEvent) -> Unit,
+    currentAdminId: String,
+    currentAdminName: String,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -156,12 +166,21 @@ fun AdminDashboardScreen(
         }
 
         SupportDeskEntrance(index = 2) {
-            StatusBoardSection(
+            UnifiedBoardSection(
                 tasks = boardTasks,
                 categories = tasksState.categories,
                 selectedTaskId = tasksState.selectedTaskId,
                 onSelectTask = { onTasksEvent(TasksUiEvent.SelectTask(it)) },
                 onChangeTaskStatus = { taskId, status -> onTasksEvent(TasksUiEvent.ChangeTaskStatus(taskId, status)) },
+                tickets = ticketsState.tickets,
+                selectedTicket = ticketsState.selectedTicket,
+                clients = clients,
+                selectedClientId = tasksState.selectedDashboardClientId,
+                onSelectTicket = { onTicketsEvent(TicketsUiEvent.SelectTicket(it)) },
+                onChangeTicketStatus = { ticketId, status -> onTicketsEvent(TicketsUiEvent.ChangeTicketStatus(ticketId, status)) },
+                onAddTimeEntry = { minutes, note, billable ->
+                    onTicketsEvent(TicketsUiEvent.AddTimeEntry(minutes, note, billable, currentAdminId, currentAdminName))
+                },
             )
         }
 
@@ -214,6 +233,7 @@ fun AdminDashboardScreen(
                 }
             }
         }
+
     }
 }
 
@@ -571,7 +591,9 @@ private fun DashboardTaskRow(
     }
 }
 
-// ─── Task board with drag and drop ────────────────────────────────────────────
+// ─── Unified board (tasks + tickets toggle) ───────────────────────────────────
+
+private enum class BoardMode { TASKS, TICKETS }
 
 private data class DragState(
     val taskId: String,
@@ -582,8 +604,140 @@ private data class DragState(
     val targetColumnIdx: Int get() = currentColumnIdx
 }
 
+private data class TicketDragState(
+    val ticketId: String,
+    val fromStatus: TicketStatus,
+    val currentColumnIdx: Int,
+    val thresholdProgress: Float = 0f,
+) {
+    val targetColumnIdx: Int get() = currentColumnIdx
+}
+
 @Composable
-private fun StatusBoardSection(
+private fun UnifiedBoardSection(
+    tasks: List<WorkTask>,
+    categories: List<TaskCategory>,
+    selectedTaskId: String?,
+    onSelectTask: (String) -> Unit,
+    onChangeTaskStatus: (String, WorkTaskStatus) -> Unit,
+    tickets: List<Ticket>,
+    selectedTicket: Ticket?,
+    clients: List<Client>,
+    selectedClientId: String?,
+    onSelectTicket: (String) -> Unit,
+    onChangeTicketStatus: (String, TicketStatus) -> Unit,
+    onAddTimeEntry: (minutes: Int, note: String, billable: Boolean) -> Unit,
+) {
+    var mode by rememberSaveable { mutableStateOf(BoardMode.TASKS) }
+
+    val inProgressTaskCount = tasks.count { it.status == WorkTaskStatus.IN_PROGRESS }
+    val openTicketCount = tickets.count { it.status == TicketStatus.OPEN }
+    val activeTicketCount = tickets.count { it.status == TicketStatus.IN_PROGRESS || it.status == TicketStatus.PENDING_CLIENT }
+
+    SectionCard(
+        title = if (mode == BoardMode.TASKS) "Tablero de tareas" else "Tickets activos",
+        subtitle = if (mode == BoardMode.TASKS)
+            "Haz clic para seleccionar · Arrastra para mover"
+        else
+            "Selecciona un ticket y registra el tiempo trabajado",
+        actions = {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ) {
+                Row {
+                    BoardModeTab(
+                        label = "Tareas",
+                        active = mode == BoardMode.TASKS,
+                        badge = inProgressTaskCount.takeIf { it > 0 },
+                        onClick = { mode = BoardMode.TASKS },
+                    )
+                    BoardModeTab(
+                        label = "Tickets",
+                        active = mode == BoardMode.TICKETS,
+                        badge = (openTicketCount + activeTicketCount).takeIf { it > 0 },
+                        onClick = { mode = BoardMode.TICKETS },
+                    )
+                }
+            }
+        },
+    ) {
+        when (mode) {
+            BoardMode.TASKS -> TaskBoardContent(
+                tasks = tasks,
+                categories = categories,
+                selectedTaskId = selectedTaskId,
+                onSelectTask = onSelectTask,
+                onChangeTaskStatus = onChangeTaskStatus,
+            )
+            BoardMode.TICKETS -> TicketBoardContent(
+                tickets = tickets,
+                selectedTicket = selectedTicket,
+                clients = clients,
+                selectedClientId = selectedClientId,
+                onSelectTicket = onSelectTicket,
+                onChangeTicketStatus = onChangeTicketStatus,
+                onAddTimeEntry = onAddTimeEntry,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoardModeTab(
+    label: String,
+    active: Boolean,
+    badge: Int?,
+    onClick: () -> Unit,
+) {
+    val bgColor by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(200),
+    )
+    val textColor by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(200),
+    )
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            if (badge != null) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            if (active) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            RoundedCornerShape(100.dp),
+                        )
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                ) {
+                    Text(
+                        text = "$badge",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = textColor,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskBoardContent(
     tasks: List<WorkTask>,
     categories: List<TaskCategory>,
     selectedTaskId: String?,
@@ -595,84 +749,489 @@ private fun StatusBoardSection(
     val visibleStatuses = WorkTaskStatus.entries.filter { it != WorkTaskStatus.ARCHIVED }
 
     var drag by remember { mutableStateOf<DragState?>(null) }
-    val draggingTargetStatus = drag?.let { visibleStatuses.getOrNull(it.targetColumnIdx) }
     val isDraggingAny = drag != null
 
-    SectionCard(
-        title = "Tablero de tareas",
-        subtitle = if (isDraggingAny)
-            "→ Soltá sobre la columna destino"
-        else
-            "Haz clic para seleccionar · Arrastra para mover",
-    ) {
-        if (tasks.isEmpty()) {
-            EmptyState(title = "Sin tareas", message = "No hay tareas para los filtros actuales.")
-            return@SectionCard
-        }
+    if (isDraggingAny) {
+        Text(
+            text = "→ Soltá sobre la columna destino",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
 
+    if (tasks.isEmpty()) {
+        EmptyState(title = "Sin tareas", message = "No hay tareas para los filtros actuales.")
+        return
+    }
+
+    @Composable
+    fun buildColumn(status: WorkTaskStatus, modifier: Modifier) {
+        val targetIdx = drag?.targetColumnIdx ?: -1
+        val colIdx = visibleStatuses.indexOf(status)
+        val isSource = drag?.fromStatus == status
+        val isDropTarget = isDraggingAny && targetIdx == colIdx && !isSource
+
+        StatusColumn(
+            status = status,
+            tasks = tasks.filter { it.status == status }.take(6),
+            totalCount = tasks.count { it.status == status },
+            categories = categories,
+            selectedTaskId = selectedTaskId,
+            draggingTaskId = drag?.taskId,
+            isDropTarget = isDropTarget,
+            isSource = isSource,
+            onSelectTask = onSelectTask,
+            onDragStart = { taskId ->
+                onSelectTask(taskId)
+                drag = DragState(
+                    taskId = taskId,
+                    fromStatus = status,
+                    currentColumnIdx = colIdx,
+                )
+            },
+            onDragDelta = { deltaX ->
+                drag = drag?.let { current ->
+                    val newProgress = current.thresholdProgress + deltaX
+                    when {
+                        newProgress > thresholdPx -> {
+                            val nextIdx = (current.currentColumnIdx + 1).coerceAtMost(visibleStatuses.size - 1)
+                            current.copy(currentColumnIdx = nextIdx, thresholdProgress = 0f)
+                        }
+                        newProgress < -thresholdPx -> {
+                            val prevIdx = (current.currentColumnIdx - 1).coerceAtLeast(0)
+                            current.copy(currentColumnIdx = prevIdx, thresholdProgress = 0f)
+                        }
+                        else -> current.copy(thresholdProgress = newProgress)
+                    }
+                }
+            },
+            onDragEnd = {
+                drag?.let { current ->
+                    val target = visibleStatuses.getOrNull(current.targetColumnIdx)
+                    if (target != null && target != current.fromStatus) {
+                        onChangeTaskStatus(current.taskId, target)
+                    }
+                }
+                drag = null
+            },
+            modifier = modifier,
+        )
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 1100.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                visibleStatuses.forEach { status -> buildColumn(status, Modifier.fillMaxWidth()) }
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                visibleStatuses.forEach { status -> buildColumn(status, Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TicketBoardContent(
+    tickets: List<Ticket>,
+    selectedTicket: Ticket?,
+    clients: List<Client>,
+    selectedClientId: String?,
+    onSelectTicket: (String) -> Unit,
+    onChangeTicketStatus: (String, TicketStatus) -> Unit,
+    onAddTimeEntry: (minutes: Int, note: String, billable: Boolean) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val primary = MaterialTheme.colorScheme.primary
+    val semantic = SupportDeskThemeTokens.semanticColors
+    val thresholdPx = with(LocalDensity.current) { 60.dp.toPx() }
+    val visibleStatuses = listOf(
+        TicketStatus.OPEN,
+        TicketStatus.IN_PROGRESS,
+        TicketStatus.PENDING_CLIENT,
+        TicketStatus.RESOLVED,
+    )
+    val boardTickets = tickets.filter { selectedClientId == null || it.clientId == selectedClientId }
+
+    // Local selection to avoid triggering navigation from the dashboard board
+    var localSelectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val localSelected = tickets.firstOrNull { it.id == localSelectedId }
+
+    var drag by remember { mutableStateOf<TicketDragState?>(null) }
+    val isDraggingAny = drag != null
+
+    if (isDraggingAny) {
+        Text(
+            text = "→ Soltá sobre la columna destino",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+
+    if (boardTickets.isEmpty()) {
+        EmptyState(title = "Sin tickets", message = "No hay tickets para los filtros actuales.")
+    } else {
         @Composable
-        fun buildColumn(status: WorkTaskStatus, modifier: Modifier) {
-            val fromIdx = drag?.let { visibleStatuses.indexOf(it.fromStatus) } ?: -1
+        fun buildTicketColumn(status: TicketStatus, modifier: Modifier) {
             val targetIdx = drag?.targetColumnIdx ?: -1
             val colIdx = visibleStatuses.indexOf(status)
             val isSource = drag?.fromStatus == status
             val isDropTarget = isDraggingAny && targetIdx == colIdx && !isSource
+            val headerColor = status.ticketStatusColor(semantic, primary)
+            val columnTickets = boardTickets.filter { it.status == status }.take(6)
+            val totalCount = boardTickets.count { it.status == status }
 
-            StatusColumn(
-                status = status,
-                tasks = tasks.filter { it.status == status }.take(6),
-                totalCount = tasks.count { it.status == status },
-                categories = categories,
-                selectedTaskId = selectedTaskId,
-                draggingTaskId = drag?.taskId,
-                isDropTarget = isDropTarget,
-                isSource = isSource,
-                onSelectTask = onSelectTask,
-                onDragStart = { taskId ->
-                    onSelectTask(taskId)
-                    drag = DragState(
-                        taskId = taskId,
-                        fromStatus = status,
-                        currentColumnIdx = colIdx,
-                    )
+            val bodyBg by animateColorAsState(
+                targetValue = when {
+                    isDropTarget -> headerColor.copy(alpha = 0.12f)
+                    isSource -> headerColor.copy(alpha = 0.04f)
+                    else -> headerColor.copy(alpha = 0.02f)
                 },
-                onDragDelta = { deltaX ->
-                    drag = drag?.let { current ->
-                        val newProgress = current.thresholdProgress + deltaX
-                        when {
-                            newProgress > thresholdPx -> {
-                                val nextIdx = (current.currentColumnIdx + 1).coerceAtMost(visibleStatuses.size - 1)
-                                current.copy(currentColumnIdx = nextIdx, thresholdProgress = 0f)
-                            }
-                            newProgress < -thresholdPx -> {
-                                val prevIdx = (current.currentColumnIdx - 1).coerceAtLeast(0)
-                                current.copy(currentColumnIdx = prevIdx, thresholdProgress = 0f)
-                            }
-                            else -> current.copy(thresholdProgress = newProgress)
-                        }
-                    }
-                },
-                onDragEnd = {
-                    drag?.let { current ->
-                        val target = visibleStatuses.getOrNull(current.targetColumnIdx)
-                        if (target != null && target != current.fromStatus) {
-                            onChangeTaskStatus(current.taskId, target)
-                        }
-                    }
-                    drag = null
-                },
-                modifier = modifier,
+                animationSpec = tween(180),
             )
+            val borderColor by animateColorAsState(
+                targetValue = if (isDropTarget) headerColor.copy(alpha = 0.7f) else Color.Transparent,
+                animationSpec = tween(180),
+            )
+            val colScale by animateFloatAsState(
+                targetValue = if (isDropTarget) 1.02f else 1f,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+            )
+            val colAlpha by animateFloatAsState(
+                targetValue = if (isSource && drag?.ticketId != null) 0.7f else 1f,
+                animationSpec = tween(200),
+            )
+
+            Surface(
+                modifier = modifier
+                    .scale(colScale)
+                    .alpha(colAlpha)
+                    .shadow(if (isDropTarget) 6.dp else 1.dp, RoundedCornerShape(spacing.md))
+                    .border(2.dp, borderColor, RoundedCornerShape(spacing.md)),
+                shape = RoundedCornerShape(spacing.md),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Brush.horizontalGradient(listOf(headerColor, headerColor.copy(alpha = 0.6f))))
+                            .padding(horizontal = spacing.md, vertical = spacing.xs),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                            if (isDropTarget) {
+                                Text("⬇", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                            Text(
+                                text = if (isDropTarget) "Soltar aquí" else status.ticketStatusLabel(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (totalCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(100.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Text("$totalCount", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (isDropTarget) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.sm, vertical = spacing.xs)
+                                .background(headerColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .border(1.dp, headerColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "⬇  ${status.ticketStatusLabel()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = headerColor,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .background(bodyBg)
+                            .padding(spacing.sm)
+                            .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        if (columnTickets.isEmpty() && !isDropTarget) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = spacing.sm), contentAlignment = Alignment.Center) {
+                                Text("Vacía", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            }
+                        }
+                        columnTickets.forEach { ticket ->
+                            val clientName = clients.firstOrNull { it.id == ticket.clientId }?.companyName ?: ticket.clientId
+                            val totalMinutes = ticket.timeEntries.sumOf { it.minutes }
+                            val isDraggingThis = drag?.ticketId == ticket.id
+                            val isSelected = localSelectedId == ticket.id
+
+                            val bgColor by animateColorAsState(
+                                targetValue = when {
+                                    isDraggingThis -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                    else -> MaterialTheme.colorScheme.surface
+                                },
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            )
+                            val cardBorderColor by animateColorAsState(
+                                targetValue = when {
+                                    isDraggingThis -> primary
+                                    isSelected -> primary.copy(alpha = 0.4f)
+                                    else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                },
+                                animationSpec = tween(180),
+                            )
+                            val cardAlpha by animateFloatAsState(
+                                targetValue = if (isDraggingThis) 0.45f else 1f,
+                                animationSpec = tween(150),
+                            )
+                            val cardScale by animateFloatAsState(
+                                targetValue = if (isDraggingThis) 1.03f else 1f,
+                                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                            )
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .scale(cardScale)
+                                    .alpha(cardAlpha)
+                                    .shadow(if (isDraggingThis) 8.dp else 1.dp, RoundedCornerShape(8.dp))
+                                    .border(1.dp, cardBorderColor, RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { localSelectedId = if (localSelectedId == ticket.id) null else ticket.id }
+                                    .pointerInput(ticket.id) {
+                                        detectDragGestures(
+                                            onDragStart = { _ ->
+                                                drag = TicketDragState(
+                                                    ticketId = ticket.id,
+                                                    fromStatus = status,
+                                                    currentColumnIdx = colIdx,
+                                                )
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                drag = drag?.let { current ->
+                                                    val newProgress = current.thresholdProgress + dragAmount.x
+                                                    when {
+                                                        newProgress > thresholdPx -> {
+                                                            val nextIdx = (current.currentColumnIdx + 1).coerceAtMost(visibleStatuses.size - 1)
+                                                            current.copy(currentColumnIdx = nextIdx, thresholdProgress = 0f)
+                                                        }
+                                                        newProgress < -thresholdPx -> {
+                                                            val prevIdx = (current.currentColumnIdx - 1).coerceAtLeast(0)
+                                                            current.copy(currentColumnIdx = prevIdx, thresholdProgress = 0f)
+                                                        }
+                                                        else -> current.copy(thresholdProgress = newProgress)
+                                                    }
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                drag?.let { current ->
+                                                    val target = visibleStatuses.getOrNull(current.targetColumnIdx)
+                                                    if (target != null && target != current.fromStatus) {
+                                                        onChangeTicketStatus(current.ticketId, target)
+                                                    }
+                                                }
+                                                drag = null
+                                            },
+                                            onDragCancel = { drag = null },
+                                        )
+                                    },
+                                color = bgColor,
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.width(3.dp).height(44.dp).background(headerColor))
+                                    Row(
+                                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 7.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = "#${ticket.ticketNumber} - ${ticket.subject}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                text = "$clientName · ${formatSupportDeskDuration(totalMinutes)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isDraggingThis) "↔" else "⠿",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isDraggingThis) primary else MaterialTheme.colorScheme.outlineVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (totalCount > 6) {
+                            Text("+${totalCount - 6} más", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                }
+            }
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             if (maxWidth < 1100.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    visibleStatuses.forEach { status -> buildColumn(status, Modifier.fillMaxWidth()) }
+                    visibleStatuses.forEach { status -> buildTicketColumn(status, Modifier.fillMaxWidth()) }
                 }
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    visibleStatuses.forEach { status -> buildColumn(status, Modifier.weight(1f)) }
+                    visibleStatuses.forEach { status -> buildTicketColumn(status, Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+
+    // Time-entry form for selected ticket (local selection, no navigation)
+    val timerTicket = localSelected
+    if (timerTicket != null) {
+        var isRunning by rememberSaveable(timerTicket.id) { mutableStateOf(false) }
+        var elapsedSeconds by rememberSaveable(timerTicket.id) { mutableStateOf(0) }
+        var billable by rememberSaveable(timerTicket.id) { mutableStateOf(true) }
+
+        // tick every second while running
+        if (isRunning) {
+            val transition = rememberInfiniteTransition("ticketTimer")
+            transition.animateFloat(
+                initialValue = 0f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(animation = tween(1000), repeatMode = RepeatMode.Restart),
+                label = "tick",
+            ).let {
+                androidx.compose.runtime.LaunchedEffect(it.value) {
+                    if (isRunning) elapsedSeconds++
+                }
+            }
+        }
+
+        val timerBg by animateColorAsState(
+            targetValue = if (isRunning) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            animationSpec = tween(400),
+        )
+        val timerBorderColor by animateColorAsState(
+            targetValue = if (isRunning) MaterialTheme.colorScheme.primary.copy(alpha = 0.40f) else Color.Transparent,
+            animationSpec = tween(400),
+        )
+        val infiniteTransition = rememberInfiniteTransition("ticketTimerPulse")
+        val clockPulse by infiniteTransition.animateFloat(
+            initialValue = 1f, targetValue = 1.06f,
+            animationSpec = infiniteRepeatable(animation = tween(850, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+            label = "clockPulse",
+        )
+        val timerColor by animateColorAsState(
+            targetValue = if (isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            animationSpec = tween(400),
+        )
+
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(top = spacing.sm).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+            shape = RoundedCornerShape(12.dp),
+            color = timerBg,
+            border = BorderStroke(1.dp, timerBorderColor),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "#${timerTicket.ticketNumber} · ${timerTicket.subject}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (isRunning) "⏺ Grabando tiempo" else "Listo para iniciar",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = formatSupportDeskClockDuration(elapsedSeconds),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = timerColor,
+                        modifier = if (isRunning) Modifier.scale(clockPulse) else Modifier,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Checkbox(checked = billable, onCheckedChange = { billable = it })
+                    Text("Facturable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton(
+                        text = if (isRunning) "En marcha" else "Iniciar",
+                        onClick = { isRunning = true },
+                        enabled = !isRunning,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SecondaryButton(
+                        text = "Pausar",
+                        onClick = { isRunning = false },
+                        enabled = isRunning,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SecondaryButton(
+                        text = "Detener",
+                        onClick = {
+                            isRunning = false
+                            val mins = (elapsedSeconds / 60).coerceAtLeast(1)
+                            onAddTimeEntry(mins, "", billable)
+                            elapsedSeconds = 0
+                        },
+                        enabled = elapsedSeconds > 0,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                val lastEntries = timerTicket.timeEntries.takeLast(3).reversed()
+                if (lastEntries.isNotEmpty()) {
+                    Text("Últimas entradas", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    lastEntries.forEach { entry ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(formatSupportDeskDuration(entry.minutes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text(entry.note.ifBlank { "Sin nota" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(entry.workDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                    }
                 }
             }
         }
@@ -1179,6 +1738,24 @@ private fun WorkTaskStatus.headerColor(
     WorkTaskStatus.REVIEW -> secondary
     WorkTaskStatus.DONE -> semantic.success
     WorkTaskStatus.ARCHIVED -> MaterialTheme.colorScheme.outlineVariant
+}
+
+// ─── Ticket status helpers ────────────────────────────────────────────────────
+
+private fun TicketStatus.ticketStatusColor(semantic: com.requena.supportdesk.designsystem.tokens.SupportDeskSemanticColors, primary: Color): Color = when (this) {
+    TicketStatus.OPEN -> semantic.warning
+    TicketStatus.IN_PROGRESS -> primary
+    TicketStatus.PENDING_CLIENT -> semantic.info
+    TicketStatus.RESOLVED -> semantic.success
+    TicketStatus.CLOSED -> semantic.success
+}
+
+private fun TicketStatus.ticketStatusLabel(): String = when (this) {
+    TicketStatus.OPEN -> "Abierto"
+    TicketStatus.IN_PROGRESS -> "En curso"
+    TicketStatus.PENDING_CLIENT -> "Esperando cliente"
+    TicketStatus.RESOLVED -> "Resuelto"
+    TicketStatus.CLOSED -> "Cerrado"
 }
 
 // ─── Calendar data model ──────────────────────────────────────────────────────

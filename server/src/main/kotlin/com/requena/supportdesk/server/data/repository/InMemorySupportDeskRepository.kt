@@ -810,4 +810,14 @@ class InMemorySupportDeskRepository(
 
     override fun changeTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest): ServerTicketSnapshot =
         throw UnsupportedOperationException("Not supported in InMemory repository")
+
+    override fun getInvoices(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot> = emptyList()
+
+    override fun getInvoice(id: String, ownerAdminId: String?, clientId: String?): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot? = null
+
+    override fun createInvoice(request: com.requena.supportdesk.server.domain.model.CreateInvoiceRequest, createdBy: String): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
+
+    override fun updateInvoiceStatus(invoiceId: String, request: com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest, ownerAdminId: String): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
 }

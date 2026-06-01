@@ -14,6 +14,7 @@ import com.requena.supportdesk.server.routes.authRoutes
 import com.requena.supportdesk.server.routes.clientRoutes
 import com.requena.supportdesk.server.routes.dashboardRoutes
 import com.requena.supportdesk.server.routes.deviceRoutes
+import com.requena.supportdesk.server.routes.invoiceRoutes
 import com.requena.supportdesk.server.routes.labelRoutes
 import com.requena.supportdesk.server.routes.taskRoutes
 import com.requena.supportdesk.server.routes.ticketRoutes
@@ -62,6 +63,7 @@ fun Application.configureSupportDeskModule(
         timeLogRoutes(service, tokenService)
         dashboardRoutes(service, tokenService)
         deviceRoutes(service, tokenService)
+        invoiceRoutes(service, tokenService)
     }
 }
 

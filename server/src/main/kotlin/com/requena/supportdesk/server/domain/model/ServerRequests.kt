@@ -163,3 +163,26 @@ data class AddInternalCommentRequest(
 data class ChangeTicketAssigneeRequest(
     val assigneeId: String = "",
 )
+
+@Serializable
+data class CreateInvoiceItemRequest(
+    val description: String = "",
+    val quantity: Double = 1.0,
+    val unitPrice: Double = 0.0,
+    val sortOrder: Int = 0,
+)
+
+@Serializable
+data class CreateInvoiceRequest(
+    val clientId: String = "",
+    val issuedAt: String = "",
+    val dueAt: String? = null,
+    val notes: String? = null,
+    val taxPercent: Double = 0.0,
+    val items: List<CreateInvoiceItemRequest> = emptyList(),
+)
+
+@Serializable
+data class UpdateInvoiceStatusRequest(
+    val status: String = "",
+)

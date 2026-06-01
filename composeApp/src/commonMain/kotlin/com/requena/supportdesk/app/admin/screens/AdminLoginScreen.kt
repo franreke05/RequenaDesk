@@ -9,7 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,11 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
-import org.jetbrains.compose.resources.painterResource
-import orykaisoftware.composeapp.generated.resources.Res
-import orykaisoftware.composeapp.generated.resources.login_dragon_bg
-import orykaisoftware.composeapp.generated.resources.login_dragon_bg_claro
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -63,12 +57,17 @@ import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
 
-private val Gold        = Color(0xFFD4A74A)
-private val GoldDim     = Color(0xFFD4A74A).copy(alpha = 0.55f)
-private val LoginBgDark  = Color(0xFF090C15)   // fondo dark mode
-private val LoginBgLight = Color(0xFFF5EFE0)   // crema cálido light mode
-private val CardBgDark   = Color(0xFF10141F)   // tarjeta glass dark
-private val CardBgLight  = Color(0xFFFDF9F2)   // tarjeta glass light
+private val Gold         = Color(0xFFC39356)
+private val GoldHover    = Color(0xFFD8B47A)
+private val GoldDim      = Color(0xFFC39356).copy(alpha = 0.55f)
+private val LoginBgDark  = Color(0xFF080B0F)
+private val LoginBgLight = Color(0xFFF7F1E8)
+private val CardBgDark   = Color(0xFF121820)
+private val CardBgLight  = Color(0xFFFFF9F0)
+private val BorderLight  = Color(0xFFD8C5AB)
+private val BorderDark   = Color(0xFF2E261C)
+private val TextLight    = Color(0xFF1E1A16)
+private val TextDark     = Color(0xFFF3E8D7)
 
 private enum class LoginTab { ADMIN, CLIENT }
 
@@ -87,15 +86,6 @@ fun AdminLoginScreen(
             .fillMaxSize()
             .background(loginBg),
     ) {
-        // Imagen del dragón — oscuro en dark mode, crema en light mode
-        Image(
-            painter = painterResource(
-                if (isDark) Res.drawable.login_dragon_bg else Res.drawable.login_dragon_bg_claro,
-            ),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().alpha(if (isDark) 0.72f else 0.82f),
-        )
 
         // Vignette — adapta colores al modo activo
         Canvas(modifier = Modifier.fillMaxSize()) {

@@ -10,8 +10,10 @@ import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
+import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
+import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
@@ -239,6 +241,25 @@ class SupportDeskService(
         if (parsedDate != LocalDate.now()) {
             throw ServerValidationException("Time can only be logged on the current day")
         }
+    }
+
+    fun invoices(ownerAdminId: String? = null, clientId: String? = null, limit: Int = 100, offset: Int = 0) =
+        repository.getInvoices(ownerAdminId = ownerAdminId, clientId = clientId, limit = limit.boundedLimit(MAX_LIST_LIMIT), offset = offset.boundedOffset())
+
+    fun invoice(id: String, ownerAdminId: String? = null, clientId: String? = null) =
+        repository.getInvoice(id, ownerAdminId = ownerAdminId, clientId = clientId)
+
+    fun createdInvoice(request: CreateInvoiceRequest, ownerAdminId: String) = run {
+        if (request.clientId.isBlank()) throw ServerValidationException("clientId is required")
+        if (request.issuedAt.isBlank()) throw ServerValidationException("issuedAt is required")
+        if (request.items.isEmpty()) throw ServerValidationException("At least one item is required")
+        repository.createInvoice(request, createdBy = ownerAdminId)
+    }
+
+    fun updatedInvoiceStatus(invoiceId: String, request: UpdateInvoiceStatusRequest, ownerAdminId: String) = run {
+        val allowedStatuses = setOf("SENT", "PAID", "CANCELLED")
+        if (request.status !in allowedStatuses) throw ServerValidationException("Invalid status: ${request.status}")
+        repository.updateInvoiceStatus(invoiceId, request, ownerAdminId)
     }
 
     private companion object {

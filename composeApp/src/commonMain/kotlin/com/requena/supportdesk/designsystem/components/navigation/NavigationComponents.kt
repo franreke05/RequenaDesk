@@ -143,7 +143,7 @@ fun <T> AppSidebar(
                         color = animatedBackground,
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                         ),
                     ) {
                         Row(

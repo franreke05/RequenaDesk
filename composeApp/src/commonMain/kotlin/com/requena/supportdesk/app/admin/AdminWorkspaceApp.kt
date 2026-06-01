@@ -25,8 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.admin.screens.AdminBoardsScreen
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
+import com.requena.supportdesk.app.admin.screens.AdminCreateInvoiceScreen
 import com.requena.supportdesk.app.admin.screens.AdminCreateTicketScreen
 import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
+import com.requena.supportdesk.app.admin.screens.AdminInvoicesScreen
 import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
 import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
 import com.requena.supportdesk.app.admin.screens.AdminTicketDetailScreen
@@ -55,6 +57,8 @@ import com.requena.supportdesk.core.model.WorkTaskStatus
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
+import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
+import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -88,6 +92,11 @@ fun AdminWorkspaceApp() {
         module.boardsViewModel.state.collectAsState().value
     } else {
         com.requena.supportdesk.features.boards.presentation.state.BoardsUiState()
+    }
+    val invoicesState = if (currentUser != null) {
+        module.invoicesViewModel.state.collectAsState().value
+    } else {
+        InvoicesUiState()
     }
 
     DisposableEffect(module) {
@@ -207,6 +216,8 @@ fun AdminWorkspaceApp() {
                 onEvent = module.ticketsViewModel::onEvent,
                 onRefresh = { module.ticketsViewModel.onEvent(TicketsUiEvent.Load) },
                 onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
+                invoicesState = invoicesState,
+                onInvoicesEvent = module.invoicesViewModel::onEvent,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -216,11 +227,6 @@ fun AdminWorkspaceApp() {
                         key = AppDestination.Dashboard,
                         title = "Dashboard",
                         supportingText = "Tiempo, calendario y ruedas",
-                    ),
-                    NavigationItemSpec(
-                        key = AppDestination.Boards,
-                        title = "Tableros",
-                        supportingText = "Vista Kanban de tickets",
                     ),
                     NavigationItemSpec(
                         key = AppDestination.Clients,
@@ -241,6 +247,11 @@ fun AdminWorkspaceApp() {
                         key = AppDestination.Labels,
                         title = "Etiquetas",
                         supportingText = "Notificaciones móviles",
+                    ),
+                    NavigationItemSpec(
+                        key = AppDestination.Invoices,
+                        title = "Facturas",
+                        supportingText = "Crear y gestionar pagos",
                     ),
                 )
             }
@@ -276,6 +287,7 @@ fun AdminWorkspaceApp() {
                         tasksState = tasksState,
                         ticketsState = ticketsState,
                         boardsState = boardsState,
+                        invoicesState = invoicesState,
                         module = module,
                         modifier = Modifier.weight(1f),
                     )
@@ -302,6 +314,7 @@ fun AdminWorkspaceApp() {
                                 tasksState = tasksState,
                                 ticketsState = ticketsState,
                                 boardsState = boardsState,
+                                invoicesState = invoicesState,
                                 module = module,
                                 modifier = Modifier.weight(1f),
                             )
@@ -320,6 +333,7 @@ fun AdminWorkspaceApp() {
                             tasksState = tasksState,
                             ticketsState = ticketsState,
                             boardsState = boardsState,
+                            invoicesState = invoicesState,
                             module = module,
                             modifier = Modifier.weight(1f),
                         )
@@ -349,6 +363,7 @@ private fun AdminContentArea(
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
     ticketsState: com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState,
     boardsState: com.requena.supportdesk.features.boards.presentation.state.BoardsUiState,
+    invoicesState: InvoicesUiState,
     module: AdminAppModule,
     modifier: Modifier = Modifier,
 ) {
@@ -421,24 +436,15 @@ private fun AdminContentArea(
         }
 
         when (navigation.destination) {
-            AppDestination.Dashboard -> AdminDashboardScreen(
+            AppDestination.Dashboard,
+            AppDestination.Boards -> AdminDashboardScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
-                modifier = Modifier.weight(1f),
-            )
-
-            AppDestination.Boards -> AdminBoardsScreen(
-                state = boardsState,
-                tasks = tasksState.tasks,
-                categories = tasksState.categories,
-                onEvent = module.boardsViewModel::onEvent,
-                onTicketStatusChange = { ticketId, status ->
-                    module.ticketsViewModel.onEvent(TicketsUiEvent.ChangeTicketStatus(ticketId, status))
-                },
-                onTaskStatusChange = { taskId, status ->
-                    module.tasksViewModel.onEvent(TasksUiEvent.ChangeTaskStatus(taskId, status))
-                },
+                ticketsState = ticketsState,
+                onTicketsEvent = module.ticketsViewModel::onEvent,
+                currentAdminId = currentAdminId,
+                currentAdminName = currentAdminName,
                 modifier = Modifier.weight(1f),
             )
 
@@ -500,6 +506,26 @@ private fun AdminContentArea(
                 onEvent = module.authViewModel::onEvent,
                 modifier = Modifier.weight(1f),
             )
+
+            AppDestination.Invoices,
+            is AppDestination.InvoiceDetail -> AdminInvoicesScreen(
+                clients = clientsState.clients,
+                state = invoicesState,
+                viewModel = module.invoicesViewModel,
+                onEvent = module.invoicesViewModel::onEvent,
+                onNavigateToCreate = { onNavigate(AppDestination.CreateInvoice) },
+                modifier = Modifier.weight(1f),
+            )
+
+            AppDestination.CreateInvoice -> AdminCreateInvoiceScreen(
+                clients = clientsState.clients,
+                onBack = { onNavigate(AppDestination.Invoices) },
+                onCreateInvoice = { input ->
+                    module.invoicesViewModel.onEvent(InvoicesUiEvent.CreateInvoice(input))
+                    onNavigate(AppDestination.Invoices)
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
 
     }
@@ -507,7 +533,7 @@ private fun AdminContentArea(
 
 private fun navDestinationFor(destination: AppDestination): AppDestination = when (destination) {
     AppDestination.Dashboard -> AppDestination.Dashboard
-    AppDestination.Boards -> AppDestination.Boards
+    AppDestination.Boards -> AppDestination.Dashboard
     AppDestination.Clients -> AppDestination.Clients
     AppDestination.Tasks -> AppDestination.Tasks
     AppDestination.Labels,
@@ -515,12 +541,15 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> AppDestination.Tickets
+    AppDestination.Invoices,
+    AppDestination.CreateInvoice,
+    is AppDestination.InvoiceDetail -> AppDestination.Invoices
     AppDestination.Login -> AppDestination.Dashboard
 }
 
 private fun titleFor(destination: AppDestination): String = when (destination) {
-    AppDestination.Dashboard -> "Dashboard"
-    AppDestination.Boards -> "Tableros Kanban"
+    AppDestination.Dashboard,
+    AppDestination.Boards -> "Dashboard"
     AppDestination.Clients -> "Clientes"
     AppDestination.Tasks -> "Tareas"
     AppDestination.Labels,
@@ -528,12 +557,15 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Tickets -> "Tickets"
     AppDestination.CreateTicket -> "Nuevo ticket"
     is AppDestination.TicketDetail -> "Detalle ticket"
+    AppDestination.Invoices -> "Facturas"
+    AppDestination.CreateInvoice -> "Nueva factura"
+    is AppDestination.InvoiceDetail -> "Detalle factura"
     AppDestination.Login -> "OryKai software Admin"
 }
 
 private fun subtitleFor(destination: AppDestination): String? = when (destination) {
-    AppDestination.Dashboard -> null
-    AppDestination.Boards -> "Vista Kanban de tickets, columnas personalizables y flujo de trabajo."
+    AppDestination.Dashboard,
+    AppDestination.Boards -> null
     AppDestination.Clients -> "Consulta clientes y enlaza contexto sin mezclar trabajo."
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
     AppDestination.Labels,
@@ -541,6 +573,9 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Tablero de soporte, prioridad y seguimiento por cliente."
+    AppDestination.Invoices,
+    AppDestination.CreateInvoice,
+    is AppDestination.InvoiceDetail -> "Crea, envía y cobra facturas a tus clientes."
     AppDestination.Login -> "Workspace admin para organizar trabajo compartido."
 }
 

@@ -2,6 +2,7 @@ package com.requena.supportdesk.server.utils
 
 import com.requena.supportdesk.server.domain.model.InternalComment
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
@@ -252,4 +253,34 @@ fun alertJson(alert: ServerNotificationAlertSnapshot) = buildJsonObject {
     put("body", alert.body)
     put("readAt", alert.readAt)
     put("createdAt", alert.createdAt)
+}
+
+fun invoicesJson(invoices: List<ServerInvoiceSnapshot>) = buildJsonArray {
+    invoices.forEach { add(invoiceJson(it)) }
+}
+
+fun invoiceJson(invoice: ServerInvoiceSnapshot) = buildJsonObject {
+    put("id", invoice.id)
+    put("invoiceNumber", invoice.invoiceNumber)
+    put("clientId", invoice.clientId)
+    put("clientName", invoice.clientName)
+    put("status", invoice.status)
+    put("issuedAt", invoice.issuedAt)
+    put("dueAt", invoice.dueAt)
+    put("notes", invoice.notes)
+    put("taxPercent", invoice.taxPercent)
+    put("createdAt", invoice.createdAt)
+    put("sentAt", invoice.sentAt)
+    put("paidAt", invoice.paidAt)
+    put("items", buildJsonArray {
+        invoice.items.forEach { item ->
+            add(buildJsonObject {
+                put("id", item.id)
+                put("description", item.description)
+                put("quantity", item.quantity)
+                put("unitPrice", item.unitPrice)
+                put("sortOrder", item.sortOrder)
+            })
+        }
+    })
 }

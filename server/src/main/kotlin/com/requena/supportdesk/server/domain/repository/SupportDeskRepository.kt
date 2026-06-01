@@ -29,6 +29,9 @@ import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
+import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
+import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
+import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import java.time.Instant
 
@@ -73,4 +76,8 @@ interface SupportDeskRepository {
     fun getTicketTimeEntries(ticketId: String): List<TicketTimeEntry>
     fun addInternalComment(ticketId: String, authorId: String, request: AddInternalCommentRequest): InternalComment
     fun changeTicketAssignee(ticketId: String, request: ChangeTicketAssigneeRequest): ServerTicketSnapshot
+    fun getInvoices(ownerAdminId: String? = null, clientId: String? = null, limit: Int = 100, offset: Int = 0): List<ServerInvoiceSnapshot>
+    fun getInvoice(id: String, ownerAdminId: String? = null, clientId: String? = null): ServerInvoiceSnapshot?
+    fun createInvoice(request: CreateInvoiceRequest, createdBy: String): ServerInvoiceSnapshot
+    fun updateInvoiceStatus(invoiceId: String, request: UpdateInvoiceStatusRequest, ownerAdminId: String): ServerInvoiceSnapshot
 }
