@@ -87,7 +87,7 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "com.example.crmfreelance.MainKt"
+        mainClass = "com.requena.supportdesk.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Exe)

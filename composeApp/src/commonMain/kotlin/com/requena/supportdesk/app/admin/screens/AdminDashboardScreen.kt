@@ -55,6 +55,7 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlin.math.max
@@ -121,7 +122,7 @@ fun AdminDashboardScreen(
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val stacked = maxWidth < 1180.dp
+            val stacked = maxWidth < SupportDeskBreakpoints.adminMedium
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
                     WheelSummaryRow(

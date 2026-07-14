@@ -58,6 +58,7 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -164,7 +165,7 @@ private fun TicketDetailPane(ticket: Ticket?, currentAdminId: String, currentAdm
                 TicketStatusBadge(ticket.status); TicketPriorityBadge(ticket.priority); WaitingOnBadge(ticket.waitingOn); TicketCategoryBadge(ticket.category); SupportPlatformBadge(ticket.platform)
             }
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < 960.dp
+                val stacked = maxWidth < SupportDeskBreakpoints.adminTicketsStacked
                 if (stacked) Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
                     TicketContextCard(ticket); TicketOpsCard(ticket, currentAdminId, currentAdminName, replyDraft, { replyDraft = it }, noteDraft, { noteDraft = it }, timeMinutes, { timeMinutes = it }, timeNote, { timeNote = it }, billable, { billable = it }, onEvent)
                 } else Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.lg)) {

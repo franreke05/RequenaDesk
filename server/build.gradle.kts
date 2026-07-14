@@ -8,7 +8,7 @@ plugins {
 group = "com.requena.orykaisoftware"
 version = "1.0.0"
 application {
-    mainClass.set("com.example.crmfreelance.ApplicationKt")
+    mainClass.set("com.requena.supportdesk.server.ApplicationKt")
     
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")

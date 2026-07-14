@@ -38,4 +38,16 @@ sealed interface AppDestination {
     object Notifications : AppDestination {
         override val route: String = "notifications"
     }
+
+    object Invoices : AppDestination {
+        override val route: String = "invoices"
+    }
+
+    object CreateInvoice : AppDestination {
+        override val route: String = "invoices/create"
+    }
+
+    data class InvoiceDetail(val invoiceId: String) : AppDestination {
+        override val route: String = "invoices/$invoiceId"
+    }
 }

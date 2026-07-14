@@ -1,4 +1,4 @@
-package com.example.crmfreelance
+package com.requena.supportdesk
 
 import androidx.compose.runtime.Composable
 import com.requena.supportdesk.app.SupportDeskApp

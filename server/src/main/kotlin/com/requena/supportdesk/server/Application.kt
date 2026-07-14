@@ -1,4 +1,4 @@
-package com.example.crmfreelance
+package com.requena.supportdesk.server
 
 import com.requena.supportdesk.server.application.startSupportDeskServer
 

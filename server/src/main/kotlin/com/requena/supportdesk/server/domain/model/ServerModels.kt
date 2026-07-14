@@ -136,3 +136,27 @@ data class ServerAttachmentCreated(
     val ticketId: String,
     val attachmentId: String,
 )
+
+data class ServerInvoiceItemSnapshot(
+    val id: String,
+    val description: String,
+    val quantity: Double,
+    val unitPrice: Double,
+    val sortOrder: Int,
+)
+
+data class ServerInvoiceSnapshot(
+    val id: String,
+    val invoiceNumber: String,
+    val clientId: String,
+    val clientName: String,
+    val status: String,
+    val issuedAt: String,
+    val dueAt: String?,
+    val notes: String?,
+    val taxPercent: Double,
+    val items: List<ServerInvoiceItemSnapshot>,
+    val createdAt: String,
+    val sentAt: String?,
+    val paidAt: String?,
+)

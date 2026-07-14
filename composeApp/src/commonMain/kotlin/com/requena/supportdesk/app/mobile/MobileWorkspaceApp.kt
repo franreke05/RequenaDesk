@@ -55,6 +55,7 @@ import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
@@ -246,7 +247,7 @@ private fun MobileLoginScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 24.dp),
         ) {
-            val compactLayout = maxWidth < 380.dp
+            val compactLayout = maxWidth < SupportDeskBreakpoints.mobileCompact
 
             Column(
                 verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
@@ -417,7 +418,7 @@ private fun MobileHeader(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compactLayout = maxWidth < 380.dp
+            val compactLayout = maxWidth < SupportDeskBreakpoints.mobileCompact
 
             if (compactLayout) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1693,7 +1694,7 @@ private fun CardHeader(
     trailing: @Composable (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val stacked = trailing != null && maxWidth < 360.dp
+        val stacked = trailing != null && maxWidth < SupportDeskBreakpoints.mobileStackedTrailing
 
         if (stacked) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

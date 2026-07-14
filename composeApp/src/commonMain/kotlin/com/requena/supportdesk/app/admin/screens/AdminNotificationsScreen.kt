@@ -42,6 +42,7 @@ import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.components.layout.PageHeader
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 
@@ -74,7 +75,7 @@ fun AdminNotificationsScreen(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            val stacked = maxWidth < 1080.dp
+            val stacked = maxWidth < SupportDeskBreakpoints.adminListDetailStacked
             if (stacked) {
                 Column(
                     modifier = Modifier.fillMaxSize(),

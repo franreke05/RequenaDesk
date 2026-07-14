@@ -22,12 +22,16 @@ import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
+import com.requena.supportdesk.features.tasks.presentation.effect.TasksUiEffect
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -46,6 +50,9 @@ class TasksViewModel(
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TasksUiState())
     val state: StateFlow<TasksUiState> = _state.asStateFlow()
+
+    private val _effects = MutableSharedFlow<TasksUiEffect>(extraBufferCapacity = 4)
+    val effects: SharedFlow<TasksUiEffect> = _effects.asSharedFlow()
 
     private var timerJob: Job? = null
     private var categories = emptyList<TaskCategory>()
@@ -113,6 +120,10 @@ class TasksViewModel(
             categories = (labelsResult as AppResult.Success).data
             tasks = (tasksResult as AppResult.Success).data
             logs = (logsResult as AppResult.Success).data
+
+            if (statusMessage != null) {
+                _effects.emit(TasksUiEffect.ShowMessage(statusMessage))
+            }
 
             publish(
                 selectedDay = selectedDay,
@@ -478,6 +489,7 @@ class TasksViewModel(
                 statusMessage = message,
             )
         }
+        launch { _effects.emit(TasksUiEffect.ShowMessage(message)) }
     }
 
     private fun nextSelectionAfterDelete(taskId: String): String? {

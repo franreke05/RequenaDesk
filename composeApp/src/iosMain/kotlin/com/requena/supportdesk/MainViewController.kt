@@ -1,4 +1,4 @@
-package com.example.crmfreelance
+package com.requena.supportdesk
 
 import androidx.compose.ui.window.ComposeUIViewController
 

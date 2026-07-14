@@ -46,6 +46,7 @@ import com.requena.supportdesk.designsystem.components.inputs.SearchField
 import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -85,7 +86,7 @@ fun AdminClientsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                 ) {
-                    val stacked = maxWidth < 1080.dp
+                    val stacked = maxWidth < SupportDeskBreakpoints.adminListDetailStacked
                     if (stacked) {
                         Column(
                             modifier = Modifier.fillMaxSize(),

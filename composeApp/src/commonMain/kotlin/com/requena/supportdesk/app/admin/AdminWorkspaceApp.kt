@@ -23,12 +23,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
+import com.requena.supportdesk.app.client.ClientPortalScreen
+import com.requena.supportdesk.app.admin.screens.AdminCreateInvoiceScreen
 import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
+import com.requena.supportdesk.app.admin.screens.AdminInvoicesScreen
 import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
 import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
 import com.requena.supportdesk.app.admin.screens.AdminTasksScreen
 import com.requena.supportdesk.core.navigation.AppDestination
 import com.requena.supportdesk.core.time.currentIsoDate
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
@@ -42,6 +46,9 @@ import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
+import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
+import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlinx.coroutines.launch
@@ -63,6 +70,11 @@ fun AdminWorkspaceApp() {
         module.tasksViewModel.state.collectAsState().value
     } else {
         TasksUiState()
+    }
+    val invoicesState = if (currentUser != null) {
+        module.invoicesViewModel.state.collectAsState().value
+    } else {
+        InvoicesUiState()
     }
 
     DisposableEffect(module) {
@@ -88,6 +100,17 @@ fun AdminWorkspaceApp() {
             module.clientsViewModel.effects.collect { effect ->
                 when (effect) {
                     is ClientsUiEffect.ShowMessage -> statusMessage = effect.message
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser != null) {
+            module.invoicesViewModel.effects.collect { effect ->
+                when (effect) {
+                    is InvoicesUiEffect.ShowMessage -> statusMessage = effect.message
+                    is InvoicesUiEffect.OpenPdfUrl -> Unit
                 }
             }
         }
@@ -123,14 +146,28 @@ fun AdminWorkspaceApp() {
             ),
     ) {
         val layoutMode = when {
-            maxWidth < 760.dp -> AdminLayoutMode.COMPACT
-            maxWidth < 1180.dp -> AdminLayoutMode.MEDIUM
+            maxWidth < SupportDeskBreakpoints.adminCompact -> AdminLayoutMode.COMPACT
+            maxWidth < SupportDeskBreakpoints.adminMedium -> AdminLayoutMode.MEDIUM
             else -> AdminLayoutMode.EXPANDED
         }
         if (currentUser == null) {
             AdminLoginScreen(
                 state = authState,
                 onEvent = module.authViewModel::onEvent,
+            )
+        } else if (currentUser.role == com.requena.supportdesk.core.model.UserRole.CLIENT) {
+            ClientPortalScreen(
+                clientName = currentUser.name,
+                state = module.ticketsViewModel.state.collectAsState().value,
+                onEvent = module.ticketsViewModel::onEvent,
+                onRefresh = { module.ticketsViewModel.onEvent(com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent.Load) },
+                onSignOut = { module.authViewModel.onEvent(com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent.Logout) },
+                invoicesState = invoicesState,
+                onInvoicesEvent = module.invoicesViewModel::onEvent,
+                tasksState = tasksState,
+                onTasksEvent = module.tasksViewModel::onEvent,
+                clientId = currentUser.clientId,
+                modifier = Modifier.fillMaxSize(),
             )
         } else {
             val navItems = remember {
@@ -154,6 +191,11 @@ fun AdminWorkspaceApp() {
                         key = AppDestination.Labels,
                         title = "Etiquetas",
                         supportingText = "Colores y organización",
+                    ),
+                    NavigationItemSpec(
+                        key = AppDestination.Invoices,
+                        title = "Facturas",
+                        supportingText = "Crear y gestionar pagos",
                     ),
                 )
             }
@@ -186,6 +228,7 @@ fun AdminWorkspaceApp() {
                         currentAdminName = currentUser.name,
                         clientsState = clientsState,
                         tasksState = tasksState,
+                        invoicesState = invoicesState,
                         module = module,
                         modifier = Modifier.weight(1f),
                     )
@@ -209,6 +252,7 @@ fun AdminWorkspaceApp() {
                                 currentAdminName = currentUser.name,
                                 clientsState = clientsState,
                                 tasksState = tasksState,
+                                invoicesState = invoicesState,
                                 module = module,
                                 modifier = Modifier.weight(1f),
                             )
@@ -224,6 +268,7 @@ fun AdminWorkspaceApp() {
                             currentAdminName = currentUser.name,
                             clientsState = clientsState,
                             tasksState = tasksState,
+                            invoicesState = invoicesState,
                             module = module,
                             modifier = Modifier.weight(1f),
                         )
@@ -250,6 +295,7 @@ private fun AdminContentArea(
     currentAdminName: String,
     clientsState: com.requena.supportdesk.features.clients.presentation.state.ClientsUiState,
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
+    invoicesState: InvoicesUiState,
     module: AdminAppModule,
     modifier: Modifier = Modifier,
 ) {
@@ -357,6 +403,26 @@ private fun AdminContentArea(
                 onEvent = module.authViewModel::onEvent,
                 modifier = Modifier.weight(1f),
             )
+
+            AppDestination.Invoices,
+            is AppDestination.InvoiceDetail -> AdminInvoicesScreen(
+                clients = clientsState.clients,
+                state = invoicesState,
+                viewModel = module.invoicesViewModel,
+                onEvent = module.invoicesViewModel::onEvent,
+                onNavigateToCreate = { onNavigate(AppDestination.CreateInvoice) },
+                modifier = Modifier.weight(1f),
+            )
+
+            AppDestination.CreateInvoice -> AdminCreateInvoiceScreen(
+                clients = clientsState.clients,
+                onBack = { onNavigate(AppDestination.Invoices) },
+                onCreateInvoice = { input ->
+                    module.invoicesViewModel.onEvent(InvoicesUiEvent.CreateInvoice(input))
+                    onNavigate(AppDestination.Invoices)
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -367,6 +433,9 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Tasks -> AppDestination.Tasks
     AppDestination.Labels,
     AppDestination.Notifications -> AppDestination.Labels
+    AppDestination.Invoices,
+    AppDestination.CreateInvoice,
+    is AppDestination.InvoiceDetail -> AppDestination.Invoices
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail,
@@ -379,6 +448,9 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Tasks -> "Tareas"
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
+    AppDestination.Invoices -> "Facturas"
+    AppDestination.CreateInvoice -> "Nueva factura"
+    is AppDestination.InvoiceDetail -> "Detalle factura"
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Agenda"
@@ -391,6 +463,9 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
     AppDestination.Labels,
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
+    AppDestination.Invoices,
+    AppDestination.CreateInvoice,
+    is AppDestination.InvoiceDetail -> "Crea, envia y cobra facturas a tus clientes."
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "El flujo antiguo de tickets ha quedado retirado de la navegacion."
