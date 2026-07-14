@@ -1,5 +1,12 @@
 package com.requena.supportdesk.app.admin.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +41,7 @@ import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
 import com.composables.icons.lucide.Eye
@@ -65,62 +73,72 @@ fun AdminLoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            SectionCard(
-                modifier = Modifier.widthIn(max = 520.dp),
-                title = "OryKai software",
-                subtitle = "Acceso al espacio de gestion y al portal de cliente.",
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = tween(SupportDeskMotion.emphasized)) +
+                    scaleIn(initialScale = 0.94f, animationSpec = tween(SupportDeskMotion.emphasized)),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-                    SupportDeskBadge(
-                        text = "Acceso seguro",
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    OutlinedTextField(
-                        value = state.email,
-                        onValueChange = { onEvent(AuthUiEvent.EmailChanged(it)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Correo") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next,
-                        ),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = state.password,
-                        onValueChange = { onEvent(AuthUiEvent.PasswordChanged(it)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Contrasena") },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) Lucide.EyeOff else Lucide.Eye,
-                                    contentDescription = if (passwordVisible) "Ocultar contrasena" else "Mostrar contrasena",
-                                )
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = { if (canSubmit) onEvent(AuthUiEvent.Submit) },
-                        ),
-                        singleLine = true,
-                    )
-                    state.errorMessage?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                SectionCard(
+                    modifier = Modifier.widthIn(max = 520.dp),
+                    title = "OryKai software",
+                    subtitle = "Acceso al espacio de gestion y al portal de cliente.",
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                        SupportDeskBadge(
+                            text = "Acceso seguro",
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        OutlinedTextField(
+                            value = state.email,
+                            onValueChange = { onEvent(AuthUiEvent.EmailChanged(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Correo") },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next,
+                            ),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = state.password,
+                            onValueChange = { onEvent(AuthUiEvent.PasswordChanged(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Contrasena") },
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        imageVector = if (passwordVisible) Lucide.EyeOff else Lucide.Eye,
+                                        contentDescription = if (passwordVisible) "Ocultar contrasena" else "Mostrar contrasena",
+                                    )
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = { if (canSubmit) onEvent(AuthUiEvent.Submit) },
+                            ),
+                            singleLine = true,
+                        )
+                        AnimatedVisibility(
+                            visible = state.errorMessage != null,
+                            enter = fadeIn(tween(SupportDeskMotion.regular)) + expandVertically(),
+                            exit = fadeOut(tween(SupportDeskMotion.quick)) + shrinkVertically(),
+                        ) {
+                            Text(
+                                text = state.errorMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        PrimaryButton(
+                            text = "Entrar",
+                            onClick = { onEvent(AuthUiEvent.Submit) },
+                            enabled = canSubmit,
+                            fullWidth = true,
+                            isLoading = state.isLoading,
                         )
                     }
-                    PrimaryButton(
-                        text = "Entrar",
-                        onClick = { onEvent(AuthUiEvent.Submit) },
-                        enabled = canSubmit,
-                        fullWidth = true,
-                        isLoading = state.isLoading,
-                    )
                 }
             }
         }

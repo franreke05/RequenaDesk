@@ -1,6 +1,11 @@
 package com.requena.supportdesk.designsystem.components.cards
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -18,6 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
+
+private val CardTextCrossfade =
+    fadeIn(tween(SupportDeskMotion.regular)) togetherWith fadeOut(tween(SupportDeskMotion.quick))
 
 @Composable
 fun SectionCard(
@@ -53,7 +62,13 @@ fun SectionCard(
                         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
                     ) {
                         resolvedTitle?.let {
-                            Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            AnimatedContent(
+                                targetState = it,
+                                transitionSpec = { CardTextCrossfade },
+                                label = "sectionCardTitle",
+                            ) { titleValue ->
+                                Text(titleValue, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                         resolvedSubtitle?.let {
                             Text(
@@ -99,11 +114,17 @@ fun MetricCard(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = { CardTextCrossfade },
+                label = "metricCardValue",
+            ) { valueText ->
+                Text(
+                    text = valueText,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 text = supportingText,
                 style = MaterialTheme.typography.bodySmall,

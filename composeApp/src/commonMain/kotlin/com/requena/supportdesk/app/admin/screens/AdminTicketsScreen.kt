@@ -1,5 +1,7 @@
 package com.requena.supportdesk.app.admin.screens
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -55,6 +57,7 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -140,23 +143,30 @@ private fun TicketListPane(state: TicketsUiState, onEvent: (TicketsUiEvent) -> U
 @Composable
 private fun TicketDetailPane(ticket: Ticket?, onEvent: (TicketsUiEvent) -> Unit, modifier: Modifier = Modifier) {
     val spacing = SupportDeskThemeTokens.spacing
-    if (ticket == null) {
-        EmptyState(title = "Ningún ticket seleccionado", message = "Selecciona un ticket para revisar la conversación y su estado.", modifier = modifier)
-        return
-    }
-    var replyDraft by rememberSaveable(ticket.id) { mutableStateOf("") }
-    SectionCard(modifier = modifier) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                TicketStatusBadge(ticket.status); TicketPriorityBadge(ticket.priority); WaitingOnBadge(ticket.waitingOn); TicketCategoryBadge(ticket.category); SupportPlatformBadge(ticket.platform)
-            }
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < SupportDeskBreakpoints.adminTicketsStacked
-                if (stacked) Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
-                    TicketContextCard(ticket); TicketOpsCard(ticket, replyDraft, { replyDraft = it }, onEvent)
-                } else Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.lg)) {
-                    TicketContextCard(ticket, Modifier.weight(0.58f))
-                    TicketOpsCard(ticket, replyDraft, { replyDraft = it }, onEvent, Modifier.weight(0.42f))
+    Crossfade(
+        targetState = ticket,
+        modifier = modifier,
+        animationSpec = tween(SupportDeskMotion.regular),
+        label = "ticketDetailPane",
+    ) { current ->
+        if (current == null) {
+            EmptyState(title = "Ningún ticket seleccionado", message = "Selecciona un ticket para revisar la conversación y su estado.")
+        } else {
+            var replyDraft by rememberSaveable(current.id) { mutableStateOf("") }
+            SectionCard {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        TicketStatusBadge(current.status); TicketPriorityBadge(current.priority); WaitingOnBadge(current.waitingOn); TicketCategoryBadge(current.category); SupportPlatformBadge(current.platform)
+                    }
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val stacked = maxWidth < SupportDeskBreakpoints.adminTicketsStacked
+                        if (stacked) Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
+                            TicketContextCard(current); TicketOpsCard(current, replyDraft, { replyDraft = it }, onEvent)
+                        } else Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.lg)) {
+                            TicketContextCard(current, Modifier.weight(0.58f))
+                            TicketOpsCard(current, replyDraft, { replyDraft = it }, onEvent, Modifier.weight(0.42f))
+                        }
+                    }
                 }
             }
         }
@@ -198,8 +208,17 @@ private fun TicketContextCard(ticket: Ticket, modifier: Modifier = Modifier) {
 @Composable
 private fun TicketOpsCard(ticket: Ticket, replyDraft: String, onReplyDraftChange: (String) -> Unit, onEvent: (TicketsUiEvent) -> Unit, modifier: Modifier = Modifier) {
     val spacing = SupportDeskThemeTokens.spacing
-    LaunchedEffect(ticket.id, ticket.messages.size) {
-        onReplyDraftChange("")
+    // Only clear the draft once the message count grows past the value captured when this
+    // ticket's own reply was submitted; reacting to any message-count change would also wipe
+    // an in-progress draft if the ticket picks up messages from another source (e.g. re-selecting
+    // the same ticket in the list pane while composing).
+    var pendingReplyBaseline by remember(ticket.id) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(ticket.messages.size) {
+        val baseline = pendingReplyBaseline
+        if (baseline != null && ticket.messages.size > baseline) {
+            onReplyDraftChange("")
+            pendingReplyBaseline = null
+        }
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
         SectionCard(title = "Flujo", subtitle = "Actualiza estado y prioridad desde el detalle.") {
@@ -211,7 +230,14 @@ private fun TicketOpsCard(ticket: Ticket, replyDraft: String, onReplyDraftChange
         SectionCard(title = "Respuesta", subtitle = "El siguiente mensaje será visible para el cliente.") {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                 OutlinedTextField(value = replyDraft, onValueChange = onReplyDraftChange, modifier = Modifier.fillMaxWidth(), label = { Text("Respuesta al cliente") }, minLines = 4)
-                PrimaryButton(text = "Enviar respuesta", onClick = { onEvent(TicketsUiEvent.ReplyToSelected(replyDraft)) }, enabled = replyDraft.isNotBlank())
+                PrimaryButton(
+                    text = "Enviar respuesta",
+                    onClick = {
+                        pendingReplyBaseline = ticket.messages.size
+                        onEvent(TicketsUiEvent.ReplyToSelected(replyDraft))
+                    },
+                    enabled = replyDraft.isNotBlank(),
+                )
             }
         }
     }

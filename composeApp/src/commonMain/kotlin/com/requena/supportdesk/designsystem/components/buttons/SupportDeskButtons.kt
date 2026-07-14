@@ -1,5 +1,10 @@
 package com.requena.supportdesk.designsystem.components.buttons
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,10 +17,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 
 @Composable
 fun PrimaryButton(
@@ -27,10 +36,21 @@ fun PrimaryButton(
     icon: ImageVector? = null,
     isLoading: Boolean = false,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else if (hovered) 1.02f else 1f,
+        animationSpec = tween(SupportDeskMotion.quick),
+        label = "primaryButtonScale",
+    )
     Button(
         onClick = onClick,
         enabled = enabled && !isLoading,
-        modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier).heightIn(min = 44.dp),
+        interactionSource = interactionSource,
+        modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier)
+            .heightIn(min = 44.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale },
     ) {
         ButtonContent(text = text, icon = icon, isLoading = isLoading)
     }
@@ -46,10 +66,21 @@ fun SecondaryButton(
     icon: ImageVector? = null,
     isLoading: Boolean = false,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else if (hovered) 1.02f else 1f,
+        animationSpec = tween(SupportDeskMotion.quick),
+        label = "secondaryButtonScale",
+    )
     FilledTonalButton(
         onClick = onClick,
         enabled = enabled && !isLoading,
-        modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier).heightIn(min = 44.dp),
+        interactionSource = interactionSource,
+        modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier)
+            .heightIn(min = 44.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale },
     ) {
         ButtonContent(text = text, icon = icon, isLoading = isLoading)
     }

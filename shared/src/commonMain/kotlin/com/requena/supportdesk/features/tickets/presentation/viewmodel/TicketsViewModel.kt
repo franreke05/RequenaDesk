@@ -5,6 +5,7 @@ import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.core.utils.matchesQuery
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
 import com.requena.supportdesk.features.tickets.domain.model.TicketFilters
 import com.requena.supportdesk.features.tickets.domain.usecase.ChangeTicketPriorityUseCase
@@ -210,14 +211,15 @@ class TicketsViewModel(
         selectId: String? = state.value.selectedTicket?.id,
     ) {
         val filters = currentFilters()
-        val filtered = mergedTickets().filter { ticket ->
-            val queryMatches = filters.query.isBlank() || listOf(
+        val merged = mergedTickets()
+        val filtered = merged.filter { ticket ->
+            val queryMatches = listOf(
                 ticket.ticketNumber,
                 ticket.subject,
                 ticket.description,
                 ticket.affectedApp,
                 ticket.requester.name,
-            ).any { value -> value.contains(filters.query, ignoreCase = true) }
+            ).any { value -> value.matchesQuery(filters.query) }
             queryMatches &&
                 (filters.status == null || ticket.status == filters.status) &&
                 (filters.priority == null || ticket.priority == filters.priority) &&
@@ -230,7 +232,7 @@ class TicketsViewModel(
             it.copy(
                 isLoading = false,
                 errorMessage = errorMessage,
-                allTickets = mergedTickets(),
+                allTickets = merged,
                 tickets = filtered,
                 selectedTicket = selected,
             )

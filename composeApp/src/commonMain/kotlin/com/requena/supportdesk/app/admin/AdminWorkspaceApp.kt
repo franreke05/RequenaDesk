@@ -29,6 +29,7 @@ import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
 import com.requena.supportdesk.app.admin.screens.AdminInvoicesScreen
 import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
 import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
+import com.requena.supportdesk.app.admin.screens.AdminPinboardScreen
 import com.requena.supportdesk.app.admin.screens.AdminTasksScreen
 import com.requena.supportdesk.app.admin.screens.AdminTicketsScreen
 import com.requena.supportdesk.app.admin.screens.AdminCreateTicketScreen
@@ -60,6 +61,7 @@ import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiStat
 import com.composables.icons.lucide.LayoutDashboard
 import com.composables.icons.lucide.ListTodo
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Pin
 import com.composables.icons.lucide.ReceiptText
 import com.composables.icons.lucide.Tags
 import com.composables.icons.lucide.Ticket
@@ -228,6 +230,12 @@ fun AdminWorkspaceApp() {
                         title = "Tareas",
                         supportingText = "Trabajo, cliente y etiqueta",
                         icon = Lucide.ListTodo,
+                    ),
+                    NavigationItemSpec(
+                        key = AppDestination.Pinboard,
+                        title = "Tablon",
+                        supportingText = "Chinchetas del dia",
+                        icon = Lucide.Pin,
                     ),
                     NavigationItemSpec(
                         key = AppDestination.Tickets,
@@ -460,6 +468,13 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
 
+            AppDestination.Pinboard -> AdminPinboardScreen(
+                clients = clientsState.clients,
+                tasksState = tasksState,
+                onTasksEvent = module.tasksViewModel::onEvent,
+                modifier = Modifier.weight(1f),
+            )
+
             AppDestination.Labels,
             AppDestination.Notifications -> AdminNotificationsScreen(
                 tasksState = tasksState,
@@ -500,6 +515,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Dashboard -> AppDestination.Dashboard
     AppDestination.Clients -> AppDestination.Clients
     AppDestination.Tasks -> AppDestination.Tasks
+    AppDestination.Pinboard -> AppDestination.Pinboard
     AppDestination.Labels,
     AppDestination.Notifications -> AppDestination.Labels
     AppDestination.Invoices,
@@ -515,6 +531,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Dashboard -> "Dashboard"
     AppDestination.Clients -> "Clientes"
     AppDestination.Tasks -> "Tareas"
+    AppDestination.Pinboard -> "Tablon"
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
     AppDestination.Invoices -> "Facturas"
@@ -530,6 +547,7 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Dashboard -> null
     AppDestination.Clients -> "Consulta clientes y enlaza contexto sin mezclar trabajo."
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
+    AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy, organizadas por etiqueta."
     AppDestination.Labels,
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
     AppDestination.Invoices,

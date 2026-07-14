@@ -1,6 +1,11 @@
 package com.requena.supportdesk.app.admin.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -48,6 +53,7 @@ import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -237,6 +243,12 @@ private fun ClientListPane(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val openTaskCountByClient = remember(tasks) {
+        tasks.filter { !it.completed }.groupingBy { it.clientId }.eachCount()
+    }
+    val minutesByClient = remember(logs) {
+        logs.groupBy { it.clientId }.mapValues { (_, clientLogs) -> clientLogs.sumOf { log -> log.minutes } }
+    }
     SectionCard(
         modifier = modifier.fillMaxSize(),
         title = "Clientes",
@@ -248,17 +260,25 @@ private fun ClientListPane(
         ) {
             items(clients, key = { it.id }) { client ->
                 val selected = client.id == selectedClientId
-                val clientTasks = tasks.filter { it.clientId == client.id }
-                val clientMinutes = logs.filter { it.clientId == client.id }.sumOf { it.minutes }
+                val openTaskCount = openTaskCountByClient[client.id] ?: 0
+                val clientMinutes = minutesByClient[client.id] ?: 0
+                val interactionSource = remember { MutableInteractionSource() }
+                val hovered by interactionSource.collectIsHoveredAsState()
+                val itemColor by animateColorAsState(
+                    targetValue = when {
+                        selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                        hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+                    },
+                    animationSpec = tween(SupportDeskMotion.quick),
+                    label = "clientListItemBackground",
+                )
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect(client.id) },
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-                    },
+                        .hoverable(interactionSource)
+                        .clickable(interactionSource = interactionSource, indication = null) { onSelect(client.id) },
+                    color = itemColor,
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
@@ -280,7 +300,7 @@ private fun ClientListPane(
                             ClientAccountStatusBadge(client.accountStatus)
                         }
                         Text(
-                            text = "${clientTasks.count { !it.completed }} tareas abiertas - ${formatSupportDeskDuration(clientMinutes)} este mes",
+                            text = "$openTaskCount tareas abiertas - ${formatSupportDeskDuration(clientMinutes)} este mes",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -322,6 +342,7 @@ private fun ClientEditorPane(
     var accountStatus by remember(client.id) { mutableStateOf(client.accountStatus) }
     var serviceTier by remember(client.id) { mutableStateOf(client.serviceTier) }
     var preferredChannel by remember(client.id) { mutableStateOf(client.preferredContactChannel) }
+    val emailIsValid = email.matches(Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
     val clientMinutes = logs.sumOf { it.minutes }
     val recentTasks = tasks.sortedByDescending { it.updatedAt }.take(5)
 
@@ -407,7 +428,7 @@ private fun ClientEditorPane(
                             ),
                         )
                     },
-                    enabled = companyName.isNotBlank() && productName.isNotBlank() && contactName.isNotBlank() && email.isNotBlank(),
+                    enabled = companyName.isNotBlank() && productName.isNotBlank() && contactName.isNotBlank() && emailIsValid,
                     modifier = Modifier.weight(1f),
                 )
                 SecondaryButton(

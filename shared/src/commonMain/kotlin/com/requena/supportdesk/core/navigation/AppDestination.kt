@@ -15,6 +15,10 @@ sealed interface AppDestination {
         override val route: String = "tasks"
     }
 
+    object Pinboard : AppDestination {
+        override val route: String = "pinboard"
+    }
+
     object Labels : AppDestination {
         override val route: String = "labels"
     }

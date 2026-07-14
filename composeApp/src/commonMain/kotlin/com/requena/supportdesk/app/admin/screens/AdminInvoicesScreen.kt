@@ -1,10 +1,14 @@
 package com.requena.supportdesk.app.admin.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -57,12 +61,14 @@ import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
 import com.requena.supportdesk.features.invoices.domain.model.Invoice
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceStatus
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
+import com.requena.supportdesk.core.utils.matchesQuery
 import com.requena.supportdesk.core.utils.toFixedString
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -263,8 +269,7 @@ private fun InvoiceListPane(
     val filtered = remember(state.invoices, searchQuery, statusFilter) {
         state.invoices.filter { inv ->
             (statusFilter == null || inv.status == statusFilter) &&
-                (searchQuery.isBlank() || inv.invoiceNumber.contains(searchQuery, ignoreCase = true) ||
-                    inv.clientName.contains(searchQuery, ignoreCase = true))
+                (inv.invoiceNumber.matchesQuery(searchQuery) || inv.clientName.matchesQuery(searchQuery))
         }
     }
     val draft = state.invoices.count { it.status == InvoiceStatus.DRAFT }
@@ -326,77 +331,83 @@ private fun InvoiceDetailPane(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
 
-    if (invoice == null) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Selecciona una factura para ver el detalle.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
-    }
-
-    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
-
-        SectionCard(title = invoice.invoiceNumber, subtitle = invoice.clientName) {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    InvoiceStatusBadge(status = invoice.status)
-                    Text("Emitida: ${invoice.issuedAt}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                invoice.dueAt?.let { InfoRow(label = "Vencimiento", value = it) }
-                invoice.sentAt?.let { InfoRow(label = "Enviada el", value = formatSupportDeskDateTime(it)) }
-                invoice.paidAt?.let { InfoRow(label = "Pagada el", value = formatSupportDeskDateTime(it)) }
+    Crossfade(
+        targetState = invoice,
+        modifier = modifier.fillMaxSize(),
+        animationSpec = tween(SupportDeskMotion.regular),
+        label = "invoiceDetailPane",
+    ) { current ->
+        if (current == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Selecciona una factura para ver el detalle.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }
+        } else {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
 
-        SectionCard(title = "Líneas", subtitle = "Servicios facturados") {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Text("Descripción", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Cant.", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(48.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Precio", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(72.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Subtotal", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(80.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                invoice.items.sortedBy { it.sortOrder }.forEach { item ->
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(item.description, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("${item.quantity.toFixedString(1)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(48.dp))
-                        Text("$${item.unitPrice.toFixedString(2)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(72.dp))
-                        Text("$${item.subtotal.toFixedString(2)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp))
+                SectionCard(title = current.invoiceNumber, subtitle = current.clientName) {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            InvoiceStatusBadge(status = current.status)
+                            Text("Emitida: ${current.issuedAt}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        current.dueAt?.let { InfoRow(label = "Vencimiento", value = it) }
+                        current.sentAt?.let { InfoRow(label = "Enviada el", value = formatSupportDeskDateTime(it)) }
+                        current.paidAt?.let { InfoRow(label = "Pagada el", value = formatSupportDeskDateTime(it)) }
                     }
                 }
-            }
-        }
 
-        SectionCard(title = "Totales") {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                InfoRow(label = "Subtotal", value = "$${invoice.subtotal.toFixedString(2)}")
-                InfoRow(label = "Impuesto (${invoice.taxPercent}%)", value = "$${invoice.taxAmount.toFixedString(2)}")
-                Spacer(Modifier.height(spacing.xs))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("$${invoice.total.toFixedString(2)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                SectionCard(title = "Líneas", subtitle = "Servicios facturados") {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text("Descripción", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Cant.", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(48.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Precio", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(72.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Subtotal", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(80.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        current.items.sortedBy { it.sortOrder }.forEach { item ->
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(item.description, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text("${item.quantity.toFixedString(1)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(48.dp))
+                                Text("$${item.unitPrice.toFixedString(2)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(72.dp))
+                                Text("$${item.subtotal.toFixedString(2)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp))
+                            }
+                        }
+                    }
                 }
-            }
-        }
 
-        invoice.notes?.takeIf { it.isNotBlank() }?.let { notes ->
-            SectionCard(title = "Notas") { Text(notes, style = MaterialTheme.typography.bodyMedium) }
-        }
+                SectionCard(title = "Totales") {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                        InfoRow(label = "Subtotal", value = "$${current.subtotal.toFixedString(2)}")
+                        InfoRow(label = "Impuesto (${current.taxPercent}%)", value = "$${current.taxAmount.toFixedString(2)}")
+                        Spacer(Modifier.height(spacing.xs))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("$${current.total.toFixedString(2)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
 
-        SectionCard(title = "Acciones") {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                PrimaryButton(text = "Descargar PDF", onClick = { onEvent(InvoicesUiEvent.DownloadPdf(invoice.id)) }, fullWidth = true)
-                when (invoice.status) {
-                    InvoiceStatus.DRAFT -> {
-                        PrimaryButton(text = "Enviar al cliente", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(invoice.id, InvoiceStatus.SENT)) }, fullWidth = true)
-                        SecondaryButton(text = "Cancelar factura", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(invoice.id, InvoiceStatus.CANCELLED)) }, fullWidth = true)
+                current.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                    SectionCard(title = "Notas") { Text(notes, style = MaterialTheme.typography.bodyMedium) }
+                }
+
+                SectionCard(title = "Acciones") {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        PrimaryButton(text = "Descargar PDF", onClick = { onEvent(InvoicesUiEvent.DownloadPdf(current.id)) }, fullWidth = true)
+                        when (current.status) {
+                            InvoiceStatus.DRAFT -> {
+                                PrimaryButton(text = "Enviar al cliente", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(current.id, InvoiceStatus.SENT)) }, fullWidth = true)
+                                SecondaryButton(text = "Cancelar factura", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(current.id, InvoiceStatus.CANCELLED)) }, fullWidth = true)
+                            }
+                            InvoiceStatus.SENT -> {
+                                PrimaryButton(text = "Marcar como pagada", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(current.id, InvoiceStatus.PAID)) }, fullWidth = true)
+                                SecondaryButton(text = "Cancelar factura", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(current.id, InvoiceStatus.CANCELLED)) }, fullWidth = true)
+                            }
+                            InvoiceStatus.PAID, InvoiceStatus.CANCELLED -> Unit
+                        }
                     }
-                    InvoiceStatus.SENT -> {
-                        PrimaryButton(text = "Marcar como pagada", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(invoice.id, InvoiceStatus.PAID)) }, fullWidth = true)
-                        SecondaryButton(text = "Cancelar factura", onClick = { onEvent(InvoicesUiEvent.UpdateStatus(invoice.id, InvoiceStatus.CANCELLED)) }, fullWidth = true)
-                    }
-                    InvoiceStatus.PAID, InvoiceStatus.CANCELLED -> Unit
                 }
             }
         }
@@ -425,18 +436,25 @@ fun InvoiceStatusBadge(status: InvoiceStatus, modifier: Modifier = Modifier) {
 private fun InvoiceListItem(invoice: Invoice, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val spacing = SupportDeskThemeTokens.spacing
     val elevations = SupportDeskThemeTokens.elevations
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
 
     val backgroundColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface,
-        animationSpec = tween(durationMillis = 180),
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            else -> MaterialTheme.colorScheme.surface
+        },
+        animationSpec = tween(durationMillis = SupportDeskMotion.quick),
     )
     val elevation by animateDpAsState(
-        targetValue = if (selected) elevations.raised else elevations.subtle,
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (selected) elevations.raised else if (hovered) elevations.subtle * 2f else elevations.subtle,
+        animationSpec = tween(durationMillis = SupportDeskMotion.quick),
     )
 
     Surface(onClick = onClick, shape = RoundedCornerShape(8.dp), shadowElevation = elevation,
-        color = backgroundColor, modifier = modifier.fillMaxWidth().animateContentSize()) {
+        color = backgroundColor, interactionSource = interactionSource,
+        modifier = modifier.fillMaxWidth().hoverable(interactionSource).animateContentSize()) {
         Column(modifier = Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(invoice.invoiceNumber, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
