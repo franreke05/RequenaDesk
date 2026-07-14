@@ -9,6 +9,9 @@ import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.requireAdminIdentity
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
+import com.requena.supportdesk.server.utils.isAdmin
+import com.requena.supportdesk.server.utils.visibleClientIdsFor
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -22,24 +25,44 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.time.LocalDate
+
+private const val clientDailyUrgentTicketLimit = 3
 
 fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/tickets") {
         get {
-            call.requireAdminIdentity(tokenService) ?: return@get
-            call.respondJson(body = successResponse("/tickets", ticketsJson(service.tickets())))
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
+            val visibleClientIds = service.visibleClientIdsFor(identity)
+            call.respondJson(
+                body = successResponse(
+                    "/tickets",
+                    ticketsJson(service.tickets().filter { it.clientId in visibleClientIds }),
+                ),
+            )
         }
         get("/{id}") {
-            call.requireAdminIdentity(tokenService) ?: return@get
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val id = call.parameters["id"] ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
-            val ticket = service.ticket(id) ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
+            val ticket = service.ticket(id)
+                ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
+                ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             call.respondJson(body = successResponse("/tickets/$id", ticketJson(ticket)))
         }
         post {
-            call.requireAdminIdentity(tokenService) ?: return@post
-            val request = call.receiveOrDefault(CreateTicketRequest())
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@post
+            val received = call.receiveOrDefault(CreateTicketRequest())
+            val request = if (identity.isAdmin) {
+                received
+            } else {
+                received.copy(
+                    clientId = identity.clientId.orEmpty(),
+                    requesterId = identity.userId,
+                )
+            }
             if (
                 request.clientId.isBlank() ||
+                request.clientId !in service.visibleClientIdsFor(identity) ||
                 request.subject.isBlank() ||
                 request.description.isBlank() ||
                 request.category !in allowedTicketCategories ||
@@ -48,11 +71,28 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             ) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket payload"))
             }
+            if (!identity.isAdmin && request.priority == "URGENT") {
+                val today = LocalDate.now().toString()
+                val urgentToday = service.tickets().count {
+                    it.clientId == identity.clientId &&
+                        it.priority == "URGENT" &&
+                        it.createdAt.take(10) == today
+                }
+                if (urgentToday >= clientDailyUrgentTicketLimit) {
+                    return@post call.respondJson(
+                        HttpStatusCode.Conflict,
+                        errorResponse("Daily urgent ticket limit reached"),
+                    )
+                }
+            }
             call.respondJson(HttpStatusCode.Created, successResponse("/tickets", ticketJson(service.createdTicket(request))))
         }
         post("/{id}/messages") {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@post
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@post
             val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            service.ticket(id)
+                ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
+                ?: return@post call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             val request = call.receiveOrDefault(CreateTicketMessageRequest()).copy(authorId = identity.userId)
             if (request.authorId.isBlank() || request.body.isBlank()) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket message payload"))
@@ -71,8 +111,11 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             )
         }
         patch("/{id}/status") {
-            call.requireAdminIdentity(tokenService) ?: return@patch
+            val identity = call.requireAdminIdentity(tokenService) ?: return@patch
             val id = call.parameters["id"] ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            service.ticket(id)
+                ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
+                ?: return@patch call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             val request = call.receiveOrDefault(UpdateTicketStatusRequest())
             if (request.status !in allowedStatuses) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket status"))
@@ -90,8 +133,11 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             )
         }
         patch("/{id}/priority") {
-            call.requireAdminIdentity(tokenService) ?: return@patch
+            val identity = call.requireAdminIdentity(tokenService) ?: return@patch
             val id = call.parameters["id"] ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            service.ticket(id)
+                ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
+                ?: return@patch call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             val request = call.receiveOrDefault(UpdateTicketPriorityRequest())
             if (request.priority !in allowedPriorities) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid ticket priority"))
@@ -111,6 +157,9 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         post("/{id}/attachments") {
             val identity = call.requireAdminIdentity(tokenService) ?: return@post
             val id = call.parameters["id"] ?: return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing ticket id"))
+            service.ticket(id)
+                ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
+                ?: return@post call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
             val request = call.receiveOrDefault(UploadAttachmentRequest()).copy(uploadedBy = identity.userId)
             if (
                 request.uploadedBy.isBlank() ||

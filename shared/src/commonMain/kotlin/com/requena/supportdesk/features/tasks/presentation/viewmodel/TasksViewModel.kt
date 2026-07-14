@@ -201,6 +201,7 @@ class TasksViewModel(
             }
         }
         launch {
+            _state.update { it.copy(errorMessage = null, lastCreatedTaskId = null) }
             when (
                 val result = createTaskUseCase(
                     TaskDraft(
@@ -213,13 +214,16 @@ class TasksViewModel(
                 )
             ) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
-                is AppResult.Success -> loadWorkspace(
-                    selectedTaskId = result.data.id,
-                    selectedCategoryId = result.data.categoryId,
-                    selectedClientFilterId = result.data.clientId,
-                    selectedDashboardClientId = result.data.clientId ?: state.value.selectedDashboardClientId,
-                    statusMessage = "Tarea creada",
-                )
+                is AppResult.Success -> {
+                    _state.update { it.copy(lastCreatedTaskId = result.data.id) }
+                    loadWorkspace(
+                        selectedTaskId = result.data.id,
+                        selectedCategoryId = result.data.categoryId,
+                        selectedClientFilterId = result.data.clientId,
+                        selectedDashboardClientId = result.data.clientId ?: state.value.selectedDashboardClientId,
+                        statusMessage = "Tarea creada",
+                    )
+                }
             }
         }
     }
@@ -255,7 +259,7 @@ class TasksViewModel(
             input = TaskUpdateInput(
                 title = cleanTitle,
                 description = event.description.trim(),
-                clientId = current.clientId,
+                clientId = event.clientId,
                 categoryId = event.categoryId,
                 dueDate = dueDate,
                 completed = current.completed,

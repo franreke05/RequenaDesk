@@ -69,9 +69,13 @@ fun AdminDashboardScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = clients.firstOrNull { it.id == tasksState.selectedDashboardClientId }
-    val globalSeconds = tasksState.logs.sumOf { it.seconds }
-    val globalBillableSeconds = tasksState.logs.filter { it.billable }.sumOf { it.seconds }
-    val clientLogs = tasksState.logs.filter { log ->
+    val currentMonth = tasksState.todayIsoDate.take(7)
+    val monthLogs = remember(tasksState.logs, currentMonth) {
+        tasksState.logs.filter { it.workDate.take(7) == currentMonth }
+    }
+    val globalSeconds = monthLogs.sumOf { it.seconds }
+    val globalBillableSeconds = monthLogs.filter { it.billable }.sumOf { it.seconds }
+    val clientLogs = monthLogs.filter { log ->
         tasksState.selectedDashboardClientId == null || log.clientId == tasksState.selectedDashboardClientId
     }
     val clientSeconds = clientLogs.sumOf { it.seconds }
@@ -597,8 +601,8 @@ private fun CompactCalendarDayCell(
     Box(
         modifier = modifier
             .aspectRatio(1.1f)
-            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-            .background(backgroundColor, RoundedCornerShape(14.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .background(backgroundColor, RoundedCornerShape(8.dp))
             .clickable(enabled = !day.isPast, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 5.dp),
     ) {

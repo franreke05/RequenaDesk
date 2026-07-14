@@ -58,6 +58,19 @@ class ApplicationTest {
     }
 
     @Test
+    fun testHealthEndpointsReportLiveAndReady() = testApplication {
+        application { testModule() }
+
+        val liveResponse = client.get("/health/live")
+        val readyResponse = client.get("/health/ready")
+
+        assertEquals(HttpStatusCode.OK, liveResponse.status)
+        assertEquals(HttpStatusCode.OK, readyResponse.status)
+        assertTrue(liveResponse.bodyAsText().contains("alive"))
+        assertTrue(readyResponse.bodyAsText().contains("database"))
+    }
+
+    @Test
     fun testTicketsRouteRequiresBearerToken() = testApplication {
         application { testModule() }
 
@@ -70,6 +83,66 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("SD-1001"))
         assertTrue(response.bodyAsText().contains("waitingOn"))
+        assertTrue(response.bodyAsText().contains("\"clientId\":\"client-1\""))
+        assertTrue(response.bodyAsText().contains("requesterName"))
+        assertTrue(response.bodyAsText().contains("createdAt"))
+    }
+
+    @Test
+    fun testClientPortalRoutesAreScopedToAuthenticatedClient() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+
+        val clientsBody = client.get("/admin/clients") { bearer(clientToken) }.bodyAsText()
+        val ticketsBody = client.get("/tickets") { bearer(clientToken) }.bodyAsText()
+        val tasksBody = client.get("/admin/tasks") { bearer(clientToken) }.bodyAsText()
+        val labelsBody = client.get("/admin/labels") { bearer(clientToken) }.bodyAsText()
+
+        assertTrue(clientsBody.contains("client-1"))
+        assertTrue(!clientsBody.contains("client-2"))
+        assertTrue(ticketsBody.contains("ticket-1"))
+        assertTrue(!ticketsBody.contains("ticket-2"))
+        assertTrue(tasksBody.contains("task-1"))
+        assertTrue(!tasksBody.contains("task-2"))
+        assertTrue(labelsBody.contains("label-1"))
+        assertTrue(!labelsBody.contains("label-2"))
+
+        val forbiddenStatusUpdate = client.patch("/tickets/ticket-1/status") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"status":"CLOSED"}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, forbiddenStatusUpdate.status)
+    }
+
+    @Test
+    fun testClientCreatedTaskCannotSpoofAnotherClient() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+
+        val response = client.post("/admin/tasks") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "title":"Tarea del portal",
+                  "description":"Creada por cliente",
+                  "clientId":"client-2",
+                  "labelId":"label-1"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, response.status)
+        assertTrue(response.bodyAsText().contains("\"clientId\":\"client-1\""))
     }
 
     @Test

@@ -21,6 +21,8 @@ dependencies {
     implementation(libs.postgresql)
     implementation(libs.jbcrypt)
     implementation(libs.hikaricp)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.database.postgresql)
     implementation(libs.ktor.serverCallLogging)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverCore)
@@ -29,4 +31,5 @@ dependencies {
     implementation(libs.ktor.serializationKotlinxJson)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.embedded.postgres)
 }

@@ -51,6 +51,30 @@ fun EmptyState(
 }
 
 @Composable
+fun ErrorState(
+    title: String = "No se pudieron cargar los datos",
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = SupportDeskThemeTokens.semanticColors.dangerContainer,
+        contentColor = SupportDeskThemeTokens.semanticColors.danger,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(SupportDeskThemeTokens.spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(SupportDeskThemeTokens.spacing.md),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            SecondaryButton(text = "Reintentar", onClick = onRetry)
+        }
+    }
+}
+
+@Composable
 fun SkeletonCard(
     modifier: Modifier = Modifier,
     height: Int = 96,
@@ -111,7 +135,7 @@ fun ConfirmDialog(
     title: String,
     message: String,
     confirmText: String,
-    dismissText: String = "Cancel",
+    dismissText: String = "Cancelar",
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {

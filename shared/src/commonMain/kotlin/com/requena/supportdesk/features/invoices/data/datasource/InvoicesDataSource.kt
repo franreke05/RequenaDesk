@@ -1,7 +1,6 @@
 package com.requena.supportdesk.features.invoices.data.datasource
 
-import com.requena.supportdesk.core.model.UserRole
-import com.requena.supportdesk.core.network.AdminSessionContext
+import com.requena.supportdesk.core.network.SupportDeskSessionManager
 import com.requena.supportdesk.core.network.jsonRequestBody
 import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
@@ -25,10 +24,10 @@ interface InvoicesDataSource {
 
 class RemoteInvoicesDataSource(
     private val httpClient: HttpClient,
+    private val sessionManager: SupportDeskSessionManager,
 ) : InvoicesDataSource {
 
-    private fun invoicesPath(): String =
-        if (AdminSessionContext.currentUser()?.role == UserRole.CLIENT) "/client/invoices" else "/admin/invoices"
+    private fun invoicesPath(): String = "/admin/invoices"
 
     override suspend fun getInvoices(): List<InvoiceDto> =
         httpClient.get("${supportDeskBaseUrl()}${invoicesPath()}").requireApiData()
@@ -46,6 +45,11 @@ class RemoteInvoicesDataSource(
             setBody(jsonRequestBody(request))
         }.requireApiData()
 
-    override suspend fun getPdfUrl(invoiceId: String): InvoicePdfUrlDto =
-        httpClient.get("${supportDeskBaseUrl()}${invoicesPath()}/$invoiceId/pdf").requireApiData()
+    override suspend fun getPdfUrl(invoiceId: String): InvoicePdfUrlDto {
+        val accessToken = sessionManager.currentAccessToken()
+            ?: error("No hay una sesion activa para abrir la factura.")
+        return InvoicePdfUrlDto(
+            url = "${supportDeskBaseUrl()}${invoicesPath()}/$invoiceId/pdf?access_token=$accessToken",
+        )
+    }
 }

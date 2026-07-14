@@ -42,6 +42,8 @@ class InMemorySupportDeskRepository(
         val name: String,
         val email: String,
         val password: String,
+        val role: String = "ADMIN",
+        val clientId: String? = null,
     )
 
     private val adminAccounts = listOf(
@@ -56,6 +58,14 @@ class InMemorySupportDeskRepository(
             name = "Admin Sanchez",
             email = "admin2@orykai.dev",
             password = "UnitTestAdminPassword2",
+        ),
+        LocalAdminAccount(
+            userId = "user-client",
+            name = "Ana Northwind",
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+            role = "CLIENT",
+            clientId = "client-1",
         ),
     )
 
@@ -180,7 +190,8 @@ class InMemorySupportDeskRepository(
                 userId = account.userId,
                 name = account.name,
                 email = account.email,
-                role = "ADMIN",
+                role = account.role,
+                clientId = account.clientId,
             )
         }
 
@@ -200,7 +211,8 @@ class InMemorySupportDeskRepository(
             userId = account.userId,
             name = account.name,
             email = account.email,
-            role = "ADMIN",
+            role = account.role,
+            clientId = account.clientId,
         )
     }
 
@@ -213,6 +225,7 @@ class InMemorySupportDeskRepository(
 
     override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = ServerTicketSnapshot(
         id = "ticket-created",
+        clientId = request.clientId,
         ticketNumber = "RDS-999999",
         subject = request.subject.ifBlank { "Nuevo ticket" },
         description = request.description.ifBlank { "Ticket creado en modo local." },
@@ -220,11 +233,21 @@ class InMemorySupportDeskRepository(
         affectedApp = request.affectedApp.ifBlank { "Assigned product" },
         platform = request.platform,
         appVersion = request.appVersion,
+        stepsToReproduce = request.stepsToReproduce,
         clientReference = request.clientReference,
         status = "OPEN",
         priority = request.priority,
         waitingOn = "ADMIN",
         resolutionSummary = null,
+        requesterId = request.requesterId ?: "user-client",
+        requesterName = clients.firstOrNull { it.id == request.clientId }?.contactName
+            ?: adminAccounts.firstOrNull { it.userId == request.requesterId }?.name
+            ?: "Cliente",
+        requesterEmail = clients.firstOrNull { it.id == request.clientId }?.email
+            ?: adminAccounts.firstOrNull { it.userId == request.requesterId }?.email
+            .orEmpty(),
+        createdAt = Instant.now().toString(),
+        updatedAt = Instant.now().toString(),
     )
 
     override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated =

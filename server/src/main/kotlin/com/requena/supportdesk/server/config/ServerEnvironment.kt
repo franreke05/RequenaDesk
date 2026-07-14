@@ -8,6 +8,7 @@ data class DatabaseSettings(
     val jdbcUrl: String,
     val username: String,
     val password: String,
+    val maximumPoolSize: Int = 5,
 )
 
 data class ServerEnvironment(
@@ -26,11 +27,17 @@ data class ServerEnvironment(
             val bootstrapAdminPassword = value("SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD", environment, properties)
             val bootstrapClientPassword = value("SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD", environment, properties)
             if (bootstrapDemoData) {
-                requireNotNull(bootstrapAdminPassword) {
+                require(!bootstrapAdminPassword.isNullOrBlank()) {
                     "SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD is required when SUPPORTDESK_BOOTSTRAP_DEMO_DATA=true."
                 }
-                requireNotNull(bootstrapClientPassword) {
+                require(!bootstrapClientPassword.isNullOrBlank()) {
                     "SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD is required when SUPPORTDESK_BOOTSTRAP_DEMO_DATA=true."
+                }
+                require(bootstrapAdminPassword.length >= MINIMUM_BOOTSTRAP_PASSWORD_LENGTH) {
+                    "SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD must contain at least $MINIMUM_BOOTSTRAP_PASSWORD_LENGTH characters."
+                }
+                require(bootstrapClientPassword.length >= MINIMUM_BOOTSTRAP_PASSWORD_LENGTH) {
+                    "SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD must contain at least $MINIMUM_BOOTSTRAP_PASSWORD_LENGTH characters."
                 }
             }
             return ServerEnvironment(
@@ -58,24 +65,46 @@ data class ServerEnvironment(
                 ?: value("DATABASE_PASSWORD", environment, properties)
 
             if (!rawUrl.isNullOrBlank()) {
-                val parsed = parseDatabaseUrl(rawUrl, username, password)
-                if (parsed != null) return parsed
+                return requireNotNull(parseDatabaseUrl(rawUrl, username, password)) {
+                    "Database URL is invalid or has no credentials. Use postgresql://user:password@host:port/database or provide DATABASE_USER and DATABASE_PASSWORD."
+                }.copy(maximumPoolSize = resolveMaximumPoolSize(environment, properties))
             }
 
             val host = value("SUPABASE_DB_HOST", environment, properties)
             val port = value("SUPABASE_DB_PORT", environment, properties) ?: "5432"
             val database = value("SUPABASE_DB_NAME", environment, properties) ?: "postgres"
 
+            val hasPartialSettings = listOf(host, username, password).any { !it.isNullOrBlank() }
+            if (hasPartialSettings) {
+                require(!host.isNullOrBlank() && !username.isNullOrBlank() && !password.isNullOrBlank()) {
+                    "Incomplete database configuration. Host, user and password are required."
+                }
+            }
+
+            val sslMode = value("SUPPORTDESK_DB_SSLMODE", environment, properties)
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: "require"
+
             return if (!host.isNullOrBlank() && !username.isNullOrBlank() && !password.isNullOrBlank()) {
                 DatabaseSettings(
-                    jdbcUrl = "jdbc:postgresql://$host:$port/$database?sslmode=require",
+                    jdbcUrl = "jdbc:postgresql://$host:$port/$database?sslmode=$sslMode",
                     username = username,
                     password = password,
+                    maximumPoolSize = resolveMaximumPoolSize(environment, properties),
                 )
             } else {
                 null
             }
         }
+
+        private fun resolveMaximumPoolSize(
+            environment: Map<String, String>,
+            properties: Map<String, String>,
+        ): Int = value("SUPPORTDESK_DB_MAX_POOL_SIZE", environment, properties)
+            ?.toIntOrNull()
+            ?.takeIf { it in 1..20 }
+            ?: 5
 
         private fun resolveAuthSettings(
             environment: Map<String, String>,
@@ -120,9 +149,13 @@ data class ServerEnvironment(
             explicitUsername: String?,
             explicitPassword: String?,
         ): DatabaseSettings? {
-            val normalized = rawUrl.removePrefix("jdbc:")
+            val normalized = rawUrl
+                .trim()
+                .removePrefix("jdbc:")
+                .replaceFirst("postgres://", "postgresql://")
+            if (!normalized.startsWith("postgresql://")) return null
+
             val uri = runCatching { URI(normalized) }.getOrNull() ?: return null
-            val scheme = if (normalized.startsWith("postgresql://")) "jdbc:postgresql://" else "jdbc:$normalized"
             val path = uri.path?.removePrefix("/")?.ifBlank { "postgres" } ?: "postgres"
             val query = uri.rawQuery?.let { "?$it" } ?: "?sslmode=require"
             val userInfoParts = uri.userInfo?.split(":", limit = 2).orEmpty()
@@ -132,10 +165,12 @@ data class ServerEnvironment(
             if (username.isNullOrBlank() || password.isNullOrBlank() || uri.host.isNullOrBlank()) return null
 
             return DatabaseSettings(
-                jdbcUrl = "$scheme${uri.host}:${if (uri.port == -1) 5432 else uri.port}/$path$query",
+                jdbcUrl = "jdbc:postgresql://${uri.host}:${if (uri.port == -1) 5432 else uri.port}/$path$query",
                 username = username,
                 password = password,
             )
         }
+
+        private const val MINIMUM_BOOTSTRAP_PASSWORD_LENGTH = 12
     }
 }

@@ -5,6 +5,9 @@ import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.requireAdminIdentity
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
+import com.requena.supportdesk.server.utils.isAdmin
+import com.requena.supportdesk.server.utils.ownerAdminIdFor
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -19,8 +22,10 @@ import io.ktor.server.routing.route
 fun Route.timeLogRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/time-logs") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
-            val clientId = call.request.queryParameters["clientId"]
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
+            val ownerAdminId = service.ownerAdminIdFor(identity)
+                ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
+            val clientId = if (identity.isAdmin) call.request.queryParameters["clientId"] else identity.clientId
             val taskId = call.request.queryParameters["taskId"]
             call.respondJson(
                 body = successResponse("/admin/time-logs", timeLogsJson(service.timeLogs(clientId, taskId, ownerAdminId))),

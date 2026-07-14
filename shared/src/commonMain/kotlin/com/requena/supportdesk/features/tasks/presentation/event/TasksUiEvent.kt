@@ -24,6 +24,7 @@ sealed interface TasksUiEvent {
         val description: String,
         val categoryId: String,
         val dueDate: String? = null,
+        val clientId: String? = null,
     ) : TasksUiEvent
     data class DeleteTask(val taskId: String) : TasksUiEvent
     data class ToggleTaskCompletion(val taskId: String) : TasksUiEvent

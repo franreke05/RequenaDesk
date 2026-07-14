@@ -14,6 +14,7 @@ import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 object SupportDeskMapper {
     fun ticket(entity: TicketEntity): ServerTicketSnapshot = ServerTicketSnapshot(
         id = entity.id,
+        clientId = entity.clientId,
         ticketNumber = entity.ticketNumber,
         subject = entity.subject,
         description = entity.description,
@@ -21,11 +22,20 @@ object SupportDeskMapper {
         affectedApp = entity.affectedApp,
         platform = entity.platform,
         appVersion = entity.appVersion,
+        stepsToReproduce = entity.stepsToReproduce,
         clientReference = entity.clientReference,
         status = entity.status,
         priority = entity.priority,
         waitingOn = entity.waitingOn,
         resolutionSummary = entity.resolutionSummary,
+        requesterId = entity.requesterId,
+        requesterName = entity.requesterName,
+        requesterEmail = entity.requesterEmail,
+        assigneeId = entity.assigneeId,
+        assigneeName = entity.assigneeName,
+        assigneeEmail = entity.assigneeEmail,
+        createdAt = entity.createdAt,
+        updatedAt = entity.updatedAt,
     )
 
     fun client(entity: ClientEntity): ServerClientSnapshot = ServerClientSnapshot(

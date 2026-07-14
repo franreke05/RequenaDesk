@@ -67,7 +67,7 @@ object SupportDeskSharedModule {
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
     private val dashboardRepository = DashboardRepositoryImpl(RemoteDashboardDataSource(httpClient))
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
-    private val invoicesRepository = InvoicesRepositoryImpl(RemoteInvoicesDataSource(httpClient))
+    private val invoicesRepository = InvoicesRepositoryImpl(RemoteInvoicesDataSource(httpClient, sessionManager))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)

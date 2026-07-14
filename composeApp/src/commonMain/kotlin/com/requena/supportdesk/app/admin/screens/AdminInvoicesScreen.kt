@@ -30,7 +30,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,10 +61,8 @@ import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
 import com.requena.supportdesk.features.invoices.domain.model.Invoice
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceStatus
-import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
-import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.core.utils.toFixedString
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -75,23 +71,12 @@ import com.requena.supportdesk.core.utils.toFixedString
 fun AdminInvoicesScreen(
     clients: List<Client>,
     state: InvoicesUiState,
-    viewModel: InvoicesViewModel,
     onEvent: (InvoicesUiEvent) -> Unit,
     onNavigateToCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val uriHandler = LocalUriHandler.current
-
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                is InvoicesUiEffect.OpenPdfUrl -> uriHandler.openUri(effect.url)
-                is InvoicesUiEffect.ShowMessage -> Unit
-            }
-        }
-    }
-
+    var compactDetailVisible by remember { mutableStateOf(false) }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isSplitPane = maxWidth >= SupportDeskBreakpoints.adminSplitPane
         if (isSplitPane) {
@@ -106,7 +91,24 @@ fun AdminInvoicesScreen(
                 )
             }
         } else {
-            InvoiceListPane(state = state, onEvent = onEvent, onNavigateToCreate = onNavigateToCreate, modifier = Modifier.fillMaxSize())
+            if (compactDetailVisible && state.selectedInvoice != null) {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    SecondaryButton(text = "Volver al listado", onClick = { compactDetailVisible = false })
+                    InvoiceDetailPane(
+                        invoice = state.selectedInvoice,
+                        onEvent = onEvent,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                InvoiceListPane(
+                    state = state,
+                    onEvent = onEvent,
+                    onNavigateToCreate = onNavigateToCreate,
+                    onOpenDetail = { compactDetailVisible = true },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -116,6 +118,8 @@ fun AdminInvoicesScreen(
 @Composable
 fun AdminCreateInvoiceScreen(
     clients: List<Client>,
+    isSubmitting: Boolean,
+    errorMessage: String?,
     onBack: () -> Unit,
     onCreateInvoice: (CreateInvoiceInput) -> Unit,
     modifier: Modifier = Modifier,
@@ -137,7 +141,12 @@ fun AdminCreateInvoiceScreen(
     val tax = subtotal * ((taxPercent.toDoubleOrNull() ?: 0.0) / 100.0)
     val total = subtotal + tax
     val isValid = selectedClientId.isNotBlank() && issuedAt.isNotBlank() &&
-        items.isNotEmpty() && items.all { it.description.isNotBlank() && (it.unitPrice.toDoubleOrNull() ?: 0.0) > 0.0 }
+        (taxPercent.toDoubleOrNull() ?: -1.0) >= 0.0 &&
+        items.isNotEmpty() && items.all {
+            it.description.isNotBlank() &&
+                (it.quantity.toDoubleOrNull() ?: 0.0) > 0.0 &&
+                (it.unitPrice.toDoubleOrNull() ?: 0.0) > 0.0
+        }
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(spacing.md),
@@ -207,9 +216,17 @@ fun AdminCreateInvoiceScreen(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), modifier = Modifier.fillMaxWidth()) {
+            errorMessage?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             SecondaryButton(text = "Cancelar", onClick = onBack, modifier = Modifier.weight(1f))
             PrimaryButton(
-                text = "Crear borrador", enabled = isValid,
+                text = "Crear borrador", enabled = isValid && !isSubmitting,
                 onClick = {
                     onCreateInvoice(CreateInvoiceInput(
                         clientId = selectedClientId, issuedAt = issuedAt,
@@ -217,12 +234,13 @@ fun AdminCreateInvoiceScreen(
                         taxPercent = taxPercent.toDoubleOrNull() ?: 0.0,
                         items = items.mapIndexed { idx, it ->
                             CreateInvoiceItemInput(description = it.description,
-                                quantity = it.quantity.toDoubleOrNull() ?: 1.0,
-                                unitPrice = it.unitPrice.toDoubleOrNull() ?: 0.0, sortOrder = idx)
+                                quantity = it.quantity.toDouble(),
+                                unitPrice = it.unitPrice.toDouble(), sortOrder = idx)
                         },
                     ))
                 },
                 modifier = Modifier.weight(1f),
+                isLoading = isSubmitting,
             )
         }
     }
@@ -235,6 +253,7 @@ private fun InvoiceListPane(
     state: InvoicesUiState,
     onEvent: (InvoicesUiEvent) -> Unit,
     onNavigateToCreate: () -> Unit,
+    onOpenDetail: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -286,7 +305,10 @@ private fun InvoiceListPane(
                     InvoiceListItem(
                         invoice = invoice,
                         selected = state.selectedInvoice?.id == invoice.id,
-                        onClick = { onEvent(InvoicesUiEvent.SelectInvoice(invoice.id)) },
+                        onClick = {
+                            onEvent(InvoicesUiEvent.SelectInvoice(invoice.id))
+                            onOpenDetail()
+                        },
                     )
                 }
             }
@@ -413,7 +435,7 @@ private fun InvoiceListItem(invoice: Invoice, selected: Boolean, onClick: () -> 
         animationSpec = tween(durationMillis = 200),
     )
 
-    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), shadowElevation = elevation,
+    Surface(onClick = onClick, shape = RoundedCornerShape(8.dp), shadowElevation = elevation,
         color = backgroundColor, modifier = modifier.fillMaxWidth().animateContentSize()) {
         Column(modifier = Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

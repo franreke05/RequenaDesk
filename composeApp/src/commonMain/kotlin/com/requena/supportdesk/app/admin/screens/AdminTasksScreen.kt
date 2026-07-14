@@ -161,11 +161,8 @@ fun AdminTasksScreen(
                         categories = tasksState.categories,
                         selectedPlanningDay = tasksState.selectedDay,
                         todayIsoDate = tasksState.todayIsoDate,
-                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
-                        },
-                        onUpdateTaskClient = { taskId, clientId ->
-                            onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
+                        onUpdateTask = { taskId, title, description, categoryId, dueDate, clientId ->
+                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate, clientId))
                         },
                         onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
                         onDeleteTask = { onTasksEvent(TasksUiEvent.DeleteTask(it)) },
@@ -193,11 +190,8 @@ fun AdminTasksScreen(
                         categories = tasksState.categories,
                         selectedPlanningDay = tasksState.selectedDay,
                         todayIsoDate = tasksState.todayIsoDate,
-                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
-                        },
-                        onUpdateTaskClient = { taskId, clientId ->
-                            onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
+                        onUpdateTask = { taskId, title, description, categoryId, dueDate, clientId ->
+                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate, clientId))
                         },
                         onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
                         onDeleteTask = { onTasksEvent(TasksUiEvent.DeleteTask(it)) },
@@ -466,8 +460,7 @@ private fun TaskEditorPane(
     categories: List<TaskCategory>,
     selectedPlanningDay: String?,
     todayIsoDate: String,
-    onUpdateTask: (String, String, String, String, String?) -> Unit,
-    onUpdateTaskClient: (String, String?) -> Unit,
+    onUpdateTask: (String, String, String, String, String?, String?) -> Unit,
     onToggleCompleted: (String) -> Unit,
     onDeleteTask: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -547,8 +540,14 @@ private fun TaskEditorPane(
                 PrimaryButton(
                     text = "Guardar",
                     onClick = {
-                        onUpdateTask(task.id, title, description, selectedCategoryId, dueDate.takeIf { it.isNotBlank() })
-                        onUpdateTaskClient(task.id, selectedClientId.takeUnless { it == "none" })
+                        onUpdateTask(
+                            task.id,
+                            title,
+                            description,
+                            selectedCategoryId,
+                            dueDate.takeIf { it.isNotBlank() },
+                            selectedClientId.takeUnless { it == "none" },
+                        )
                     },
                     enabled = title.isNotBlank() && selectedCategoryId.isNotBlank(),
                     modifier = Modifier.weight(1f),
@@ -891,7 +890,7 @@ private fun TaskCalendarDayCell(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
         color = backgroundColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -899,7 +898,7 @@ private fun TaskCalendarDayCell(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
                 .clickable(enabled = !day.isPast, onClick = onClick)
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center,

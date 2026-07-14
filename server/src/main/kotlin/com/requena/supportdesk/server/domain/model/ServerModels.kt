@@ -20,6 +20,7 @@ data class ServerAuthIdentity(
 
 data class ServerTicketSnapshot(
     val id: String,
+    val clientId: String,
     val ticketNumber: String,
     val subject: String,
     val description: String,
@@ -27,11 +28,60 @@ data class ServerTicketSnapshot(
     val affectedApp: String,
     val platform: String,
     val appVersion: String? = null,
+    val stepsToReproduce: String? = null,
     val clientReference: String? = null,
     val status: String,
     val priority: String,
     val waitingOn: String,
     val resolutionSummary: String? = null,
+    val requesterId: String,
+    val requesterName: String,
+    val requesterEmail: String,
+    val assigneeId: String? = null,
+    val assigneeName: String? = null,
+    val assigneeEmail: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val messages: List<ServerTicketMessageSnapshot> = emptyList(),
+    val internalComments: List<ServerInternalCommentSnapshot> = emptyList(),
+    val events: List<ServerTicketEventSnapshot> = emptyList(),
+    val attachments: List<ServerTicketAttachmentSnapshot> = emptyList(),
+)
+
+data class ServerTicketMessageSnapshot(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val body: String,
+    val createdAt: String,
+)
+
+data class ServerInternalCommentSnapshot(
+    val id: String,
+    val ticketId: String,
+    val authorId: String,
+    val authorName: String,
+    val body: String,
+    val createdAt: String,
+)
+
+data class ServerTicketEventSnapshot(
+    val id: String,
+    val ticketId: String,
+    val type: String,
+    val description: String,
+    val actorName: String,
+    val createdAt: String,
+)
+
+data class ServerTicketAttachmentSnapshot(
+    val id: String,
+    val fileName: String,
+    val contentType: String,
+    val sizeBytes: Long,
+    val uploadedBy: String,
+    val uploadedAt: String,
 )
 
 data class ServerClientSnapshot(

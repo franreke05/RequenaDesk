@@ -23,7 +23,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.screens.ClientAccountScreen
@@ -36,6 +35,7 @@ import com.requena.supportdesk.app.client.screens.ClientServiceScreen
 import com.requena.supportdesk.app.client.screens.ClientTasksScreen
 import com.requena.supportdesk.app.client.screens.ClientTicketsScreen
 import com.requena.supportdesk.core.model.Ticket
+import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.time.currentIsoDate
@@ -51,6 +51,16 @@ import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
 import kotlinx.coroutines.delay
+import com.composables.icons.lucide.Activity
+import com.composables.icons.lucide.Columns3
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Headphones
+import com.composables.icons.lucide.House
+import com.composables.icons.lucide.ListTodo
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ReceiptText
+import com.composables.icons.lucide.Ticket
+import com.composables.icons.lucide.UserRound
 
 const val ClientDailyUrgentLimit = 3
 const val ClientDailyTaskLimit = 5
@@ -70,15 +80,15 @@ data class ClientActivityItem(
 enum class ClientActivityType { CREATED, STATUS_CHANGE, TIME_LOGGED, RESOLVED, CLOSED, RATED }
 
 private val clientNavItems = listOf(
-    NavigationItemSpec(ClientDestination.HOME, "Inicio", "Vista general"),
-    NavigationItemSpec(ClientDestination.NEW_TICKET, "Nuevo ticket", "Abrir soporte"),
-    NavigationItemSpec(ClientDestination.TICKETS, "Tickets", "Historial"),
-    NavigationItemSpec(ClientDestination.TASKS, "Tareas", "Lista diaria"),
-    NavigationItemSpec(ClientDestination.BOARD, "Tablero", "Vista kanban"),
-    NavigationItemSpec(ClientDestination.SERVICE, "Mi Servicio", "Resumen de soporte"),
-    NavigationItemSpec(ClientDestination.ACTIVITY, "Actividad", "Historial de eventos"),
-    NavigationItemSpec(ClientDestination.ACCOUNT, "Mi Cuenta", "Perfil y acceso"),
-    NavigationItemSpec(ClientDestination.INVOICES, "Facturas", "Mis pagos"),
+    NavigationItemSpec(ClientDestination.HOME, "Inicio", "Vista general", Lucide.House),
+    NavigationItemSpec(ClientDestination.NEW_TICKET, "Nuevo ticket", "Abrir soporte", Lucide.Plus),
+    NavigationItemSpec(ClientDestination.TICKETS, "Tickets", "Historial", Lucide.Ticket),
+    NavigationItemSpec(ClientDestination.TASKS, "Tareas", "Lista diaria", Lucide.ListTodo),
+    NavigationItemSpec(ClientDestination.BOARD, "Tablero", "Vista kanban", Lucide.Columns3),
+    NavigationItemSpec(ClientDestination.SERVICE, "Mi Servicio", "Resumen de soporte", Lucide.Headphones),
+    NavigationItemSpec(ClientDestination.ACTIVITY, "Actividad", "Historial de eventos", Lucide.Activity),
+    NavigationItemSpec(ClientDestination.ACCOUNT, "Mi Cuenta", "Perfil y acceso", Lucide.UserRound),
+    NavigationItemSpec(ClientDestination.INVOICES, "Facturas", "Mis pagos", Lucide.ReceiptText),
 )
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -194,6 +204,7 @@ fun ClientNotice(message: String, isError: Boolean) {
 fun ClientPortalScreen(
     clientName: String,
     companyName: String = "",
+    client: Client? = null,
     state: TicketsUiState,
     onEvent: (TicketsUiEvent) -> Unit,
     onRefresh: () -> Unit,
@@ -216,22 +227,31 @@ fun ClientPortalScreen(
     }
     var destination by remember { mutableStateOf(ClientDestination.HOME) }
 
+    LaunchedEffect(destination) {
+        if (destination == ClientDestination.INVOICES) {
+            onInvoicesEvent(InvoicesUiEvent.Load)
+        }
+    }
+
     LaunchedEffect(clientId) {
         onTasksEvent(TasksUiEvent.SelectDashboardClient(clientId))
     }
+    val portalTickets = state.allTickets.ifEmpty { state.tickets }
     val clientTasks = tasksState.dashboardClientTasks
     val todayTaskCount = remember(clientTasks, today) {
-        clientTasks.count { it.createdAt.take(10) == today }
+        clientTasks.count { (it.dueDate ?: it.createdAt.take(10)) == today }
     }
     val todayTasksDone = remember(clientTasks, today) {
-        clientTasks.count { it.completed && it.createdAt.take(10) == today }
+        clientTasks.count { it.completed && (it.dueDate ?: it.createdAt.take(10)) == today }
     }
 
-    val todayUrgentCount = remember(state.tickets, today) {
-        state.tickets.count { it.createdAt.take(10) == today && it.priority == TicketPriority.URGENT }
+    val todayUrgentCount = remember(portalTickets, today) {
+        portalTickets.count { it.createdAt.take(10) == today && it.priority == TicketPriority.URGENT }
     }
-    val visibleEntries = remember(state.tickets) { state.tickets.flatMap { it.timeEntries } }
-    val openCount = remember(state.tickets) { state.tickets.count { it.status != TicketStatus.CLOSED } }
+    val visibleEntries = remember(tasksState.logs, clientId) {
+        tasksState.logs.filter { clientId == null || it.clientId == clientId }
+    }
+    val openCount = remember(portalTickets) { portalTickets.count { it.status != TicketStatus.CLOSED } }
     val monthlyMinutes = remember(visibleEntries, today) {
         visibleEntries.filter { it.workDate.take(7) == today.take(7) }.sumOf { it.minutes }
     }
@@ -245,7 +265,7 @@ fun ClientPortalScreen(
     val lastMonthMinutes = remember(visibleEntries, lastMonthPrefix) {
         visibleEntries.filter { it.workDate.take(7) == lastMonthPrefix }.sumOf { it.minutes }
     }
-    val allActivityItems = remember(state.tickets) { buildActivityItems(state.tickets) }
+    val allActivityItems = remember(portalTickets) { buildActivityItems(portalTickets) }
 
     // Empresa (company name) es el campo principal; clientName es el nombre de contacto
     val displayCompany = companyName.ifBlank { clientName }
@@ -254,15 +274,7 @@ fun ClientPortalScreen(
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f),
-                        MaterialTheme.colorScheme.background,
-                    ),
-                ),
-            ),
+            .background(MaterialTheme.colorScheme.background),
     ) {
         AppSidebar(
             brandTitle = displayCompany,
@@ -293,21 +305,23 @@ fun ClientPortalScreen(
                 ClientDestination.HOME -> ClientHomeScreen(
                     clientName = displayCompany,
                     contactName = displayContact,
-                    allTickets = state.tickets,
+                    allTickets = portalTickets,
                     openCount = openCount,
                     monthlyMinutes = monthlyMinutes,
                     todayUrgentCount = todayUrgentCount,
                     todayTaskCount = todayTaskCount,
                     todayTasksDone = todayTasksDone,
-                    recentTickets = state.tickets.sortedByDescending { it.updatedAt }.take(3),
+                    recentTickets = portalTickets.sortedByDescending { it.updatedAt }.take(3),
                     isLoading = state.isLoading,
                     errorMessage = state.errorMessage,
                     onNavigate = { destination = it },
                 )
                 ClientDestination.NEW_TICKET -> ClientNewTicketScreen(
+                    clientId = clientId,
                     urgentToday = todayUrgentCount,
                     isLoading = state.isLoading,
                     errorMessage = state.errorMessage,
+                    lastCreatedTicketId = state.lastCreatedTicketId,
                     onEvent = onEvent,
                 )
                 ClientDestination.TICKETS -> ClientTicketsScreen(
@@ -322,14 +336,18 @@ fun ClientPortalScreen(
                     onEvent = onTasksEvent,
                 )
                 ClientDestination.BOARD -> ClientBoardScreen(
-                    tickets = state.tickets,
+                    tickets = portalTickets,
+                    isLoading = state.isLoading,
+                    errorMessage = state.errorMessage,
+                    onRetry = onRefresh,
                     onTicketClick = { ticketId ->
                         onEvent(TicketsUiEvent.SelectTicket(ticketId))
                         destination = ClientDestination.TICKETS
                     },
                 )
                 ClientDestination.SERVICE -> ClientServiceScreen(
-                    tickets = state.tickets,
+                    tickets = portalTickets,
+                    logs = visibleEntries,
                     today = today,
                     lastMonthMinutes = lastMonthMinutes,
                 )
@@ -339,7 +357,9 @@ fun ClientPortalScreen(
                 ClientDestination.ACCOUNT -> ClientAccountScreen(
                     clientName = displayCompany,
                     contactName = displayContact,
-                    tickets = state.tickets,
+                    client = client,
+                    tickets = portalTickets,
+                    logs = visibleEntries,
                     today = today,
                     onRefresh = onRefresh,
                     onSignOut = onSignOut,

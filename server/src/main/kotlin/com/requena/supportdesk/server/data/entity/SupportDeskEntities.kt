@@ -2,6 +2,7 @@ package com.requena.supportdesk.server.data.entity
 
 data class TicketEntity(
     val id: String,
+    val clientId: String,
     val ticketNumber: String,
     val subject: String,
     val description: String,
@@ -9,11 +10,20 @@ data class TicketEntity(
     val affectedApp: String,
     val platform: String,
     val appVersion: String? = null,
+    val stepsToReproduce: String? = null,
     val clientReference: String? = null,
     val status: String,
     val priority: String,
     val waitingOn: String,
     val resolutionSummary: String? = null,
+    val requesterId: String,
+    val requesterName: String,
+    val requesterEmail: String,
+    val assigneeId: String? = null,
+    val assigneeName: String? = null,
+    val assigneeEmail: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
 )
 
 data class ClientEntity(

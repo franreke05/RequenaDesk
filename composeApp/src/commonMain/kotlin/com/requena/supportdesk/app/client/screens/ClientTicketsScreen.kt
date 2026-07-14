@@ -49,7 +49,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -89,8 +88,9 @@ fun ClientTicketsScreen(
     val spacing = SupportDeskThemeTokens.spacing
     val statusOptions = remember { TicketStatus.entries.map { FilterOption(it, it.displayName()) } }
     val priorityOptions = remember { TicketPriority.entries.map { FilterOption(it, it.displayName()) } }
-    val statusCounts = remember(state.tickets) { TicketStatus.entries.map { s -> s to state.tickets.count { it.status == s } } }
-    val priorityCounts = remember(state.tickets) { TicketPriority.entries.map { p -> p to state.tickets.count { it.priority == p } } }
+    val allTickets = state.allTickets.ifEmpty { state.tickets }
+    val statusCounts = remember(allTickets) { TicketStatus.entries.map { s -> s to allTickets.count { it.status == s } } }
+    val priorityCounts = remember(allTickets) { TicketPriority.entries.map { p -> p to allTickets.count { it.priority == p } } }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val stacked = maxWidth < SupportDeskBreakpoints.clientStacked
@@ -282,11 +282,15 @@ private fun ClientTicketGridPanel(
                     message = state.errorMessage ?: "Cuando abras un ticket aparecerá aquí.",
                 )
             } else {
+                val rows = (state.tickets.size + cols - 1) / cols
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(cols),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height((rows * 220).coerceAtLeast(300).dp),
                     verticalArrangement = Arrangement.spacedBy(spacing.sm),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    userScrollEnabled = false,
                 ) {
                     gridItems(state.tickets, key = { it.id }) { ticket ->
                         TicketGridCard(
@@ -326,7 +330,7 @@ private fun TicketGridCard(
             .fillMaxWidth()
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
         colors = CardDefaults.elevatedCardColors(
             containerColor = if (selected)
@@ -335,24 +339,7 @@ private fun TicketGridCard(
                 MaterialTheme.colorScheme.surface,
         ),
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().background(
-                if (selected)
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                        )
-                    )
-                else
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                        )
-                    )
-            ),
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(spacing.md),
                 verticalArrangement = Arrangement.spacedBy(spacing.xs),

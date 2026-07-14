@@ -1,0 +1,3 @@
+-- The invoices schema is managed automatically by Flyway when Ktor starts.
+-- Canonical migration:
+-- server/src/main/resources/db/migration/V2__invoices.sql

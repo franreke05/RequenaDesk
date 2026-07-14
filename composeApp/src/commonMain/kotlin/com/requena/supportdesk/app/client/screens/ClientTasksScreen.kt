@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,13 +63,20 @@ fun ClientTasksScreen(
     var newTitle by remember { mutableStateOf("") }
     var newNote by remember { mutableStateOf("") }
     val clientTasks = state.dashboardClientTasks
-    val todayTasks = remember(clientTasks, today) { clientTasks.filter { it.createdAt.take(10) == today } }
-    val pastTasks = remember(clientTasks, today) { clientTasks.filter { it.createdAt.take(10) != today } }
+    val todayTasks = remember(clientTasks, today) { clientTasks.filter { (it.dueDate ?: it.createdAt.take(10)) == today } }
+    val pastTasks = remember(clientTasks, today) { clientTasks.filter { (it.dueDate ?: it.createdAt.take(10)) != today } }
     val todayTaskCount = todayTasks.size
     val todayDone = remember(todayTasks) { todayTasks.count { it.completed } }
     val limitReached = todayTaskCount >= ClientDailyTaskLimit
     val taskProgress = (todayTaskCount.toFloat() / ClientDailyTaskLimit.toFloat()).coerceIn(0f, 1f)
     val defaultCategoryId = state.categories.firstOrNull()?.id
+
+    LaunchedEffect(state.lastCreatedTaskId) {
+        if (state.lastCreatedTaskId != null) {
+            newTitle = ""
+            newNote = ""
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -131,11 +139,10 @@ fun ClientTasksScreen(
                             categoryId = categoryId,
                         ),
                     )
-                    newTitle = ""
-                    newNote = ""
                 },
-                enabled = !limitReached && newTitle.isNotBlank() && defaultCategoryId != null,
+                enabled = !limitReached && !state.isLoading && newTitle.isNotBlank() && defaultCategoryId != null,
                 fullWidth = true,
+                isLoading = state.isLoading,
             )
         }
 

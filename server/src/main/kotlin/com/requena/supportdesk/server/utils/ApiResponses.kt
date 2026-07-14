@@ -70,6 +70,7 @@ fun ticketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {
 
 fun ticketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
     put("id", ticket.id)
+    put("clientId", ticket.clientId)
     put("ticketNumber", ticket.ticketNumber)
     put("subject", ticket.subject)
     put("description", ticket.description)
@@ -77,11 +78,68 @@ fun ticketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
     put("affectedApp", ticket.affectedApp)
     put("platform", ticket.platform)
     put("appVersion", ticket.appVersion)
+    put("stepsToReproduce", ticket.stepsToReproduce)
     put("clientReference", ticket.clientReference)
     put("status", ticket.status)
     put("priority", ticket.priority)
     put("waitingOn", ticket.waitingOn)
     put("resolutionSummary", ticket.resolutionSummary)
+    put("requesterId", ticket.requesterId)
+    put("requesterName", ticket.requesterName)
+    put("requesterEmail", ticket.requesterEmail)
+    put("assigneeId", ticket.assigneeId)
+    put("assigneeName", ticket.assigneeName)
+    put("assigneeEmail", ticket.assigneeEmail)
+    put("createdAt", ticket.createdAt)
+    put("updatedAt", ticket.updatedAt)
+    put("messages", buildJsonArray {
+        ticket.messages.forEach { message ->
+            add(buildJsonObject {
+                put("id", message.id)
+                put("ticketId", message.ticketId)
+                put("authorId", message.authorId)
+                put("authorName", message.authorName)
+                put("body", message.body)
+                put("createdAt", message.createdAt)
+            })
+        }
+    })
+    put("internalComments", buildJsonArray {
+        ticket.internalComments.forEach { comment ->
+            add(buildJsonObject {
+                put("id", comment.id)
+                put("ticketId", comment.ticketId)
+                put("authorId", comment.authorId)
+                put("authorName", comment.authorName)
+                put("body", comment.body)
+                put("createdAt", comment.createdAt)
+            })
+        }
+    })
+    put("events", buildJsonArray {
+        ticket.events.forEach { event ->
+            add(buildJsonObject {
+                put("id", event.id)
+                put("ticketId", event.ticketId)
+                put("type", event.type)
+                put("description", event.description)
+                put("actorName", event.actorName)
+                put("createdAt", event.createdAt)
+            })
+        }
+    })
+    put("attachments", buildJsonArray {
+        ticket.attachments.forEach { attachment ->
+            add(buildJsonObject {
+                put("id", attachment.id)
+                put("fileName", attachment.fileName)
+                put("contentType", attachment.contentType)
+                put("sizeBytes", attachment.sizeBytes)
+                put("uploadedBy", attachment.uploadedBy)
+                put("uploadedAt", attachment.uploadedAt)
+            })
+        }
+    })
 }
 
 fun clientsJson(clients: List<ServerClientSnapshot>) = buildJsonArray {

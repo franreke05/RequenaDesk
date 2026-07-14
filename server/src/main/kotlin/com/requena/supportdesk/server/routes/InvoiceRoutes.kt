@@ -10,6 +10,8 @@ import com.requena.supportdesk.server.utils.invoiceJson
 import com.requena.supportdesk.server.utils.invoicesJson
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.requireAdminIdentity
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
+import com.requena.supportdesk.server.utils.isAdmin
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.http.ContentType
@@ -24,18 +26,28 @@ import io.ktor.server.routing.route
 fun Route.invoiceRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin/invoices") {
         get {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@get
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val limit = call.request.queryParameters.boundedInt("limit", default = 100, max = 200)
             val offset = call.request.queryParameters.boundedInt("offset", default = 0, max = 10_000)
             call.respondJson(body = successResponse("/admin/invoices",
-                invoicesJson(service.invoices(ownerAdminId = identity.userId, limit = limit, offset = offset))))
+                invoicesJson(
+                    if (identity.isAdmin) {
+                        service.invoices(ownerAdminId = identity.userId, limit = limit, offset = offset)
+                    } else {
+                        service.invoices(clientId = identity.clientId, limit = limit, offset = offset)
+                    },
+                )))
         }
 
         get("/{id}") {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@get
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val id = call.parameters["id"]
                 ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing invoice id"))
-            val invoice = service.invoice(id, ownerAdminId = identity.userId)
+            val invoice = if (identity.isAdmin) {
+                service.invoice(id, ownerAdminId = identity.userId)
+            } else {
+                service.invoice(id, clientId = identity.clientId)
+            }
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Invoice not found"))
             call.respondJson(body = successResponse("/admin/invoices/$id", invoiceJson(invoice)))
         }
@@ -66,10 +78,14 @@ fun Route.invoiceRoutes(service: SupportDeskService, tokenService: SupportDeskTo
 
         // Returns a printable HTML page — browser can File > Print > Save as PDF
         get("/{id}/pdf") {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@get
+            val identity = call.requireAuthenticatedIdentity(tokenService, allowQueryToken = true) ?: return@get
             val id = call.parameters["id"]
                 ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing invoice id"))
-            val invoice = service.invoice(id, ownerAdminId = identity.userId)
+            val invoice = if (identity.isAdmin) {
+                service.invoice(id, ownerAdminId = identity.userId)
+            } else {
+                service.invoice(id, clientId = identity.clientId)
+            }
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Invoice not found"))
             call.respondText(contentType = ContentType.Text.Html, status = HttpStatusCode.OK) {
                 invoiceHtml(invoice)

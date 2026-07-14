@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,6 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +39,13 @@ import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.composables.icons.lucide.Activity
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.Clock
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Star
+import com.composables.icons.lucide.X
 
 // ── ACTIVIDAD ─────────────────────────────────────────────────────────────────
 
@@ -196,21 +206,33 @@ private fun ActivityItemRow(item: ClientActivityItem, modifier: Modifier = Modif
 @Composable
 private fun ActivityTypeChip(type: ClientActivityType) {
     val semantic = SupportDeskThemeTokens.semanticColors
-    val (bg, fg, label) = when (type) {
-        ClientActivityType.CREATED -> Triple(semantic.infoContainer, semantic.info, "N")
-        ClientActivityType.STATUS_CHANGE -> Triple(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary, "→")
-        ClientActivityType.TIME_LOGGED -> Triple(semantic.successContainer, semantic.success, "T")
-        ClientActivityType.RESOLVED -> Triple(semantic.successContainer, semantic.success, "✓")
-        ClientActivityType.CLOSED -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "✗")
-        ClientActivityType.RATED -> Triple(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.tertiary, "★")
+    val visual = when (type) {
+        ClientActivityType.CREATED -> ActivityTypeVisual(semantic.infoContainer, semantic.info, Lucide.Plus, "Ticket creado")
+        ClientActivityType.STATUS_CHANGE -> ActivityTypeVisual(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary, Lucide.Activity, "Cambio de estado")
+        ClientActivityType.TIME_LOGGED -> ActivityTypeVisual(semantic.successContainer, semantic.success, Lucide.Clock, "Tiempo registrado")
+        ClientActivityType.RESOLVED -> ActivityTypeVisual(semantic.successContainer, semantic.success, Lucide.CircleCheck, "Ticket resuelto")
+        ClientActivityType.CLOSED -> ActivityTypeVisual(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, Lucide.X, "Ticket cerrado")
+        ClientActivityType.RATED -> ActivityTypeVisual(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.tertiary, Lucide.Star, "Valoración")
     }
     Box(
         modifier = Modifier
             .padding(top = 2.dp)
-            .size(24.dp)
-            .background(bg, CircleShape),
+            .size(28.dp)
+            .background(visual.background, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = fg)
+        Icon(
+            imageVector = visual.icon,
+            contentDescription = visual.description,
+            tint = visual.foreground,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
+
+private data class ActivityTypeVisual(
+    val background: Color,
+    val foreground: Color,
+    val icon: ImageVector,
+    val description: String,
+)

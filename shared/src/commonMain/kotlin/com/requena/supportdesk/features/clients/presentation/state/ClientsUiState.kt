@@ -8,6 +8,7 @@ data class ClientsUiState(
     val query: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val lastCreatedClientId: String? = null,
 ) {
     val selectedClient: Client?
         get() = clients.firstOrNull { it.id == selectedClientId } ?: clients.firstOrNull()

@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +72,11 @@ fun AdminClientsScreen(
             placeholder = "Buscar cliente, producto, contacto o correo",
         )
 
-        CompactCreateClientCard(onEvent = onEvent)
+        CompactCreateClientCard(
+            isLoading = state.isLoading,
+            lastCreatedClientId = state.lastCreatedClientId,
+            onEvent = onEvent,
+        )
 
         when {
             state.isLoading && state.clients.isEmpty() -> LoadingState(itemCount = 4)
@@ -138,6 +143,8 @@ fun AdminClientsScreen(
 
 @Composable
 private fun CompactCreateClientCard(
+    isLoading: Boolean,
+    lastCreatedClientId: String?,
     onEvent: (ClientsUiEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -145,6 +152,16 @@ private fun CompactCreateClientCard(
     var productName by rememberSaveable { mutableStateOf("") }
     var contactName by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
+    val emailIsValid = email.matches(Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
+
+    LaunchedEffect(lastCreatedClientId) {
+        if (lastCreatedClientId != null) {
+            companyName = ""
+            productName = ""
+            contactName = ""
+            email = ""
+        }
+    }
 
     SectionCard(
         modifier = modifier,
@@ -201,12 +218,10 @@ private fun CompactCreateClientCard(
                             email = email,
                         ),
                     )
-                    companyName = ""
-                    productName = ""
-                    contactName = ""
-                    email = ""
                 },
-                enabled = companyName.isNotBlank() && productName.isNotBlank() && contactName.isNotBlank() && email.isNotBlank(),
+                enabled = !isLoading && companyName.isNotBlank() && productName.isNotBlank() &&
+                    contactName.isNotBlank() && emailIsValid,
+                isLoading = isLoading,
             )
         }
     }

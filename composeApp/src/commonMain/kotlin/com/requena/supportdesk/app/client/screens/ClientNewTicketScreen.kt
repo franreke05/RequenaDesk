@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,9 +68,11 @@ import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEven
 
 @Composable
 fun ClientNewTicketScreen(
+    clientId: String?,
     urgentToday: Int,
     isLoading: Boolean,
     errorMessage: String?,
+    lastCreatedTicketId: String?,
     onEvent: (TicketsUiEvent) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -82,6 +85,14 @@ fun ClientNewTicketScreen(
     val categoryOptions = remember { TicketCategory.entries.map { FilterOption(it, it.displayName()) } }
     val platformOptions = remember { SupportPlatform.entries.map { FilterOption(it, it.displayName()) } }
     val priorityOptions = remember { TicketPriority.entries.map { FilterOption(it, it.displayName()) } }
+
+    LaunchedEffect(lastCreatedTicketId) {
+        if (lastCreatedTicketId != null) {
+            subject = ""
+            description = ""
+            priority = TicketPriority.MEDIUM
+        }
+    }
 
     // Shared form content — called in both wide (left col) and narrow (single col) layouts
     val formContent: @Composable () -> Unit = {
@@ -175,6 +186,7 @@ fun ClientNewTicketScreen(
                     onEvent(
                         TicketsUiEvent.CreateTicket(
                             CreateTicketInput(
+                                clientId = clientId.orEmpty(),
                                 subject = subject.trim(),
                                 description = description.trim(),
                                 category = category,
@@ -183,12 +195,10 @@ fun ClientNewTicketScreen(
                             ),
                         ),
                     )
-                    subject = ""
-                    description = ""
-                    priority = TicketPriority.MEDIUM
                 },
                 enabled = !urgentLimitReached && !isLoading && subject.isNotBlank() && description.isNotBlank(),
                 fullWidth = true,
+                isLoading = isLoading,
             )
         }
     }
@@ -339,7 +349,7 @@ private fun TicketPreviewCard(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(8.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)),
         ) {
             Column(

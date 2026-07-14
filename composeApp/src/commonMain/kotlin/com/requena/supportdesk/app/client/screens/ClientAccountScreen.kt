@@ -21,12 +21,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.initials
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.cards.MetricCard
@@ -40,13 +41,15 @@ import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 fun ClientAccountScreen(
     clientName: String,
     contactName: String = "",
+    client: Client?,
     tickets: List<Ticket>,
+    logs: List<TaskLog>,
     today: String,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val allEntries = remember(tickets) { tickets.flatMap { it.timeEntries } }
+    val allEntries = logs
     val totalTickets = tickets.size
     val resolvedTickets = remember(tickets) { tickets.count { it.status == TicketStatus.RESOLVED || it.status == TicketStatus.CLOSED } }
     val totalMinutes = remember(allEntries) { allEntries.sumOf { it.minutes } }
@@ -77,12 +80,7 @@ fun ClientAccountScreen(
                 Box(
                     modifier = Modifier
                         .size(64.dp)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
-                            ),
-                            CircleShape,
-                        ),
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -107,12 +105,20 @@ fun ClientAccountScreen(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                         SupportDeskBadge(
-                            text = "Portal activo",
+                            text = when (client?.accountStatus?.name) {
+                                "PAUSED" -> "Cuenta pausada"
+                                "INACTIVE" -> "Cuenta inactiva"
+                                else -> "Portal activo"
+                            },
                             containerColor = SupportDeskThemeTokens.semanticColors.successContainer,
                             contentColor = SupportDeskThemeTokens.semanticColors.success,
                         )
                         SupportDeskBadge(
-                            text = "Cliente verificado",
+                            text = when (client?.serviceTier?.name) {
+                                "PRIORITY" -> "Plan prioritario"
+                                "VIP" -> "Plan VIP"
+                                else -> "Plan standard"
+                            },
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
@@ -145,23 +151,31 @@ fun ClientAccountScreen(
                         modifier = Modifier.weight(1f),
                     )
                     MetricCard(
-                        label = "Resueltos",
-                        value = resolvedTickets.toString(),
-                        supportingText = "tickets cerrados",
+                        label = "Activos",
+                        value = (totalTickets - resolvedTickets).toString(),
+                        supportingText = "tickets en curso",
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
         }
 
-        SectionCard(title = "Plan de soporte", subtitle = "Contacta con tu admin para más información") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-            ) {
-                ServiceTierCard(name = "Standard", description = "Soporte estándar", modifier = Modifier.weight(1f))
-                ServiceTierCard(name = "Prioritario", description = "Respuesta rápida", modifier = Modifier.weight(1f))
-                ServiceTierCard(name = "VIP", description = "Soporte dedicado", modifier = Modifier.weight(1f))
+        SectionCard(title = "Plan de soporte", subtitle = "Configuracion actual de la cuenta") {
+            val tierName = when (client?.serviceTier?.name) {
+                "PRIORITY" -> "Prioritario"
+                "VIP" -> "VIP"
+                else -> "Standard"
+            }
+            val tierDescription = when (client?.serviceTier?.name) {
+                "PRIORITY" -> "Atencion prioritaria"
+                "VIP" -> "Soporte dedicado"
+                else -> "Soporte estandar"
+            }
+            ServiceTierCard(name = tierName, description = tierDescription, modifier = Modifier.fillMaxWidth())
+            client?.let {
+                AccountStatRow(label = "Producto", value = it.productName)
+                AccountStatRow(label = "Correo", value = it.email)
+                AccountStatRow(label = "Canal preferido", value = it.preferredContactChannel.name)
             }
         }
 
@@ -198,7 +212,7 @@ private fun ServiceTierCard(name: String, description: String, modifier: Modifie
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(modifier = Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {

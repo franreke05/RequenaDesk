@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -14,13 +16,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.X
 
 @Composable
 fun SearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Search by subject, company or keyword",
+    placeholder: String = "Buscar por asunto, empresa o palabra clave",
 ) {
     OutlinedTextField(
         value = value,
@@ -29,7 +34,19 @@ fun SearchField(
             .fillMaxWidth()
             .animateContentSize(),
         singleLine = true,
-        label = { Text("Search") },
+        label = { Text("Buscar") },
+        leadingIcon = {
+            Icon(imageVector = Lucide.Search, contentDescription = null)
+        },
+        trailingIcon = if (value.isNotEmpty()) {
+            {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(imageVector = Lucide.X, contentDescription = "Limpiar busqueda")
+                }
+            }
+        } else {
+            null
+        },
         placeholder = {
             Text(
                 text = placeholder,

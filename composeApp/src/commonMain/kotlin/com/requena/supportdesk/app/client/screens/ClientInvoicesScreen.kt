@@ -15,10 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -27,13 +24,15 @@ import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
+import com.requena.supportdesk.designsystem.components.feedback.ErrorState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
-import com.requena.supportdesk.features.invoices.domain.model.Invoice
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceStatus
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.core.utils.toFixedString
+import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.Lucide
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 
@@ -43,18 +42,25 @@ fun ClientInvoicesScreen(
     onEvent: (InvoicesUiEvent) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
 
     val visibleInvoices = remember(state.invoices) {
         state.invoices.filter { it.status == InvoiceStatus.SENT || it.status == InvoiceStatus.PAID }
+    }
+    val selectedInvoice = state.selectedInvoice?.takeIf { selected ->
+        visibleInvoices.any { it.id == selected.id }
     }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(spacing.md),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
-        if (state.isLoading) {
+        if (state.isLoading && visibleInvoices.isEmpty()) {
             LoadingState()
+        } else if (state.errorMessage != null && visibleInvoices.isEmpty()) {
+            ErrorState(
+                message = state.errorMessage.orEmpty(),
+                onRetry = { onEvent(InvoicesUiEvent.Load) },
+            )
         } else if (visibleInvoices.isEmpty()) {
             EmptyState(
                 title = "Sin facturas",
@@ -72,10 +78,9 @@ fun ClientInvoicesScreen(
                         }
                         Surface(
                             onClick = {
-                                selectedInvoice = if (selectedInvoice?.id == invoice.id) null else invoice
                                 onEvent(InvoicesUiEvent.SelectInvoice(invoice.id))
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (selectedInvoice?.id == invoice.id)
                                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                             else MaterialTheme.colorScheme.surfaceVariant,
@@ -134,6 +139,7 @@ fun ClientInvoicesScreen(
                             text = "Descargar PDF",
                             onClick = { onEvent(InvoicesUiEvent.DownloadPdf(invoice.id)) },
                             fullWidth = true,
+                            icon = Lucide.Download,
                         )
                     }
                 }

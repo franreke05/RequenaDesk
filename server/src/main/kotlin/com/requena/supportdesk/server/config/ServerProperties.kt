@@ -2,6 +2,7 @@ package com.requena.supportdesk.server.config
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.charset.StandardCharsets
 import java.util.Properties
 
 private object ServerDistributionAnchor
@@ -11,9 +12,11 @@ fun loadServerProperties(): Map<String, String> {
     serverPropertiesCandidates()
         .firstOrNull(Files::exists)
         ?.let { path ->
-            Files.newInputStream(path).use(loaded::load)
+            Files.newBufferedReader(path, StandardCharsets.UTF_8).use(loaded::load)
         }
-    return loaded.stringPropertyNames().associateWith(loaded::getProperty)
+    return loaded.stringPropertyNames().associate { rawKey ->
+        rawKey.removePrefix("\uFEFF") to loaded.getProperty(rawKey)
+    }
 }
 
 private fun serverPropertiesCandidates(): List<Path> {

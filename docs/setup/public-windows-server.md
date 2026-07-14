@@ -29,6 +29,27 @@ Opcionales pero recomendadas:
 - `SUPPORTDESK_REFRESH_TOKEN_LIFETIME_DAYS=30`
 - `SUPPORTDESK_SERVER_HOST=127.0.0.1`
 - `SUPPORTDESK_SERVER_PORT=8080`
+- `SUPPORTDESK_DB_MAX_POOL_SIZE=5`
+
+Para el primer arranque, o para resetear intencionadamente los usuarios demo:
+
+- `SUPPORTDESK_BOOTSTRAP_DEMO_DATA=true`
+- `SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD=<contrasena-admin-real>`
+- `SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD=<contrasena-cliente-real>`
+
+Las contrasenas deben tener al menos 12 caracteres. Tras confirmar el login,
+cambia `SUPPORTDESK_BOOTSTRAP_DEMO_DATA=false`, elimina las dos contrasenas del
+archivo y reinicia Ktor. Los usuarios y sus hashes permanecen en PostgreSQL.
+
+Tambien puedes generar el archivo sin BOM y pedir las contrasenas de forma
+interactiva:
+
+```powershell
+.\create-server-config.ps1 `
+  -SupabaseDatabaseUrl "postgresql://..." `
+  -PublicDomain "crm.example.com" `
+  -BootstrapDemoData
+```
 
 Si no usas `SUPABASE_DATABASE_URL`, define estas:
 
@@ -60,26 +81,38 @@ En PowerShell:
 .\start-ktor-server.ps1
 ```
 
-Comprobacion local:
+Ktor ejecuta las migraciones Flyway antes de abrir la API. No ejecutes
+`docs/setup/postgresql-init.sql` ni la migracion de facturas a mano.
+
+Comprobacion local del proceso y de PostgreSQL:
 
 ```powershell
-Invoke-WebRequest http://127.0.0.1:8080/
+Invoke-WebRequest http://127.0.0.1:8080/health/live
+Invoke-WebRequest http://127.0.0.1:8080/health/ready
 ```
 
 ## 5. Poner Caddy delante
 
 Instala Caddy en Windows y crea un `Caddyfile` con el contenido de [Caddyfile.example](./Caddyfile.example).
 
-Ejemplo minimo:
+La configuracion incluida añade compresion, cabeceras defensivas, logs y health
+checks activos contra Ktor. Valida el archivo antes de arrancar o recargar:
 
-```caddyfile
-crm.example.com {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:8080
-}
+```powershell
+caddy fmt --overwrite .\Caddyfile
+caddy validate --config .\Caddyfile --adapter caddyfile
+caddy reload --config .\Caddyfile --adapter caddyfile
 ```
 
 Cuando el DNS ya apunte a tu casa y el router tenga abiertos `80/443`, Caddy emitira y renovara HTTPS automaticamente.
+
+En produccion, instala Caddy como servicio de Windows para que sobreviva a
+reinicios. Ejecuta como administrador y sustituye las rutas:
+
+```powershell
+sc.exe create caddy start= auto binPath= '"C:\caddy\caddy.exe" run --config "C:\caddy\Caddyfile" --adapter caddyfile'
+sc.exe start caddy
+```
 
 ## 6. Router y firewall
 
@@ -116,6 +149,8 @@ O genera el archivo con:
 ## 8. Comprobaciones finales
 
 - `https://crm.example.com/` debe responder `status=running`.
+- `https://crm.example.com/health/live` debe responder `alive`.
+- `https://crm.example.com/health/ready` debe responder `database=ready`.
 - El login de escritorio debe funcionar con la URL HTTPS.
 - Tras cerrar y abrir la app, la sesion debe restaurarse.
 - Si cambias la IP publica de casa, el DDNS debe actualizarse.

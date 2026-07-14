@@ -1,6 +1,7 @@
 package com.requena.supportdesk.server.utils
 
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
+import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -13,6 +14,7 @@ private const val bearerRealm = "OryKai software"
 
 suspend fun ApplicationCall.requireAuthenticatedIdentity(
     tokenService: SupportDeskTokenService,
+    allowQueryToken: Boolean = false,
 ): ServerAuthIdentity? {
     val authorizationHeader = request.headers[HttpHeaders.Authorization].orEmpty()
     val authHeader = runCatching { parseAuthorizationHeader(authorizationHeader) }.getOrNull() as? HttpAuthHeader.Single
@@ -22,7 +24,11 @@ suspend fun ApplicationCall.requireAuthenticatedIdentity(
         ?.trim()
         ?.takeIf(String::isNotBlank)
 
-    val identity = token?.let(tokenService::verifyAccessToken)
+    val resolvedToken = token ?: request.queryParameters["access_token"]
+        ?.takeIf { allowQueryToken }
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    val identity = resolvedToken?.let(tokenService::verifyAccessToken)
     if (identity != null) {
         return identity
     }
@@ -49,3 +55,22 @@ suspend fun ApplicationCall.requireAdminIdentity(
     )
     return null
 }
+
+val ServerAuthIdentity.isAdmin: Boolean
+    get() = role == "ADMIN"
+
+fun SupportDeskService.ownerAdminIdFor(identity: ServerAuthIdentity): String? =
+    if (identity.isAdmin) {
+        identity.userId
+    } else {
+        identity.clientId
+            ?.let { clientId -> clients().firstOrNull { it.id == clientId } }
+            ?.ownerAdminId
+    }
+
+fun SupportDeskService.visibleClientIdsFor(identity: ServerAuthIdentity): Set<String> =
+    if (identity.isAdmin) {
+        clients(identity.userId).mapTo(mutableSetOf()) { it.id }
+    } else {
+        setOfNotNull(identity.clientId)
+    }

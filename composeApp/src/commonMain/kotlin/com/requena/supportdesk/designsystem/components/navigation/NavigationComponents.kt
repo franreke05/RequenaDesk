@@ -15,12 +15,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
@@ -31,6 +36,7 @@ data class NavigationItemSpec<T>(
     val key: T,
     val title: String,
     val supportingText: String,
+    val icon: ImageVector? = null,
 )
 
 @Composable
@@ -76,7 +82,12 @@ fun <T> AppSidebar(
                     .height(1.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
                 items.forEach { item ->
                     val isSelected = selected == item.key
                     val selectedColors = if (isSelected) {
@@ -109,6 +120,7 @@ fun <T> AppSidebar(
                         Row(
                             modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
                             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (isSelected) {
                                 Box(
@@ -119,6 +131,13 @@ fun <T> AppSidebar(
                                 )
                             } else {
                                 Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            item.icon?.let { icon ->
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = animatedContentColor.value,
+                                )
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
                                 Text(
@@ -140,7 +159,6 @@ fun <T> AppSidebar(
                     }
                 }
             }
-            Spacer(modifier = Modifier.weight(1f))
             footer()
         }
     }

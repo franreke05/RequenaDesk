@@ -51,6 +51,9 @@ import com.requena.supportdesk.designsystem.components.badges.TicketCategoryBadg
 import com.requena.supportdesk.designsystem.components.badges.TicketPriorityBadge
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.components.feedback.EmptyState
+import com.requena.supportdesk.designsystem.components.feedback.ErrorState
+import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 
 // ── TABLERO (BOARD) ───────────────────────────────────────────────────────────
 
@@ -65,6 +68,9 @@ private val KanbanColumns = listOf(
 @Composable
 fun ClientBoardScreen(
     tickets: List<Ticket>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
     onTicketClick: (String) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -92,7 +98,18 @@ fun ClientBoardScreen(
             )
         }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading && tickets.isEmpty() -> LoadingState(modifier = Modifier.fillMaxSize())
+            errorMessage != null && tickets.isEmpty() -> ErrorState(
+                message = errorMessage,
+                onRetry = onRetry,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            tickets.isEmpty() -> EmptyState(
+                title = "Sin tickets",
+                message = "Crea el primer ticket para empezar a usar el tablero.",
+            )
+            else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             if (maxWidth >= SupportDeskBreakpoints.clientBoardWide) {
                 Row(
                     modifier = Modifier
@@ -132,6 +149,7 @@ fun ClientBoardScreen(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -151,7 +169,7 @@ private fun KanbanColumn(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = accentColor.copy(alpha = 0.06f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.20f)),
     ) {
         Column(

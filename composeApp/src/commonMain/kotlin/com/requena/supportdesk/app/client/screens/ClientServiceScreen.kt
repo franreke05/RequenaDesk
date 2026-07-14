@@ -37,6 +37,7 @@ import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.cards.MetricCard
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
@@ -49,12 +50,13 @@ import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 @Composable
 fun ClientServiceScreen(
     tickets: List<Ticket>,
+    logs: List<TaskLog>,
     today: String,
     lastMonthMinutes: Int,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val semantic = SupportDeskThemeTokens.semanticColors
-    val allEntries = remember(tickets) { tickets.flatMap { it.timeEntries } }
+    val allEntries = logs
     val currentMonthPrefix = today.take(7)
 
     val currentMonthMinutes = remember(allEntries, currentMonthPrefix) {
@@ -68,7 +70,7 @@ fun ClientServiceScreen(
     val activeTickets = remember(tickets) {
         tickets.count { it.status != TicketStatus.CLOSED && it.status != TicketStatus.RESOLVED }
     }
-    val sixMonthTrend: List<Pair<String, Int>> = remember(allEntries, today) {
+    val sixMonthTrend: List<Pair<String, Int>> = remember(logs, today) {
         val yr = today.take(4).toIntOrNull() ?: return@remember emptyList()
         val mo = today.drop(5).take(2).toIntOrNull() ?: return@remember emptyList()
         (0..5).map { offset ->
@@ -88,7 +90,7 @@ fun ClientServiceScreen(
         TicketCategory.entries.map { cat -> cat to tickets.count { it.category == cat } }.filter { it.second > 0 }
     }
 
-    val monthlyHistory: List<Triple<String, Int, Int>> = remember(allEntries, tickets, today) {
+    val monthlyHistory: List<Triple<String, Int, Int>> = remember(logs, tickets, today) {
         val yr = today.take(4).toIntOrNull() ?: return@remember emptyList()
         val mo = today.drop(5).take(2).toIntOrNull() ?: return@remember emptyList()
         (0..5).map { offset ->
@@ -176,15 +178,15 @@ fun ClientServiceScreen(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 MetricCard(
-                    label = "Resueltos",
-                    value = resolvedThisMonth.toString(),
-                    supportingText = "este mes",
-                    modifier = Modifier.weight(1f),
-                )
-                MetricCard(
                     label = "Activos",
                     value = activeTickets.toString(),
                     supportingText = "tickets en curso",
+                    modifier = Modifier.weight(1f),
+                )
+                MetricCard(
+                    label = "Total",
+                    value = tickets.size.toString(),
+                    supportingText = "tickets registrados",
                     modifier = Modifier.weight(1f),
                 )
             }

@@ -32,10 +32,6 @@ class InvoicesViewModel(
     private val _effects = MutableSharedFlow<InvoicesUiEffect>(extraBufferCapacity = 4)
     val effects: SharedFlow<InvoicesUiEffect> = _effects.asSharedFlow()
 
-    init {
-        onEvent(InvoicesUiEvent.Load)
-    }
-
     fun onEvent(event: InvoicesUiEvent) {
         when (event) {
             InvoicesUiEvent.Load -> loadInvoices()
@@ -93,6 +89,7 @@ class InvoicesViewModel(
                         )
                     }
                     _effects.emit(InvoicesUiEffect.ShowMessage(message))
+                    _effects.emit(InvoicesUiEffect.InvoiceCreated(result.data.id))
                 }
             }
         }

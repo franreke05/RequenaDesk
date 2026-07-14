@@ -36,7 +36,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,30 +99,13 @@ fun ClientHomeScreen(
                 modifier = Modifier.size(68.dp),
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                border = BorderStroke(
-                    width = 2.dp,
-                    brush = Brush.sweepGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f),
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                        ),
-                    ),
-                ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(4.dp)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                                ),
-                            ),
-                            CircleShape,
-                        ),
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -143,7 +125,7 @@ fun ClientHomeScreen(
                 )
                 Text(
                     text = clientName,
-                    style = MaterialTheme.typography.displaySmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -171,6 +153,11 @@ fun ClientHomeScreen(
                     ClientNotice(message = it, isError = true)
                 }
             }
+        }
+
+        if (isLoading && allTickets.isEmpty()) {
+            LoadingState(itemCount = 4)
+            return@Column
         }
 
         ClientStatusBoard(tickets = allTickets)
@@ -317,9 +304,6 @@ fun ClientHomeScreen(
             }
         }
 
-        if (isLoading) {
-            LoadingState(itemCount = 3)
-        }
     }
 }
 
@@ -345,26 +329,20 @@ private fun QuickActionCard(
             .heightIn(min = 130.dp)
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = accentColor.copy(alpha = 0.08f),
+        ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            accentColor.copy(alpha = 0.15f),
-                            accentColor.copy(alpha = 0.04f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                        ),
-                    ),
-                )
                 .padding(spacing.lg),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top,
                 ) {
@@ -451,7 +429,7 @@ private fun StatusPillCard(
     Surface(
         modifier = modifier,
         color = accentColor.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.26f)),
     ) {
         Column(

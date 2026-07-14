@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,7 +71,13 @@ fun <T> AdminNavigationRail(
                         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
+                        item.icon?.let { icon ->
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = contentColor.value,
+                            )
+                        } ?: Text(
                             text = item.title.take(1),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -132,6 +139,13 @@ fun <T> AdminBottomBar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
                     ) {
+                        item.icon?.let { icon ->
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = contentColor.value,
+                            )
+                        }
                         Text(
                             text = item.title,
                             style = MaterialTheme.typography.labelLarge,
