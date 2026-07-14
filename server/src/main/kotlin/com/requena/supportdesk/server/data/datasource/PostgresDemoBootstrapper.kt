@@ -11,8 +11,8 @@ class PostgresDemoBootstrapper(
             connection.autoCommit = false
             try {
                 ensureClient(connection)
-                ensurePrimaryAdminUser(connection)
-                ensureSecondaryAdminUser(connection)
+                ensurePrimaryAdminUser(connection, adminPassword)
+                ensureSecondaryAdminUser(connection, adminPassword)
                 ensureClientUser(connection, clientPassword)
                 ensureTaskLabel(connection)
                 ensureTask(connection)
@@ -50,7 +50,7 @@ class PostgresDemoBootstrapper(
         ).use { it.executeUpdate() }
     }
 
-    private fun ensurePrimaryAdminUser(connection: Connection) {
+    private fun ensurePrimaryAdminUser(connection: Connection, password: String) {
         connection.prepareStatement(
             """
             INSERT INTO users (id, name, email, password_hash, role, is_active)
@@ -65,12 +65,12 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash("Admin1requena"))
+            it.setString(1, PasswordHasher.hash(password))
             it.executeUpdate()
         }
     }
 
-    private fun ensureSecondaryAdminUser(connection: Connection) {
+    private fun ensureSecondaryAdminUser(connection: Connection, password: String) {
         connection.prepareStatement(
             """
             INSERT INTO users (id, name, email, password_hash, role, is_active)
@@ -85,7 +85,7 @@ class PostgresDemoBootstrapper(
             ON CONFLICT (email) DO NOTHING
             """.trimIndent(),
         ).use {
-            it.setString(1, PasswordHasher.hash("Admin2Sanchez"))
+            it.setString(1, PasswordHasher.hash(password))
             it.executeUpdate()
         }
     }

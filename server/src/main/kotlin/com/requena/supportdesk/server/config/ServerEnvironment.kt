@@ -14,20 +14,33 @@ data class ServerEnvironment(
     val database: DatabaseSettings?,
     val auth: ServerAuthSettings,
     val bootstrapDemoData: Boolean,
-    val bootstrapAdminPassword: String,
-    val bootstrapClientPassword: String,
+    val bootstrapAdminPassword: String?,
+    val bootstrapClientPassword: String?,
 ) {
     companion object {
         fun load(
             environment: Map<String, String> = System.getenv(),
             properties: Map<String, String> = defaultServerProperties(),
-        ): ServerEnvironment = ServerEnvironment(
-            database = resolveDatabaseSettings(environment, properties),
-            auth = resolveAuthSettings(environment, properties),
-            bootstrapDemoData = value("SUPPORTDESK_BOOTSTRAP_DEMO_DATA", environment, properties)?.toBooleanStrictOrNull() == true,
-            bootstrapAdminPassword = value("SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD", environment, properties) ?: "Admin1234!",
-            bootstrapClientPassword = value("SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD", environment, properties) ?: "Client1234!",
-        )
+        ): ServerEnvironment {
+            val bootstrapDemoData = value("SUPPORTDESK_BOOTSTRAP_DEMO_DATA", environment, properties)?.toBooleanStrictOrNull() == true
+            val bootstrapAdminPassword = value("SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD", environment, properties)
+            val bootstrapClientPassword = value("SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD", environment, properties)
+            if (bootstrapDemoData) {
+                requireNotNull(bootstrapAdminPassword) {
+                    "SUPPORTDESK_BOOTSTRAP_ADMIN_PASSWORD is required when SUPPORTDESK_BOOTSTRAP_DEMO_DATA=true."
+                }
+                requireNotNull(bootstrapClientPassword) {
+                    "SUPPORTDESK_BOOTSTRAP_CLIENT_PASSWORD is required when SUPPORTDESK_BOOTSTRAP_DEMO_DATA=true."
+                }
+            }
+            return ServerEnvironment(
+                database = resolveDatabaseSettings(environment, properties),
+                auth = resolveAuthSettings(environment, properties),
+                bootstrapDemoData = bootstrapDemoData,
+                bootstrapAdminPassword = bootstrapAdminPassword,
+                bootstrapClientPassword = bootstrapClientPassword,
+            )
+        }
 
         private fun defaultServerProperties(): Map<String, String> =
             loadServerProperties() + System.getProperties().stringPropertyNames().associateWith(System::getProperty)

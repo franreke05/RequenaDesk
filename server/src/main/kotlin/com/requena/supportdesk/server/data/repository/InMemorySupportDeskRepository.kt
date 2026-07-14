@@ -49,13 +49,13 @@ class InMemorySupportDeskRepository(
             userId = "user-admin",
             name = "Admin Requena",
             email = "admin@orykai.dev",
-            password = "Admin1requena",
+            password = "UnitTestAdminPassword1",
         ),
         LocalAdminAccount(
             userId = "user-admin-2",
             name = "Admin Sanchez",
             email = "admin2@orykai.dev",
-            password = "Admin2Sanchez",
+            password = "UnitTestAdminPassword2",
         ),
     )
 
@@ -185,7 +185,7 @@ class InMemorySupportDeskRepository(
         }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
-        refreshTokens[PasswordHasher.hash(refreshToken)] = userId
+        refreshTokens[PasswordHasher.hashToken(refreshToken)] = userId
     }
 
     override fun rotateRefreshToken(
@@ -193,8 +193,8 @@ class InMemorySupportDeskRepository(
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? {
-        val userId = refreshTokens.remove(PasswordHasher.hash(refreshToken)) ?: return null
-        refreshTokens[PasswordHasher.hash(replacementRefreshToken)] = userId
+        val userId = refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) ?: return null
+        refreshTokens[PasswordHasher.hashToken(replacementRefreshToken)] = userId
         val account = adminAccounts.firstOrNull { it.userId == userId } ?: return null
         return ServerAuthIdentity(
             userId = account.userId,
@@ -205,7 +205,7 @@ class InMemorySupportDeskRepository(
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean =
-        refreshTokens.remove(PasswordHasher.hash(refreshToken)) != null
+        refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) != null
 
     override fun getTickets(): List<ServerTicketSnapshot> = dataSource.tickets().map(SupportDeskMapper::ticket)
 
@@ -510,4 +510,14 @@ class InMemorySupportDeskRepository(
             throw ServerNotFoundException("Task not found")
         }
     }
+
+    override fun getInvoices(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot> = emptyList()
+
+    override fun getInvoice(id: String, ownerAdminId: String?, clientId: String?): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot? = null
+
+    override fun createInvoice(request: com.requena.supportdesk.server.domain.model.CreateInvoiceRequest, createdBy: String): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
+
+    override fun updateInvoiceStatus(invoiceId: String, request: com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest, ownerAdminId: String): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot =
+        throw UnsupportedOperationException("Not supported in InMemory repository")
 }

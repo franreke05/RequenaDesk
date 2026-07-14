@@ -1,16 +1,23 @@
 package com.requena.supportdesk.server.data.datasource
 
 import com.requena.supportdesk.server.config.DatabaseSettings
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
 import java.sql.Connection
-import java.sql.DriverManager
 
 class PostgresSupportDeskDataSource(
-    private val settings: DatabaseSettings,
+    settings: DatabaseSettings,
 ) {
-    init {
-        Class.forName("org.postgresql.Driver")
-    }
+    private val pool: HikariDataSource = HikariDataSource(
+        HikariConfig().apply {
+            jdbcUrl = settings.jdbcUrl
+            username = settings.username
+            password = settings.password
+            driverClassName = "org.postgresql.Driver"
+            maximumPoolSize = 10
+        },
+    )
 
     fun <T> withConnection(block: (Connection) -> T): T =
-        DriverManager.getConnection(settings.jdbcUrl, settings.username, settings.password).use(block)
+        pool.connection.use(block)
 }

@@ -19,6 +19,8 @@ dependencies {
     implementation(libs.java.jwt)
     implementation(libs.logback)
     implementation(libs.postgresql)
+    implementation(libs.jbcrypt)
+    implementation(libs.hikaricp)
     implementation(libs.ktor.serverCallLogging)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverCore)

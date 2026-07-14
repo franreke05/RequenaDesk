@@ -37,7 +37,7 @@ class ApplicationTest {
 
     private suspend fun HttpClient.accessToken(
         email: String = "admin@orykai.dev",
-        password: String = "Admin1requena",
+        password: String = "UnitTestAdminPassword1",
     ): String {
         val response = post("/auth/login") {
             contentType(ContentType.Application.Json)
@@ -92,7 +92,7 @@ class ApplicationTest {
 
         val response = client.post("/auth/login") {
             contentType(ContentType.Application.Json)
-            setBody("""{"email":"admin@orykai.dev","password":"Admin1requena"}""")
+            setBody("""{"email":"admin@orykai.dev","password":"UnitTestAdminPassword1"}""")
         }
 
         assertEquals(HttpStatusCode.OK, response.status)
@@ -174,7 +174,7 @@ class ApplicationTest {
         application { testModule() }
         val partnerToken = client.accessToken(
             email = "admin2@orykai.dev",
-            password = "Admin2Sanchez",
+            password = "UnitTestAdminPassword2",
         )
 
         val createResponse = client.post("/admin/labels") {
@@ -333,7 +333,7 @@ class ApplicationTest {
         val adminToken = client.accessToken()
         val partnerToken = client.accessToken(
             email = "admin2@orykai.dev",
-            password = "Admin2Sanchez",
+            password = "UnitTestAdminPassword2",
         )
 
         val adminClients = client.get("/admin/clients") {
@@ -419,7 +419,7 @@ class ApplicationTest {
         val adminToken = client.accessToken()
         val partnerToken = client.accessToken(
             email = "admin2@orykai.dev",
-            password = "Admin2Sanchez",
+            password = "UnitTestAdminPassword2",
         )
 
         val adminResponse = client.get("/admin/labels") {
@@ -443,7 +443,7 @@ class ApplicationTest {
 
         val loginResponse = client.post("/auth/login") {
             contentType(ContentType.Application.Json)
-            setBody("""{"email":"admin@orykai.dev","password":"Admin1requena"}""")
+            setBody("""{"email":"admin@orykai.dev","password":"UnitTestAdminPassword1"}""")
         }
         val refreshToken = extractField(loginResponse.bodyAsText(), "refreshToken")
 

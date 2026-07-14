@@ -9,6 +9,7 @@ import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.plugins.configureMonitoring
 import com.requena.supportdesk.server.plugins.configureSerialization
 import com.requena.supportdesk.server.routes.attachmentRoutes
+import com.requena.supportdesk.server.routes.invoiceRoutes
 import com.requena.supportdesk.server.routes.authRoutes
 import com.requena.supportdesk.server.routes.clientRoutes
 import com.requena.supportdesk.server.routes.dashboardRoutes
@@ -60,6 +61,7 @@ fun Application.configureSupportDeskModule(
         timeLogRoutes(service, tokenService)
         dashboardRoutes(service, tokenService)
         deviceRoutes(service, tokenService)
+        invoiceRoutes(service, tokenService)
     }
 }
 
@@ -71,8 +73,8 @@ private fun supportDeskRepository(environment: ServerEnvironment): SupportDeskRe
     val dataSource = PostgresSupportDeskDataSource(database)
     if (environment.bootstrapDemoData) {
         PostgresDemoBootstrapper(dataSource).bootstrap(
-            adminPassword = environment.bootstrapAdminPassword,
-            clientPassword = environment.bootstrapClientPassword,
+            adminPassword = requireNotNull(environment.bootstrapAdminPassword),
+            clientPassword = requireNotNull(environment.bootstrapClientPassword),
         )
     }
     return PostgresSupportDeskRepository(dataSource = dataSource)

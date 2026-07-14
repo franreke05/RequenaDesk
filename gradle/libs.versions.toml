@@ -20,6 +20,8 @@ logback = "1.5.24"
 material3 = "1.10.0-alpha05"
 postgresql = "42.7.10"
 javaJwt = "4.5.0"
+jbcrypt = "0.4"
+hikaricp = "5.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -58,6 +60,8 @@ ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.re
 ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json-jvm", version.ref = "ktor" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 java-jwt = { module = "com.auth0:java-jwt", version.ref = "javaJwt" }
+jbcrypt = { module = "org.mindrot:jbcrypt", version.ref = "jbcrypt" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
