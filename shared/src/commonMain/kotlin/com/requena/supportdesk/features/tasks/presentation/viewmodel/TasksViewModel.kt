@@ -1,7 +1,6 @@
 package com.requena.supportdesk.features.tasks.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
@@ -134,7 +133,11 @@ class TasksViewModel(
     private fun createLabel(name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = AdminSessionContext.currentUserId()
+        if (ownerAdminId == null) {
+            handleWorkspaceError("No se encontro una sesion de administrador activa.")
+            return
+        }
         launch {
             when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -149,7 +152,11 @@ class TasksViewModel(
     private fun updateLabel(labelId: String, name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = AdminSessionContext.currentUserId()
+        if (ownerAdminId == null) {
+            handleWorkspaceError("No se encontro una sesion de administrador activa.")
+            return
+        }
         launch {
             when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -369,12 +376,24 @@ class TasksViewModel(
         }
 
         val workDate = current.selectedDay ?: currentIsoDate()
+        val authorId = AdminSessionContext.currentUserId()
+        if (authorId == null) {
+            val message = "No se encontro una sesion de administrador activa."
+            handleWorkspaceError(message)
+            publish(
+                activeTaskId = null,
+                activeTaskSeconds = 0,
+                isTimerRunning = false,
+                statusMessage = message,
+            )
+            return
+        }
         launch {
             when (
                 val result = createTimeLogUseCase(
                     TaskTimeLogDraft(
                         taskId = taskId,
-                        authorId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id,
+                        authorId = authorId,
                         workDate = workDate,
                         minutes = minutesToAdd,
                         seconds = secondsToAdd,

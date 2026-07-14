@@ -33,18 +33,18 @@ class NotificationsViewModel(
 
     private fun registerDefaultDevice() {
         launch {
+            val userId = AdminSessionContext.currentUserId()
+            if (userId == null) {
+                val message = "No se encontro una sesion de administrador activa."
+                _state.update { it.copy(isRegistering = false, statusMessage = message) }
+                _effects.emit(NotificationsUiEffect.ShowMessage(message))
+                return@launch
+            }
             _state.update { it.copy(isRegistering = true, statusMessage = "Registrando dispositivo...") }
-            val userId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
             when (val result = registerDeviceUseCase(SupportDeskSeed.defaultDevice(userId = userId))) {
                 is AppResult.Error -> {
-                    _state.update {
-                        it.copy(
-                            isRegistering = false,
-                            device = SupportDeskSeed.defaultDevice(userId = userId),
-                            statusMessage = "Registro local del dispositivo listo mientras el servidor no esta disponible.",
-                        )
-                    }
-                    _effects.emit(NotificationsUiEffect.ShowMessage("Dispositivo registrado en local"))
+                    _state.update { it.copy(isRegistering = false, statusMessage = result.message) }
+                    _effects.emit(NotificationsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     _state.update {

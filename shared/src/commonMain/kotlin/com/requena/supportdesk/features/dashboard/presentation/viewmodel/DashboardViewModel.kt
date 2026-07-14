@@ -1,7 +1,6 @@
 package com.requena.supportdesk.features.dashboard.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.dashboard.domain.usecase.GetDashboardSummaryUseCase
 import com.requena.supportdesk.features.dashboard.presentation.effect.DashboardUiEffect
@@ -39,14 +38,8 @@ class DashboardViewModel(
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             when (val result = getDashboardSummaryUseCase()) {
                 is AppResult.Error -> {
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            summary = SupportDeskSeed.dashboardSummary(),
-                            errorMessage = "Usando datos admin locales mientras el servidor no esta disponible.",
-                        )
-                    }
-                    _effects.emit(DashboardUiEffect.ShowMessage("Panel cargado con datos locales"))
+                    _state.update { it.copy(isLoading = false, errorMessage = result.message) }
+                    _effects.emit(DashboardUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
                     _state.update { it.copy(isLoading = false, summary = result.data) }
