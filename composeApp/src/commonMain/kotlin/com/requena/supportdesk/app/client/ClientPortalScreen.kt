@@ -29,7 +29,6 @@ import com.requena.supportdesk.app.client.screens.ClientAccountScreen
 import com.requena.supportdesk.app.client.screens.ClientActivityScreen
 import com.requena.supportdesk.app.client.screens.ClientBoardScreen
 import com.requena.supportdesk.app.client.screens.ClientHomeScreen
-import com.requena.supportdesk.app.client.screens.ClientInvoicesScreen
 import com.requena.supportdesk.app.client.screens.ClientNewTicketScreen
 import com.requena.supportdesk.app.client.screens.ClientServiceScreen
 import com.requena.supportdesk.app.client.screens.ClientTasksScreen
@@ -44,8 +43,6 @@ import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
 import com.requena.supportdesk.designsystem.components.navigation.NavigationItemSpec
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
-import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
-import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
@@ -58,14 +55,13 @@ import com.composables.icons.lucide.Headphones
 import com.composables.icons.lucide.House
 import com.composables.icons.lucide.ListTodo
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.ReceiptText
 import com.composables.icons.lucide.Ticket
 import com.composables.icons.lucide.UserRound
 
 const val ClientDailyUrgentLimit = 3
 const val ClientDailyTaskLimit = 5
 
-enum class ClientDestination { HOME, NEW_TICKET, TICKETS, TASKS, BOARD, SERVICE, ACTIVITY, ACCOUNT, INVOICES }
+enum class ClientDestination { HOME, NEW_TICKET, TICKETS, TASKS, BOARD, SERVICE, ACTIVITY, ACCOUNT }
 
 data class ClientActivityItem(
     val ticketSubject: String,
@@ -88,7 +84,6 @@ private val clientNavItems = listOf(
     NavigationItemSpec(ClientDestination.SERVICE, "Mi Servicio", "Resumen de soporte", Lucide.Headphones),
     NavigationItemSpec(ClientDestination.ACTIVITY, "Actividad", "Historial de eventos", Lucide.Activity),
     NavigationItemSpec(ClientDestination.ACCOUNT, "Mi Cuenta", "Perfil y acceso", Lucide.UserRound),
-    NavigationItemSpec(ClientDestination.INVOICES, "Facturas", "Mis pagos", Lucide.ReceiptText),
 )
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -209,8 +204,6 @@ fun ClientPortalScreen(
     onEvent: (TicketsUiEvent) -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
-    invoicesState: InvoicesUiState = InvoicesUiState(),
-    onInvoicesEvent: (InvoicesUiEvent) -> Unit = {},
     tasksState: TasksUiState = TasksUiState(),
     onTasksEvent: (TasksUiEvent) -> Unit = {},
     clientId: String? = null,
@@ -226,12 +219,6 @@ fun ClientPortalScreen(
         }
     }
     var destination by remember { mutableStateOf(ClientDestination.HOME) }
-
-    LaunchedEffect(destination) {
-        if (destination == ClientDestination.INVOICES) {
-            onInvoicesEvent(InvoicesUiEvent.Load)
-        }
-    }
 
     LaunchedEffect(clientId) {
         onTasksEvent(TasksUiEvent.SelectDashboardClient(clientId))
@@ -363,10 +350,6 @@ fun ClientPortalScreen(
                     today = today,
                     onRefresh = onRefresh,
                     onSignOut = onSignOut,
-                )
-                ClientDestination.INVOICES -> ClientInvoicesScreen(
-                    state = invoicesState,
-                    onEvent = onInvoicesEvent,
                 )
             }
         }

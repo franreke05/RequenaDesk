@@ -24,6 +24,15 @@ class DatabaseMigrationTest {
         assertTrue(migration.contains("idx_invoice_items_invoice_id"))
     }
 
+    @Test
+    fun invoicePersistenceRemovalDropsTablesButKeepsTheNumberingSequence() {
+        val migration = migrationText("db/migration/V3__remove_invoice_persistence.sql")
+
+        assertTrue(migration.contains("DROP TABLE IF EXISTS invoice_items"))
+        assertTrue(migration.contains("DROP TABLE IF EXISTS invoices"))
+        assertFalse(migration.contains("DROP SEQUENCE"))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

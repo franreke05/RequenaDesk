@@ -17,6 +17,7 @@ import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.time.LocalDate
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -39,7 +40,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(2, dataSource.migrate())
+                assertEquals(3, dataSource.migrate())
                 assertTrue(dataSource.isReady())
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
@@ -72,7 +73,6 @@ class PostgresMigrationIntegrationTest {
                         "/admin/tasks",
                         "/admin/time-logs",
                         "/admin/dashboard",
-                        "/admin/invoices",
                     ).forEach { path ->
                         val response = client.get(path) {
                             header(HttpHeaders.Authorization, "Bearer $accessToken")
@@ -144,23 +144,25 @@ class PostgresMigrationIntegrationTest {
                     }
                     assertEquals(HttpStatusCode.Created, timeLogResponse.status)
 
-                    val invoiceResponse = client.post("/admin/invoices") {
+                    val invoicePayload = """
+                        {
+                          "clientId":"$clientId",
+                          "issuedAt":"${LocalDate.now()}",
+                          "taxPercent":21.0,
+                          "items":[
+                            {"description":"Integration service","quantity":1.0,"unitPrice":100.0,"sortOrder":0}
+                          ]
+                        }
+                    """.trimIndent()
+                    val encodedInvoicePayload = Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(invoicePayload.toByteArray(Charsets.UTF_8))
+                    val invoiceResponse = client.get("/admin/invoices/generate?data=$encodedInvoicePayload") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")
-                        contentType(ContentType.Application.Json)
-                        setBody(
-                            """
-                            {
-                              "clientId":"$clientId",
-                              "issuedAt":"${LocalDate.now()}",
-                              "taxPercent":21.0,
-                              "items":[
-                                {"description":"Integration service","quantity":1.0,"unitPrice":100.0,"sortOrder":0}
-                              ]
-                            }
-                            """.trimIndent(),
-                        )
                     }
-                    assertEquals(HttpStatusCode.Created, invoiceResponse.status)
+                    assertEquals(HttpStatusCode.OK, invoiceResponse.status)
+                    val invoiceHtml = invoiceResponse.bodyAsText()
+                    assertTrue(invoiceHtml.contains("Integration Client"))
+                    assertTrue(invoiceHtml.contains("121.00"))
                 }
 
                 assertEquals(0, dataSource.migrate())

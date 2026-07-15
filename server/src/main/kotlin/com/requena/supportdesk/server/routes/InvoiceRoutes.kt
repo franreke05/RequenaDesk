@@ -2,100 +2,57 @@ package com.requena.supportdesk.server.routes
 
 import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
-import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.errorResponse
-import com.requena.supportdesk.server.utils.invoiceJson
-import com.requena.supportdesk.server.utils.invoicesJson
-import com.requena.supportdesk.server.utils.receiveOrDefault
-import com.requena.supportdesk.server.utils.requireAdminIdentity
-import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
 import com.requena.supportdesk.server.utils.isAdmin
+import com.requena.supportdesk.server.utils.ownerAdminIdFor
+import com.requena.supportdesk.server.utils.requestJson
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
 import com.requena.supportdesk.server.utils.respondJson
-import com.requena.supportdesk.server.utils.successResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
-import io.ktor.server.routing.patch
-import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.serialization.decodeFromString
+import java.util.Base64
 
+// Invoices are generated on demand for download only — nothing is persisted.
+// Desktop's Desktop.browse() cannot set headers, so this stays a GET with
+// query-token auth, matching the pattern the old /pdf endpoint used.
 fun Route.invoiceRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin/invoices") {
-        get {
-            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
-            val limit = call.request.queryParameters.boundedInt("limit", default = 100, max = 200)
-            val offset = call.request.queryParameters.boundedInt("offset", default = 0, max = 10_000)
-            call.respondJson(body = successResponse("/admin/invoices",
-                invoicesJson(
-                    if (identity.isAdmin) {
-                        service.invoices(ownerAdminId = identity.userId, limit = limit, offset = offset)
-                    } else {
-                        service.invoices(clientId = identity.clientId, limit = limit, offset = offset)
-                    },
-                )))
-        }
-
-        get("/{id}") {
-            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
-            val id = call.parameters["id"]
-                ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing invoice id"))
-            val invoice = if (identity.isAdmin) {
-                service.invoice(id, ownerAdminId = identity.userId)
-            } else {
-                service.invoice(id, clientId = identity.clientId)
-            }
-                ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Invoice not found"))
-            call.respondJson(body = successResponse("/admin/invoices/$id", invoiceJson(invoice)))
-        }
-
-        post {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@post
-            val request = call.receiveOrDefault(CreateInvoiceRequest())
-            if (request.clientId.isBlank() || request.issuedAt.isBlank() || request.items.isEmpty()) {
-                return@post call.respondJson(HttpStatusCode.BadRequest,
-                    errorResponse("clientId, issuedAt y al menos un item son obligatorios"))
-            }
-            val invoice = service.createdInvoice(request, ownerAdminId = identity.userId)
-            call.respondJson(HttpStatusCode.Created, successResponse("/admin/invoices", invoiceJson(invoice)))
-        }
-
-        patch("/{id}/status") {
-            val identity = call.requireAdminIdentity(tokenService) ?: return@patch
-            val id = call.parameters["id"]
-                ?: return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing invoice id"))
-            val request = call.receiveOrDefault(UpdateInvoiceStatusRequest())
-            if (request.status !in setOf("SENT", "PAID", "CANCELLED")) {
-                return@patch call.respondJson(HttpStatusCode.BadRequest,
-                    errorResponse("status debe ser SENT, PAID o CANCELLED"))
-            }
-            val invoice = service.updatedInvoiceStatus(id, request, ownerAdminId = identity.userId)
-            call.respondJson(body = successResponse("/admin/invoices/$id/status", invoiceJson(invoice)))
-        }
-
-        // Returns a printable HTML page — browser can File > Print > Save as PDF
-        get("/{id}/pdf") {
+        get("/generate") {
             val identity = call.requireAuthenticatedIdentity(tokenService, allowQueryToken = true) ?: return@get
-            val id = call.parameters["id"]
-                ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing invoice id"))
-            val invoice = if (identity.isAdmin) {
-                service.invoice(id, ownerAdminId = identity.userId)
-            } else {
-                service.invoice(id, clientId = identity.clientId)
+            val ownerAdminId = service.ownerAdminIdFor(identity)
+                ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
+            val encodedData = call.request.queryParameters["data"]
+                ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Missing data parameter"))
+            val decoded = runCatching {
+                val jsonText = Base64.getUrlDecoder().decode(encodedData).toString(Charsets.UTF_8)
+                requestJson.decodeFromString<CreateInvoiceRequest>(jsonText)
+            }.getOrNull()
+                ?: return@get call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid data parameter"))
+            // Clients can only generate invoices for their own client id, mirroring
+            // the clientId-spoofing guard already used by TaskRoutes.post("/tasks").
+            val request = if (identity.isAdmin) decoded else decoded.copy(clientId = identity.clientId.orEmpty())
+
+            if (request.clientId.isBlank() || request.issuedAt.isBlank() || request.items.isEmpty()) {
+                return@get call.respondJson(
+                    HttpStatusCode.BadRequest,
+                    errorResponse("clientId, issuedAt y al menos un item son obligatorios"),
+                )
             }
-                ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Invoice not found"))
+
+            val invoice = service.generateInvoice(request, ownerAdminId = ownerAdminId)
             call.respondText(contentType = ContentType.Text.Html, status = HttpStatusCode.OK) {
                 invoiceHtml(invoice)
             }
         }
     }
 }
-
-private fun io.ktor.http.Parameters.boundedInt(name: String, default: Int, max: Int): Int =
-    this[name]?.toIntOrNull()?.coerceIn(0, max) ?: default
 
 private fun escapeHtml(value: String): String = value
     .replace("&", "&amp;")
@@ -104,35 +61,34 @@ private fun escapeHtml(value: String): String = value
     .replace("\"", "&quot;")
     .replace("'", "&#39;")
 
+// Locale.ROOT keeps the decimal separator as "." regardless of the server's
+// default locale, so the rendered total is deterministic and test-stable.
+private fun money(value: Double): String = String.format(java.util.Locale.ROOT, "%.2f", value)
+
 private fun invoiceHtml(invoice: ServerInvoiceSnapshot): String {
     val subtotal = invoice.items.sumOf { it.quantity * it.unitPrice }
     val taxAmount = subtotal * (invoice.taxPercent / 100.0)
     val total = subtotal + taxAmount
     val itemRows = invoice.items.sortedBy { it.sortOrder }.joinToString("") { item ->
         val s = item.quantity * item.unitPrice
-        "<tr><td>${escapeHtml(item.description)}</td><td style='text-align:right'>${"%.2f".format(item.quantity)}</td><td style='text-align:right'>${"%.2f".format(item.unitPrice)}</td><td style='text-align:right'>${"%.2f".format(s)}</td></tr>"
+        "<tr><td>${escapeHtml(item.description)}</td><td style='text-align:right'>${money(item.quantity)}</td><td style='text-align:right'>${money(item.unitPrice)}</td><td style='text-align:right'>${money(s)}</td></tr>"
     }
-    val statusLabel = when (invoice.status) { "DRAFT" -> "Borrador"; "SENT" -> "Enviada"; "PAID" -> "Pagada"; "CANCELLED" -> "Cancelada"; else -> invoice.status }
-    val statusBg = when (invoice.status) { "PAID" -> "#e2efe6"; "SENT" -> "#e1eced"; "CANCELLED" -> "#f7e4e1"; else -> "#f0f0f0" }
-    val statusFg = when (invoice.status) { "PAID" -> "#2e6a44"; "SENT" -> "#3d6468"; "CANCELLED" -> "#9a3e35"; else -> "#555" }
     return """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Factura ${escapeHtml(invoice.invoiceNumber)}</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Georgia,serif;color:#1a1a1a;padding:48px;max-width:800px;margin:0 auto}
 h1{font-size:28px;margin-bottom:4px}.sub{color:#666;font-size:14px;margin-bottom:32px}.meta{display:flex;justify-content:space-between;margin-bottom:32px}
 .meta-block{font-size:14px;line-height:1.6}.meta-block strong{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:2px}
-.status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:bold;background:${statusBg};color:${statusFg}}
 table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14px}th{background:#f5f0e8;padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase}
 td{padding:10px 12px;border-bottom:1px solid #eee}.totals{margin-left:auto;width:280px}.totals td{border:none;padding:6px 12px}
 .total-row td{font-weight:bold;font-size:16px;border-top:2px solid #1a1a1a;padding-top:10px}
 .notes{margin-top:32px;font-size:13px;color:#666;font-style:italic}@media print{.no-print{display:none}}</style></head>
 <body><h1>${escapeHtml(invoice.invoiceNumber)}</h1><p class="sub">${escapeHtml(invoice.clientName)}</p>
-<div class="meta"><div class="meta-block"><strong>Estado</strong><span class="status">$statusLabel</span></div>
-<div class="meta-block"><strong>Fecha emisión</strong>${invoice.issuedAt}</div>
+<div class="meta"><div class="meta-block"><strong>Fecha emisión</strong>${invoice.issuedAt}</div>
 ${if (invoice.dueAt != null) "<div class='meta-block'><strong>Vencimiento</strong>${invoice.dueAt}</div>" else ""}</div>
 <table><thead><tr><th>Descripción</th><th style='text-align:right'>Cant.</th><th style='text-align:right'>Precio unit.</th><th style='text-align:right'>Subtotal</th></tr></thead>
 <tbody>$itemRows</tbody></table>
-<table class="totals"><tr><td>Subtotal</td><td style='text-align:right'>${"%.2f".format(subtotal)}</td></tr>
-<tr><td>Impuesto (${invoice.taxPercent}%)</td><td style='text-align:right'>${"%.2f".format(taxAmount)}</td></tr>
-<tr class="total-row"><td>Total</td><td style='text-align:right'>${"%.2f".format(total)}</td></tr></table>
+<table class="totals"><tr><td>Subtotal</td><td style='text-align:right'>${money(subtotal)}</td></tr>
+<tr><td>Impuesto (${invoice.taxPercent}%)</td><td style='text-align:right'>${money(taxAmount)}</td></tr>
+<tr class="total-row"><td>Total</td><td style='text-align:right'>${money(total)}</td></tr></table>
 ${if (!invoice.notes.isNullOrBlank()) "<p class='notes'>${escapeHtml(invoice.notes)}</p>" else ""}
 <p class="no-print" style="margin-top:32px;text-align:center">
 <button onclick="window.print()" style="padding:10px 24px;background:#b38349;color:white;border:none;border-radius:6px;font-size:14px;cursor:pointer">Imprimir / Guardar como PDF</button></p>

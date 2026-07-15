@@ -148,8 +148,3 @@ data class CreateInvoiceRequest(
     val taxPercent: Double = 0.0,
     val items: List<CreateInvoiceItemRequest> = emptyList(),
 )
-
-@Serializable
-data class UpdateInvoiceStatusRequest(
-    val status: String = "",
-)

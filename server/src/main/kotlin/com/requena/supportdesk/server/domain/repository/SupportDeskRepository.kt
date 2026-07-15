@@ -9,7 +9,6 @@ import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
-import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -59,8 +58,5 @@ interface SupportDeskRepository {
     fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot
     fun getAttachment(id: String): ServerAttachmentSnapshot?
     fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration
-    fun getInvoices(ownerAdminId: String? = null, clientId: String? = null, limit: Int = 100, offset: Int = 0): List<ServerInvoiceSnapshot>
-    fun getInvoice(id: String, ownerAdminId: String? = null, clientId: String? = null): ServerInvoiceSnapshot?
-    fun createInvoice(request: CreateInvoiceRequest, createdBy: String): ServerInvoiceSnapshot
-    fun updateInvoiceStatus(invoiceId: String, request: UpdateInvoiceStatusRequest, ownerAdminId: String): ServerInvoiceSnapshot
+    fun generateInvoice(request: CreateInvoiceRequest, ownerAdminId: String): ServerInvoiceSnapshot
 }

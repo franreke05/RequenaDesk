@@ -46,11 +46,7 @@ import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
 import com.requena.supportdesk.features.invoices.data.datasource.RemoteInvoicesDataSource
 import com.requena.supportdesk.features.invoices.data.repository.InvoicesRepositoryImpl
-import com.requena.supportdesk.features.invoices.domain.usecase.CreateInvoiceUseCase
-import com.requena.supportdesk.features.invoices.domain.usecase.GetInvoicePdfUrlUseCase
-import com.requena.supportdesk.features.invoices.domain.usecase.GetInvoiceUseCase
-import com.requena.supportdesk.features.invoices.domain.usecase.GetInvoicesUseCase
-import com.requena.supportdesk.features.invoices.domain.usecase.UpdateInvoiceStatusUseCase
+import com.requena.supportdesk.features.invoices.domain.usecase.GenerateInvoiceUseCase
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
@@ -67,7 +63,7 @@ object SupportDeskSharedModule {
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
     private val dashboardRepository = DashboardRepositoryImpl(RemoteDashboardDataSource(httpClient))
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
-    private val invoicesRepository = InvoicesRepositoryImpl(RemoteInvoicesDataSource(httpClient, sessionManager))
+    private val invoicesRepository = InvoicesRepositoryImpl(RemoteInvoicesDataSource(sessionManager))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
@@ -94,11 +90,7 @@ object SupportDeskSharedModule {
     private val createTimeLogUseCase = CreateTimeLogUseCase(tasksRepository)
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
-    private val getInvoicesUseCase = GetInvoicesUseCase(invoicesRepository)
-    private val getInvoiceUseCase = GetInvoiceUseCase(invoicesRepository)
-    private val createInvoiceUseCase = CreateInvoiceUseCase(invoicesRepository)
-    private val updateInvoiceStatusUseCase = UpdateInvoiceStatusUseCase(invoicesRepository)
-    private val getInvoicePdfUrlUseCase = GetInvoicePdfUrlUseCase(invoicesRepository)
+    private val generateInvoiceUseCase = GenerateInvoiceUseCase(invoicesRepository)
 
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
@@ -127,11 +119,7 @@ object SupportDeskSharedModule {
     fun createNotificationsViewModel(): NotificationsViewModel = NotificationsViewModel(registerDeviceUseCase)
 
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
-        getInvoicesUseCase = getInvoicesUseCase,
-        getInvoiceUseCase = getInvoiceUseCase,
-        createInvoiceUseCase = createInvoiceUseCase,
-        updateInvoiceStatusUseCase = updateInvoiceStatusUseCase,
-        getInvoicePdfUrlUseCase = getInvoicePdfUrlUseCase,
+        generateInvoiceUseCase = generateInvoiceUseCase,
     )
 
     fun createTasksViewModel(): TasksViewModel = TasksViewModel(

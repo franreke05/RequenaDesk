@@ -49,7 +49,7 @@ class PostgresSupportDeskDataSource(
                     to_regclass('public.users') IS NOT NULL
                     AND to_regclass('public.clients') IS NOT NULL
                     AND to_regclass('public.tickets') IS NOT NULL
-                    AND to_regclass('public.invoices') IS NOT NULL
+                    AND to_regclass('public.invoice_number_seq') IS NOT NULL
                 """.trimIndent(),
             ).use { statement ->
                 statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }

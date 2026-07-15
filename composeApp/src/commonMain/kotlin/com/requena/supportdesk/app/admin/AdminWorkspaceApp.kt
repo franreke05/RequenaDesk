@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
 import com.requena.supportdesk.app.client.ClientPortalScreen
-import com.requena.supportdesk.app.admin.screens.AdminCreateInvoiceScreen
 import com.requena.supportdesk.app.admin.screens.AdminDashboardScreen
 import com.requena.supportdesk.app.admin.screens.AdminInvoicesScreen
 import com.requena.supportdesk.app.admin.screens.AdminLoginScreen
@@ -51,7 +50,6 @@ import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEff
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
-import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -131,10 +129,7 @@ fun AdminWorkspaceApp() {
             module.invoicesViewModel.effects.collect { effect ->
                 when (effect) {
                     is InvoicesUiEffect.ShowMessage -> statusMessage = effect.message
-                    is InvoicesUiEffect.OpenPdfUrl -> uriHandler.openUri(effect.url)
-                    is InvoicesUiEffect.InvoiceCreated -> {
-                        navigation = navigation.copy(destination = AppDestination.InvoiceDetail(effect.invoiceId))
-                    }
+                    is InvoicesUiEffect.OpenGeneratedInvoice -> uriHandler.openUri(effect.url)
                 }
             }
         }
@@ -173,12 +168,6 @@ fun AdminWorkspaceApp() {
         module.tasksViewModel.onEvent(TasksUiEvent.Load)
     }
 
-    LaunchedEffect(currentUser?.id, navigation.destination) {
-        if (currentUser != null && navigation.destination == AppDestination.Invoices) {
-            module.invoicesViewModel.onEvent(InvoicesUiEvent.Load)
-        }
-    }
-
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -203,8 +192,6 @@ fun AdminWorkspaceApp() {
                 onEvent = module.ticketsViewModel::onEvent,
                 onRefresh = { module.ticketsViewModel.onEvent(com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent.Load) },
                 onSignOut = { module.authViewModel.onEvent(com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent.Logout) },
-                invoicesState = invoicesState,
-                onInvoicesEvent = module.invoicesViewModel::onEvent,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
                 clientId = currentUser.clientId,
@@ -488,23 +475,10 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
 
-            AppDestination.Invoices,
-            is AppDestination.InvoiceDetail -> AdminInvoicesScreen(
+            AppDestination.Invoices -> AdminInvoicesScreen(
                 clients = clientsState.clients,
                 state = invoicesState,
                 onEvent = module.invoicesViewModel::onEvent,
-                onNavigateToCreate = { onNavigate(AppDestination.CreateInvoice) },
-                modifier = Modifier.weight(1f),
-            )
-
-            AppDestination.CreateInvoice -> AdminCreateInvoiceScreen(
-                clients = clientsState.clients,
-                isSubmitting = invoicesState.isLoading,
-                errorMessage = invoicesState.errorMessage,
-                onBack = { onNavigate(AppDestination.Invoices) },
-                onCreateInvoice = { input ->
-                    module.invoicesViewModel.onEvent(InvoicesUiEvent.CreateInvoice(input))
-                },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -518,9 +492,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Pinboard -> AppDestination.Pinboard
     AppDestination.Labels,
     AppDestination.Notifications -> AppDestination.Labels
-    AppDestination.Invoices,
-    AppDestination.CreateInvoice,
-    is AppDestination.InvoiceDetail -> AppDestination.Invoices
+    AppDestination.Invoices -> AppDestination.Invoices
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> AppDestination.Tickets
@@ -535,8 +507,6 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
     AppDestination.Invoices -> "Facturas"
-    AppDestination.CreateInvoice -> "Nueva factura"
-    is AppDestination.InvoiceDetail -> "Detalle factura"
     AppDestination.Tickets -> "Tickets"
     AppDestination.CreateTicket -> "Nuevo ticket"
     is AppDestination.TicketDetail -> "Detalle del ticket"
@@ -550,9 +520,7 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy, organizadas por etiqueta."
     AppDestination.Labels,
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
-    AppDestination.Invoices,
-    AppDestination.CreateInvoice,
-    is AppDestination.InvoiceDetail -> "Crea, envia y cobra facturas a tus clientes."
+    AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Gestiona solicitudes, conversacion, estado y prioridad."

@@ -10,7 +10,6 @@ import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
 import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
-import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -136,22 +135,11 @@ class SupportDeskService(
 
     fun registerDevice(request: RegisterDeviceRequest) = repository.registerDevice(request)
 
-    fun invoices(ownerAdminId: String? = null, clientId: String? = null, limit: Int = 100, offset: Int = 0) =
-        repository.getInvoices(ownerAdminId = ownerAdminId, clientId = clientId, limit = limit.coerceIn(1, 200), offset = offset.coerceAtLeast(0))
-
-    fun invoice(id: String, ownerAdminId: String? = null, clientId: String? = null) =
-        repository.getInvoice(id, ownerAdminId = ownerAdminId, clientId = clientId)
-
-    fun createdInvoice(request: CreateInvoiceRequest, ownerAdminId: String) = run {
+    fun generateInvoice(request: CreateInvoiceRequest, ownerAdminId: String) = run {
         if (request.clientId.isBlank()) throw ServerValidationException("clientId es obligatorio")
         if (request.issuedAt.isBlank()) throw ServerValidationException("issuedAt es obligatorio")
         if (request.items.isEmpty()) throw ServerValidationException("Se requiere al menos un item")
-        repository.createInvoice(request, createdBy = ownerAdminId)
-    }
-
-    fun updatedInvoiceStatus(invoiceId: String, request: UpdateInvoiceStatusRequest, ownerAdminId: String) = run {
-        if (request.status !in setOf("SENT", "PAID", "CANCELLED")) throw ServerValidationException("status invalido: ${request.status}")
-        repository.updateInvoiceStatus(invoiceId, request, ownerAdminId)
+        repository.generateInvoice(request, ownerAdminId)
     }
 
     private fun validateTaskDueDate(dueDate: String?) {

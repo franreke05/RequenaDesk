@@ -5,7 +5,6 @@ import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.ServerInvoiceItemSnapshot
 import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
-import com.requena.supportdesk.server.domain.model.UpdateInvoiceStatusRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
@@ -46,7 +45,6 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 
 class PostgresSupportDeskRepository(
     private val dataSource: PostgresSupportDeskDataSource,
@@ -1580,182 +1578,33 @@ class PostgresSupportDeskRepository(
     }
 
     // ── Invoices ─────────────────────────────────────────────────────────────
+    // Invoices are generated on demand and never persisted; only the sequence
+    // is touched, to claim a unique, gap-free invoice number.
 
-    override fun getInvoices(ownerAdminId: String?, clientId: String?, limit: Int, offset: Int): List<ServerInvoiceSnapshot> =
-        dataSource.withConnection { connection ->
-            connection.prepareStatement(
-                """
-                SELECT i.id::text, i.invoice_number, i.client_id::text,
-                       COALESCE(c.company_name, '') AS client_name,
-                       i.status, i.issued_at::text, i.due_at::text,
-                       i.notes, i.tax_percent,
-                       i.created_at, i.sent_at, i.paid_at
-                FROM invoices i
-                JOIN clients c ON c.id = i.client_id
-                WHERE (? IS NULL OR c.owner_admin_id::text = ?)
-                  AND (? IS NULL OR i.client_id::text = ?)
-                  AND (? IS NULL OR i.status IN ('SENT', 'PAID'))
-                ORDER BY i.created_at DESC
-                LIMIT ? OFFSET ?
-                """.trimIndent(),
-            ).use { stmt ->
-                stmt.setString(1, ownerAdminId)
-                stmt.setString(2, ownerAdminId)
-                stmt.setString(3, clientId)
-                stmt.setString(4, clientId)
-                stmt.setString(5, clientId)
-                stmt.setInt(6, limit.coerceIn(1, 200))
-                stmt.setInt(7, offset.coerceAtLeast(0))
-                stmt.executeQuery().use { rs ->
-                    buildList {
-                        while (rs.next()) {
-                            val invoiceId = rs.getString("id")
-                            add(invoiceSnapshot(rs, fetchInvoiceItems(connection, invoiceId)))
-                        }
-                    }
-                }
-            }
-        }
-
-    override fun getInvoice(id: String, ownerAdminId: String?, clientId: String?): ServerInvoiceSnapshot? =
-        dataSource.withConnection { connection ->
-            connection.prepareStatement(
-                """
-                SELECT i.id::text, i.invoice_number, i.client_id::text,
-                       COALESCE(c.company_name, '') AS client_name,
-                       i.status, i.issued_at::text, i.due_at::text,
-                       i.notes, i.tax_percent,
-                       i.created_at, i.sent_at, i.paid_at
-                FROM invoices i
-                JOIN clients c ON c.id = i.client_id
-                WHERE i.id = CAST(? AS uuid)
-                  AND (? IS NULL OR c.owner_admin_id::text = ?)
-                  AND (? IS NULL OR i.client_id::text = ?)
-                LIMIT 1
-                """.trimIndent(),
-            ).use { stmt ->
-                stmt.setString(1, id)
-                stmt.setString(2, ownerAdminId)
-                stmt.setString(3, ownerAdminId)
-                stmt.setString(4, clientId)
-                stmt.setString(5, clientId)
-                stmt.executeQuery().use { rs ->
-                    if (rs.next()) invoiceSnapshot(rs, fetchInvoiceItems(connection, id)) else null
-                }
-            }
-        }
-
-    override fun createInvoice(request: CreateInvoiceRequest, createdBy: String): ServerInvoiceSnapshot =
-        dataSource.withConnection { connection ->
-            connection.autoCommit = false
-            try {
-                val invoiceId = UUID.randomUUID().toString()
-                val invoiceNumber = generateInvoiceNumber(connection)
-                connection.prepareStatement(
-                    """
-                    INSERT INTO invoices (id, invoice_number, client_id, status, issued_at, due_at,
-                                         notes, tax_percent, created_by, created_at, updated_at)
-                    VALUES (CAST(? AS uuid), ?, CAST(? AS uuid), 'DRAFT',
-                            CAST(? AS date), CAST(? AS date), ?, ?, CAST(? AS uuid), NOW(), NOW())
-                    """.trimIndent(),
-                ).use { stmt ->
-                    stmt.setString(1, invoiceId)
-                    stmt.setString(2, invoiceNumber)
-                    stmt.setString(3, request.clientId)
-                    stmt.setString(4, request.issuedAt)
-                    stmt.setString(5, request.dueAt?.takeIf { it.isNotBlank() })
-                    stmt.setString(6, request.notes?.takeIf { it.isNotBlank() })
-                    stmt.setDouble(7, request.taxPercent.coerceIn(0.0, 100.0))
-                    stmt.setString(8, createdBy)
-                    stmt.executeUpdate()
-                }
-                request.items.forEachIndexed { index, item ->
-                    connection.prepareStatement(
-                        """
-                        INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, sort_order)
-                        VALUES (gen_random_uuid(), CAST(? AS uuid), ?, ?, ?, ?)
-                        """.trimIndent(),
-                    ).use { stmt ->
-                        stmt.setString(1, invoiceId)
-                        stmt.setString(2, item.description)
-                        stmt.setDouble(3, item.quantity.coerceAtLeast(0.0))
-                        stmt.setDouble(4, item.unitPrice.coerceAtLeast(0.0))
-                        stmt.setInt(5, item.sortOrder.takeIf { it >= 0 } ?: index)
-                        stmt.executeUpdate()
-                    }
-                }
-                connection.commit()
-                getInvoice(invoiceId) ?: throw ServerNotFoundException("Invoice not found after creation")
-            } catch (e: Exception) {
-                connection.rollback()
-                throw e
-            } finally {
-                connection.autoCommit = true
-            }
-        }
-
-    override fun updateInvoiceStatus(invoiceId: String, request: UpdateInvoiceStatusRequest, ownerAdminId: String): ServerInvoiceSnapshot =
-        dataSource.withConnection { connection ->
-            val sentAtClause = if (request.status == "SENT") ", sent_at = NOW()" else ""
-            val paidAtClause = if (request.status == "PAID") ", paid_at = NOW()" else ""
-            connection.prepareStatement(
-                """
-                UPDATE invoices
-                SET status = ?, updated_at = NOW()$sentAtClause$paidAtClause
-                WHERE id = CAST(? AS uuid)
-                  AND EXISTS (
-                      SELECT 1 FROM clients c
-                      WHERE c.id = invoices.client_id AND c.owner_admin_id::text = ?
-                  )
-                """.trimIndent(),
-            ).use { stmt ->
-                stmt.setString(1, request.status)
-                stmt.setString(2, invoiceId)
-                stmt.setString(3, ownerAdminId)
-                stmt.executeUpdate()
-            }
-            getInvoice(invoiceId, ownerAdminId = ownerAdminId) ?: throw ServerNotFoundException("Invoice not found")
-        }
-
-    private fun fetchInvoiceItems(connection: Connection, invoiceId: String): List<ServerInvoiceItemSnapshot> =
-        connection.prepareStatement(
-            """
-            SELECT id::text, description, quantity, unit_price, sort_order
-            FROM invoice_items WHERE invoice_id = CAST(? AS uuid)
-            ORDER BY sort_order ASC
-            """.trimIndent(),
-        ).use { stmt ->
-            stmt.setString(1, invoiceId)
-            stmt.executeQuery().use { rs ->
-                buildList {
-                    while (rs.next()) {
-                        add(ServerInvoiceItemSnapshot(
-                            id = rs.getString("id"),
-                            description = rs.getString("description"),
-                            quantity = rs.getDouble("quantity"),
-                            unitPrice = rs.getDouble("unit_price"),
-                            sortOrder = rs.getInt("sort_order"),
-                        ))
-                    }
-                }
-            }
-        }
-
-    private fun invoiceSnapshot(rs: ResultSet, items: List<ServerInvoiceItemSnapshot>) = ServerInvoiceSnapshot(
-        id = rs.getString("id"),
-        invoiceNumber = rs.getString("invoice_number"),
-        clientId = rs.getString("client_id"),
-        clientName = rs.getString("client_name"),
-        status = rs.getString("status"),
-        issuedAt = rs.getString("issued_at") ?: "",
-        dueAt = rs.getString("due_at"),
-        notes = rs.getString("notes"),
-        taxPercent = rs.getDouble("tax_percent"),
-        items = items,
-        createdAt = formatTimestamp(rs.getObject("created_at")),
-        sentAt = formatTimestamp(rs.getObject("sent_at")).takeIf { it.isNotBlank() },
-        paidAt = formatTimestamp(rs.getObject("paid_at")).takeIf { it.isNotBlank() },
-    )
+    override fun generateInvoice(request: CreateInvoiceRequest, ownerAdminId: String): ServerInvoiceSnapshot {
+        val client = getClients(ownerAdminId).firstOrNull { it.id == request.clientId }
+            ?: throw ServerNotFoundException("Client not found")
+        val invoiceNumber = dataSource.withConnection { connection -> generateInvoiceNumber(connection) }
+        return ServerInvoiceSnapshot(
+            invoiceNumber = invoiceNumber,
+            clientId = client.id,
+            clientName = client.companyName,
+            issuedAt = request.issuedAt,
+            dueAt = request.dueAt?.takeIf { it.isNotBlank() },
+            notes = request.notes?.takeIf { it.isNotBlank() },
+            taxPercent = request.taxPercent.coerceIn(0.0, 100.0),
+            items = request.items.mapIndexed { index, item ->
+                val sortOrder = item.sortOrder.takeIf { it >= 0 } ?: index
+                ServerInvoiceItemSnapshot(
+                    id = sortOrder.toString(),
+                    description = item.description,
+                    quantity = item.quantity.coerceAtLeast(0.0),
+                    unitPrice = item.unitPrice.coerceAtLeast(0.0),
+                    sortOrder = sortOrder,
+                )
+            },
+        )
+    }
 
     private fun generateInvoiceNumber(connection: Connection): String {
         val seq = connection.prepareStatement("SELECT nextval('invoice_number_seq')").use { stmt ->

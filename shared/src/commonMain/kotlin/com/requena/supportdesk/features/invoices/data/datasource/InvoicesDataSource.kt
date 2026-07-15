@@ -1,55 +1,24 @@
 package com.requena.supportdesk.features.invoices.data.datasource
 
 import com.requena.supportdesk.core.network.SupportDeskSessionManager
-import com.requena.supportdesk.core.network.jsonRequestBody
-import com.requena.supportdesk.core.network.requireApiData
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
+import com.requena.supportdesk.core.network.supportDeskNetworkJson
 import com.requena.supportdesk.features.invoices.data.dto.CreateInvoiceRequestDto
-import com.requena.supportdesk.features.invoices.data.dto.InvoiceDto
-import com.requena.supportdesk.features.invoices.data.dto.InvoicePdfUrlDto
-import com.requena.supportdesk.features.invoices.data.dto.UpdateInvoiceStatusRequestDto
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.patch
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
+import kotlin.io.encoding.Base64
 
 interface InvoicesDataSource {
-    suspend fun getInvoices(): List<InvoiceDto>
-    suspend fun getInvoice(id: String): InvoiceDto?
-    suspend fun createInvoice(request: CreateInvoiceRequestDto): InvoiceDto
-    suspend fun updateStatus(invoiceId: String, request: UpdateInvoiceStatusRequestDto): InvoiceDto
-    suspend fun getPdfUrl(invoiceId: String): InvoicePdfUrlDto
+    fun buildGeneratedInvoiceUrl(request: CreateInvoiceRequestDto): String
 }
 
 class RemoteInvoicesDataSource(
-    private val httpClient: HttpClient,
     private val sessionManager: SupportDeskSessionManager,
 ) : InvoicesDataSource {
 
-    private fun invoicesPath(): String = "/admin/invoices"
-
-    override suspend fun getInvoices(): List<InvoiceDto> =
-        httpClient.get("${supportDeskBaseUrl()}${invoicesPath()}").requireApiData()
-
-    override suspend fun getInvoice(id: String): InvoiceDto? =
-        httpClient.get("${supportDeskBaseUrl()}${invoicesPath()}/$id").requireApiData()
-
-    override suspend fun createInvoice(request: CreateInvoiceRequestDto): InvoiceDto =
-        httpClient.post("${supportDeskBaseUrl()}/admin/invoices") {
-            setBody(jsonRequestBody(request))
-        }.requireApiData()
-
-    override suspend fun updateStatus(invoiceId: String, request: UpdateInvoiceStatusRequestDto): InvoiceDto =
-        httpClient.patch("${supportDeskBaseUrl()}/admin/invoices/$invoiceId/status") {
-            setBody(jsonRequestBody(request))
-        }.requireApiData()
-
-    override suspend fun getPdfUrl(invoiceId: String): InvoicePdfUrlDto {
+    override fun buildGeneratedInvoiceUrl(request: CreateInvoiceRequestDto): String {
         val accessToken = sessionManager.currentAccessToken()
-            ?: error("No hay una sesion activa para abrir la factura.")
-        return InvoicePdfUrlDto(
-            url = "${supportDeskBaseUrl()}${invoicesPath()}/$invoiceId/pdf?access_token=$accessToken",
-        )
+            ?: error("No hay una sesion activa para generar la factura.")
+        val payload = supportDeskNetworkJson.encodeToString(CreateInvoiceRequestDto.serializer(), request)
+        val encodedData = Base64.UrlSafe.encode(payload.encodeToByteArray()).trimEnd('=')
+        return "${supportDeskBaseUrl()}/admin/invoices/generate?data=$encodedData&access_token=$accessToken"
     }
 }

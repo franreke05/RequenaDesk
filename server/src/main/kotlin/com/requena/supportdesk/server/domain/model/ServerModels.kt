@@ -196,17 +196,12 @@ data class ServerInvoiceItemSnapshot(
 )
 
 data class ServerInvoiceSnapshot(
-    val id: String,
     val invoiceNumber: String,
     val clientId: String,
     val clientName: String,
-    val status: String,
     val issuedAt: String,
     val dueAt: String?,
     val notes: String?,
     val taxPercent: Double,
     val items: List<ServerInvoiceItemSnapshot>,
-    val createdAt: String,
-    val sentAt: String?,
-    val paidAt: String?,
 )
