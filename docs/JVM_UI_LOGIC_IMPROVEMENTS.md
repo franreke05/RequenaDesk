@@ -172,3 +172,23 @@ Cada operación emite logs estructurados sin volcar el contenido completo del fo
 - `invoice_pdf.open.start/success/failure`: diagnostica la apertura en el visor del sistema.
 
 El `operationId` permite seguir un intento concreto desde el clic hasta el resultado final en la consola de Android Studio o en la salida del proceso JVM.
+
+## Tareas: maestro-detalle responsive
+
+El 2026-07-15 se rediseñó exclusivamente la pantalla administrativa de Tareas tomando Clientes como referencia estructural. En escritorio, la lista ocupa el 40 % del contenido y la ficha editable el 60 %; cuando el área útil baja de 900 dp, ambos paneles se apilan. Los encabezados, acciones, selectores y grupos de formulario tienen breakpoints internos adicionales para evitar desbordamiento horizontal.
+
+El panel izquierdo integra búsqueda, filtros desplegables, alta, eliminación con confirmación y la lista virtualizada. La búsqueda utiliza únicamente campos reales: título, descripción, empresa del cliente y nombre de la etiqueta. Los filtros disponibles son cliente, etiqueta y el estado binario persistido (`Activa` o `Completada`).
+
+La ficha derecha permite editar título, descripción, cliente, una etiqueta y fecha programada, además de completar o reabrir la tarea. También muestra el tiempo registrado, ID y fechas reales de creación y actualización. Los botones reflejan carga, cambios pendientes y estados deshabilitados; las filas incorporan selección semántica, feedback de hover y texto junto a los colores de estado.
+
+No se añadieron prioridad, tiempo estimado, notas independientes, creador, múltiples etiquetas ni estados adicionales. Esos campos no existen en `WorkTask`, los DTO, el repositorio ni el contrato Ktor, por lo que incluirlos habría requerido inventar persistencia y ampliar el servidor fuera del alcance acordado.
+
+Validación específica ejecutada:
+
+```powershell
+.\gradlew.bat :composeApp:compileKotlinJvm
+.\gradlew.bat :composeApp:jvmTest
+git diff --check
+```
+
+Las pruebas nuevas verifican búsqueda por los cuatro campos reales, filtrado por el indicador `completed` y el cambio entre composición apilada y dividida en el breakpoint de 900 dp.
