@@ -1,8 +1,15 @@
 package com.requena.supportdesk.app.admin.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,21 +20,34 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,12 +61,22 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.composables.icons.lucide.CalendarDays
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.Clock
+import com.composables.icons.lucide.ListTodo
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.UserRound
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.WorkTask
@@ -54,17 +84,16 @@ import com.requena.supportdesk.designsystem.components.badges.ClientAccountStatu
 import com.requena.supportdesk.designsystem.components.badges.ClientServiceTierBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
-import com.requena.supportdesk.designsystem.components.feedback.ConfirmDialog
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.components.inputs.SearchField
-import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 
@@ -78,131 +107,87 @@ fun AdminTasksScreen(
     val spacing = SupportDeskThemeTokens.spacing
     var query by rememberSaveable { mutableStateOf("") }
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
-    val visibleTasks = remember(tasksState.filteredTasks, query) {
+    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
+    var statusFilter by rememberSaveable { mutableStateOf(TaskStatusFilter.ALL) }
+    var taskPendingDeletion by remember { mutableStateOf<WorkTask?>(null) }
+    val clientsById = remember(clients) { clients.associateBy(Client::id) }
+    val categoriesById = remember(tasksState.categories) { tasksState.categories.associateBy(TaskCategory::id) }
+    val visibleTasks = remember(
+        tasksState.filteredTasks,
+        query,
+        clientsById,
+        categoriesById,
+        statusFilter,
+    ) {
         tasksState.filteredTasks.filter { task ->
-            query.isBlank() ||
-                task.title.contains(query, ignoreCase = true) ||
-                task.description.contains(query, ignoreCase = true)
+            task.matchesTaskQuery(query, clientsById, categoriesById) && statusFilter.matches(task)
         }
     }
     val selectedTask = tasksState.selectedTask
 
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(spacing.lg),
-    ) {
-        SearchField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = "Buscar tarea por nombre o descripcion",
-        )
+    LaunchedEffect(tasksState.lastCreatedTaskId) {
+        if (tasksState.lastCreatedTaskId != null) showCreateDialog = false
+    }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PrimaryButton(
-                text = "Nueva tarea",
-                onClick = { showCreateDialog = true },
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val layoutMode = resolveTaskLayoutMode(maxWidth)
+        val listPane: @Composable (Modifier) -> Unit = { paneModifier ->
+            TaskListPane(
+                tasks = visibleTasks,
+                totalTaskCount = tasksState.tasks.size,
+                categories = tasksState.categories,
+                clients = clients,
+                query = query,
+                filtersExpanded = filtersExpanded,
+                selectedCategoryId = tasksState.selectedCategoryId,
+                selectedClientId = tasksState.selectedClientFilterId,
+                statusFilter = statusFilter,
+                selectedTaskId = selectedTask?.id,
+                isLoading = tasksState.isLoading,
+                errorMessage = tasksState.errorMessage,
+                onQueryChange = { query = it },
+                onToggleFilters = { filtersExpanded = !filtersExpanded },
+                onCategoryFilterChange = { onTasksEvent(TasksUiEvent.SelectCategory(it)) },
+                onClientFilterChange = { onTasksEvent(TasksUiEvent.SelectClientFilter(it)) },
+                onStatusFilterChange = { statusFilter = it },
+                onSelect = { onTasksEvent(TasksUiEvent.SelectTask(it)) },
+                onCreate = { showCreateDialog = true },
+                onDeleteSelected = { selectedTask?.let { taskPendingDeletion = it } },
+                modifier = paneModifier,
             )
-            tasksState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+        }
+        val detailPane: @Composable (Modifier) -> Unit = { paneModifier ->
+            TaskEditorPane(
+                task = selectedTask,
+                clients = clients,
+                categories = tasksState.categories,
+                selectedPlanningDay = tasksState.selectedDay,
+                todayIsoDate = tasksState.todayIsoDate,
+                isLoading = tasksState.isLoading,
+                errorMessage = tasksState.errorMessage,
+                onUpdateTask = { taskId, title, description, categoryId, dueDate, clientId ->
+                    onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate, clientId))
+                },
+                onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
+                modifier = paneModifier,
+            )
         }
 
-        FilterBar(
-            label = "Etiquetas",
-            options = tasksState.categories.map { FilterOption(it.id, it.name) },
-            selected = tasksState.selectedCategoryId,
-            onSelected = { onTasksEvent(TasksUiEvent.SelectCategory(it)) },
-            allLabel = "Todas",
-            wrap = true,
-        )
-
-        FilterBar(
-            label = "Clientes",
-            options = clients.map { FilterOption(it.id, it.companyName) },
-            selected = tasksState.selectedClientFilterId,
-            onSelected = { onTasksEvent(TasksUiEvent.SelectClientFilter(it)) },
-            allLabel = "Todos",
-            wrap = true,
-        )
-
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-        ) {
-            val stacked = maxWidth < 1180.dp
-            if (stacked) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(spacing.lg),
-                ) {
-                    TaskListPane(
-                        tasks = visibleTasks,
-                        categories = tasksState.categories,
-                        clients = clients,
-                        selectedTaskId = selectedTask?.id,
-                        isLoading = tasksState.isLoading,
-                        errorMessage = tasksState.errorMessage,
-                        onSelect = { onTasksEvent(TasksUiEvent.SelectTask(it)) },
-                        modifier = Modifier.weight(0.48f),
-                    )
-                    TaskEditorPane(
-                        task = selectedTask,
-                        clients = clients,
-                        categories = tasksState.categories,
-                        selectedPlanningDay = tasksState.selectedDay,
-                        todayIsoDate = tasksState.todayIsoDate,
-                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
-                        },
-                        onUpdateTaskClient = { taskId, clientId ->
-                            onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
-                        },
-                        onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
-                        onDeleteTask = { onTasksEvent(TasksUiEvent.DeleteTask(it)) },
-                        modifier = Modifier.weight(0.52f),
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.lg),
-                ) {
-                    TaskListPane(
-                        tasks = visibleTasks,
-                        categories = tasksState.categories,
-                        clients = clients,
-                        selectedTaskId = selectedTask?.id,
-                        isLoading = tasksState.isLoading,
-                        errorMessage = tasksState.errorMessage,
-                        onSelect = { onTasksEvent(TasksUiEvent.SelectTask(it)) },
-                        modifier = Modifier.weight(0.56f),
-                    )
-                    TaskEditorPane(
-                        task = selectedTask,
-                        clients = clients,
-                        categories = tasksState.categories,
-                        selectedPlanningDay = tasksState.selectedDay,
-                        todayIsoDate = tasksState.todayIsoDate,
-                        onUpdateTask = { taskId, title, description, categoryId, dueDate ->
-                            onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate))
-                        },
-                        onUpdateTaskClient = { taskId, clientId ->
-                            onTasksEvent(TasksUiEvent.UpdateTaskClient(taskId, clientId))
-                        },
-                        onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
-                        onDeleteTask = { onTasksEvent(TasksUiEvent.DeleteTask(it)) },
-                        modifier = Modifier.weight(0.44f),
-                    )
-                }
+        if (layoutMode == TaskLayoutMode.STACKED) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(spacing.lg),
+            ) {
+                listPane(Modifier.fillMaxWidth().weight(0.46f))
+                detailPane(Modifier.fillMaxWidth().weight(0.54f))
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.lg),
+            ) {
+                listPane(Modifier.fillMaxSize().weight(0.40f))
+                detailPane(Modifier.fillMaxSize().weight(0.60f))
             }
         }
     }
@@ -213,6 +198,8 @@ fun AdminTasksScreen(
         categories = tasksState.categories,
         selectedPlanningDay = tasksState.selectedDay,
         todayIsoDate = tasksState.todayIsoDate,
+        isLoading = tasksState.isLoading,
+        errorMessage = tasksState.errorMessage,
         onDismiss = { showCreateDialog = false },
         onCreate = { title, description, clientId, categoryId, dueDate ->
             onTasksEvent(
@@ -224,9 +211,85 @@ fun AdminTasksScreen(
                     dueDate = dueDate,
                 ),
             )
-            showCreateDialog = false
         },
     )
+
+    TaskDeleteConfirmDialog(
+        task = taskPendingDeletion,
+        onConfirm = {
+            taskPendingDeletion?.id?.let { onTasksEvent(TasksUiEvent.DeleteTask(it)) }
+            taskPendingDeletion = null
+        },
+        onDismiss = { taskPendingDeletion = null },
+    )
+}
+
+@Composable
+private fun TaskDeleteConfirmDialog(
+    task: WorkTask?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (task == null) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Eliminar tarea", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Text(
+                "Se eliminará «${task.title}» y también sus registros de tiempo asociados. Esta acción no se puede deshacer.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.heightIn(min = 44.dp),
+                shape = MaterialTheme.shapes.large,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("Eliminar definitivamente")
+            }
+        },
+        dismissButton = {
+            SecondaryButton(text = "Cancelar", onClick = onDismiss)
+        },
+    )
+}
+
+internal enum class TaskLayoutMode {
+    STACKED,
+    SPLIT,
+}
+
+internal fun resolveTaskLayoutMode(availableWidth: androidx.compose.ui.unit.Dp): TaskLayoutMode =
+    if (availableWidth < SupportDeskBreakpoints.adminSplitPane) TaskLayoutMode.STACKED else TaskLayoutMode.SPLIT
+
+internal enum class TaskStatusFilter(val label: String) {
+    ALL("Todos los estados"),
+    ACTIVE("Activas"),
+    COMPLETED("Completadas"),
+    ;
+
+    fun matches(task: WorkTask): Boolean = when (this) {
+        ALL -> true
+        ACTIVE -> !task.completed
+        COMPLETED -> task.completed
+    }
+}
+
+internal fun WorkTask.matchesTaskQuery(
+    query: String,
+    clientsById: Map<String, Client>,
+    categoriesById: Map<String, TaskCategory>,
+): Boolean {
+    if (query.isBlank()) return true
+    return title.contains(query, ignoreCase = true) ||
+        description.contains(query, ignoreCase = true) ||
+        clientsById[clientId]?.companyName?.contains(query, ignoreCase = true) == true ||
+        categoriesById[categoryId]?.name?.contains(query, ignoreCase = true) == true
 }
 
 @Composable
@@ -236,6 +299,8 @@ private fun TaskCreateDialog(
     categories: List<TaskCategory>,
     selectedPlanningDay: String?,
     todayIsoDate: String,
+    isLoading: Boolean,
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onCreate: (String, String, String?, String, String?) -> Unit,
 ) {
@@ -243,8 +308,10 @@ private fun TaskCreateDialog(
 
     var title by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
-    var selectedClientId by rememberSaveable { mutableStateOf("none") }
-    var selectedCategoryId by remember(categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
+    var selectedClientId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedCategoryId by rememberSaveable(categories.firstOrNull()?.id) {
+        mutableStateOf(categories.firstOrNull()?.id.orEmpty())
+    }
     var dueDate by rememberSaveable(visible, selectedPlanningDay) {
         mutableStateOf(selectedPlanningDay.takeIf { it != null && it >= todayIsoDate }.orEmpty())
     }
@@ -263,60 +330,42 @@ private fun TaskCreateDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(SupportDeskThemeTokens.spacing.md),
             ) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Nombre de la tarea") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Descripcion") },
-                    minLines = 3,
-                )
-                FilterBar(
-                    label = "Etiqueta",
-                    options = categories.map { FilterOption(it.id, it.name) },
-                    selected = selectedCategoryId.takeIf { it.isNotBlank() },
-                    onSelected = { selectedCategoryId = it.orEmpty() },
-                    wrap = true,
-                )
-                FilterBar(
-                    label = "Cliente",
-                    options = listOf(FilterOption("none", "Sin cliente")) + clients.map { FilterOption(it.id, it.companyName) },
-                    selected = selectedClientId,
-                    onSelected = { selectedClientId = it ?: "none" },
-                    wrap = true,
-                )
-                TaskScheduleEditor(
-                    selectedDate = dueDate,
-                    onSelectedDateChange = { dueDate = it },
+                TaskFormFields(
+                    title = title,
+                    description = description,
+                    selectedClientId = selectedClientId,
+                    selectedCategoryId = selectedCategoryId,
+                    dueDate = dueDate,
+                    clients = clients,
+                    categories = categories,
                     selectedPlanningDay = selectedPlanningDay,
                     todayIsoDate = todayIsoDate,
+                    onTitleChange = { title = it },
+                    onDescriptionChange = { description = it },
+                    onClientChange = { selectedClientId = it },
+                    onCategoryChange = { selectedCategoryId = it.orEmpty() },
+                    onDueDateChange = { dueDate = it },
                 )
+                errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                    TaskInlineError(message)
+                }
             }
         },
         confirmButton = {
             PrimaryButton(
                 text = "Crear",
-                enabled = title.isNotBlank() && selectedCategoryId.isNotBlank(),
+                enabled = title.isNotBlank() && selectedCategoryId.isNotBlank() && !isLoading,
+                isLoading = isLoading,
                 onClick = {
                     onCreate(
                         title.trim(),
                         description.trim(),
-                        selectedClientId.takeUnless { it == "none" },
+                        selectedClientId,
                         selectedCategoryId,
                         dueDate.takeIf { it.isNotBlank() },
                     )
-                    title = ""
-                    description = ""
-                    selectedClientId = "none"
-                    dueDate = selectedPlanningDay.takeIf { it != null && it >= todayIsoDate }.orEmpty()
                 },
             )
         },
@@ -330,44 +379,395 @@ private fun TaskCreateDialog(
 }
 
 @Composable
+private fun TaskFormFields(
+    title: String,
+    description: String,
+    selectedClientId: String?,
+    selectedCategoryId: String,
+    dueDate: String,
+    clients: List<Client>,
+    categories: List<TaskCategory>,
+    selectedPlanningDay: String?,
+    todayIsoDate: String,
+    onTitleChange: (String) -> Unit,
+    onDescriptionChange: (String) -> Unit,
+    onClientChange: (String?) -> Unit,
+    onCategoryChange: (String?) -> Unit,
+    onDueDateChange: (String) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    OutlinedTextField(
+        value = title,
+        onValueChange = onTitleChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Título *") },
+        supportingText = {
+            Text(if (title.isBlank()) "Campo obligatorio" else "Nombre visible en la lista de trabajo")
+        },
+        singleLine = true,
+    )
+    OutlinedTextField(
+        value = description,
+        onValueChange = onDescriptionChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Descripción") },
+        supportingText = { Text("Contexto y resultado esperado de la tarea") },
+        minLines = 3,
+        maxLines = 6,
+    )
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compactFields = maxWidth < 560.dp
+        val clientField: @Composable (Modifier) -> Unit = { fieldModifier ->
+            TaskSelectionField(
+                label = "Cliente asociado",
+                selectedValue = selectedClientId,
+                options = listOf(TaskSelectOption(null, "Sin cliente")) +
+                    clients.map { TaskSelectOption(it.id, it.companyName) },
+                onSelected = onClientChange,
+                modifier = fieldModifier,
+            )
+        }
+        val categoryField: @Composable (Modifier) -> Unit = { fieldModifier ->
+            TaskSelectionField(
+                label = "Etiqueta *",
+                selectedValue = selectedCategoryId.takeIf { it.isNotBlank() },
+                options = categories.map { TaskSelectOption(it.id, it.name) },
+                onSelected = onCategoryChange,
+                emptyLabel = "Selecciona una etiqueta",
+                modifier = fieldModifier,
+            )
+        }
+        if (compactFields) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                clientField(Modifier.fillMaxWidth())
+                categoryField(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                clientField(Modifier.weight(1f))
+                categoryField(Modifier.weight(1f))
+            }
+        }
+    }
+
+    TaskScheduleEditor(
+        selectedDate = dueDate,
+        onSelectedDateChange = onDueDateChange,
+        selectedPlanningDay = selectedPlanningDay,
+        todayIsoDate = todayIsoDate,
+    )
+}
+
+@Immutable
+private data class TaskSelectOption(
+    val value: String?,
+    val label: String,
+)
+
+@Composable
+private fun TaskSelectionField(
+    label: String,
+    selectedValue: String?,
+    options: List<TaskSelectOption>,
+    onSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+    emptyLabel: String = "Selecciona una opción",
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label ?: emptyLabel
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(
+                    text = selectedLabel,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Icon(imageVector = Lucide.ChevronDown, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.widthIn(min = 240.dp, max = 420.dp),
+            ) {
+                if (options.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No hay opciones disponibles") },
+                        enabled = false,
+                        onClick = {},
+                    )
+                } else {
+                    options.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                onSelected(option.value)
+                                expanded = false
+                            },
+                            trailingIcon = if (option.value == selectedValue) {
+                                {
+                                    Icon(
+                                        imageVector = Lucide.CircleCheck,
+                                        contentDescription = "Seleccionado",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskInlineError(message: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
 private fun TaskListPane(
     tasks: List<WorkTask>,
+    totalTaskCount: Int,
     categories: List<TaskCategory>,
     clients: List<Client>,
+    query: String,
+    filtersExpanded: Boolean,
+    selectedCategoryId: String?,
+    selectedClientId: String?,
+    statusFilter: TaskStatusFilter,
     selectedTaskId: String?,
     isLoading: Boolean,
     errorMessage: String?,
+    onQueryChange: (String) -> Unit,
+    onToggleFilters: () -> Unit,
+    onCategoryFilterChange: (String?) -> Unit,
+    onClientFilterChange: (String?) -> Unit,
+    onStatusFilterChange: (TaskStatusFilter) -> Unit,
     onSelect: (String) -> Unit,
+    onCreate: () -> Unit,
+    onDeleteSelected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    SectionCard(
-        modifier = modifier.fillMaxSize(),
-        title = "Tareas",
-        subtitle = "Lista principal de trabajo con cliente y etiqueta siempre visibles.",
+    val activeCount = remember(tasks) { tasks.count { !it.completed } }
+    val completedCount = tasks.size - activeCount
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
     ) {
-        if (isLoading && tasks.isEmpty()) {
-            LoadingState(itemCount = 4)
-        } else if (tasks.isEmpty()) {
-            EmptyState(
-                title = "Sin tareas visibles",
-                message = errorMessage ?: "Cambia filtros o crea una nueva tarea.",
+        Column(
+            modifier = Modifier.fillMaxSize().padding(spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            TaskListHeader(
+                canDelete = selectedTaskId != null && !isLoading,
+                onCreate = onCreate,
+                onDelete = onDeleteSelected,
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(spacing.sm),
-            ) {
-                items(tasks, key = { it.id }) { task ->
-                    val category = categories.firstOrNull { it.id == task.categoryId }
-                    val client = clients.firstOrNull { it.id == task.clientId }
-                    TaskRow(
-                        task = task,
-                        category = category,
-                        client = client,
-                        selected = task.id == selectedTaskId,
-                        onClick = { onSelect(task.id) },
+            SearchField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = "Buscar tarea, cliente o etiqueta",
+            )
+            SecondaryButton(
+                text = if (filtersExpanded) "Ocultar filtros" else "Filtros",
+                onClick = onToggleFilters,
+                fullWidth = true,
+            )
+            AnimatedVisibility(visible = filtersExpanded) {
+                TaskFilters(
+                    categories = categories,
+                    clients = clients,
+                    selectedCategoryId = selectedCategoryId,
+                    selectedClientId = selectedClientId,
+                    statusFilter = statusFilter,
+                    onCategoryChange = onCategoryFilterChange,
+                    onClientChange = onClientFilterChange,
+                    onStatusChange = onStatusFilterChange,
+                )
+            }
+            errorMessage?.takeIf { it.isNotBlank() }?.let { TaskInlineError(it) }
+            Text(
+                text = "Mostrando ${tasks.size} de $totalTaskCount · $activeCount activas · $completedCount completadas",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                when {
+                    isLoading && tasks.isEmpty() -> LoadingState(itemCount = 4)
+                    tasks.isEmpty() -> EmptyState(
+                        title = "Sin tareas visibles",
+                        message = errorMessage ?: "Prueba otra búsqueda, cambia los filtros o crea una tarea.",
                     )
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize().selectableGroup(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        items(tasks, key = { it.id }) { task ->
+                            TaskRow(
+                                task = task,
+                                category = categories.firstOrNull { it.id == task.categoryId },
+                                client = clients.firstOrNull { it.id == task.clientId },
+                                selected = task.id == selectedTaskId,
+                                onClick = { onSelect(task.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskListHeader(
+    canDelete: Boolean,
+    onCreate: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compactHeader = maxWidth < 500.dp
+        val heading: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
+                Text("Elegir tarea", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Busca, filtra y selecciona tu trabajo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        val actions: @Composable () -> Unit = {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                PrimaryButton(text = "Nueva tarea", onClick = onCreate, icon = Lucide.Plus)
+                TaskDeleteButton(enabled = canDelete, onClick = onDelete)
+            }
+        }
+        if (compactHeader) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                heading()
+                actions()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                heading()
+                actions()
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskDeleteButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.large,
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MaterialTheme.colorScheme.error,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant,
+        ),
+        modifier = Modifier.heightIn(min = 44.dp),
+    ) {
+        Text("Eliminar", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun TaskFilters(
+    categories: List<TaskCategory>,
+    clients: List<Client>,
+    selectedCategoryId: String?,
+    selectedClientId: String?,
+    statusFilter: TaskStatusFilter,
+    onCategoryChange: (String?) -> Unit,
+    onClientChange: (String?) -> Unit,
+    onStatusChange: (TaskStatusFilter) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing.md),
+    ) {
+        FilterBar(
+            label = "Estado",
+            options = TaskStatusFilter.entries
+                .filterNot { it == TaskStatusFilter.ALL }
+                .map { FilterOption(it, it.label) },
+            selected = statusFilter.takeUnless { it == TaskStatusFilter.ALL },
+            onSelected = { onStatusChange(it ?: TaskStatusFilter.ALL) },
+            allLabel = "Todos",
+            wrap = true,
+        )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val clientField: @Composable (Modifier) -> Unit = { fieldModifier ->
+                TaskSelectionField(
+                    label = "Cliente",
+                    selectedValue = selectedClientId,
+                    options = listOf(TaskSelectOption(null, "Todos los clientes")) +
+                        clients.map { TaskSelectOption(it.id, it.companyName) },
+                    onSelected = onClientChange,
+                    modifier = fieldModifier,
+                )
+            }
+            val categoryField: @Composable (Modifier) -> Unit = { fieldModifier ->
+                TaskSelectionField(
+                    label = "Etiqueta",
+                    selectedValue = selectedCategoryId,
+                    options = listOf(TaskSelectOption(null, "Todas las etiquetas")) +
+                        categories.map { TaskSelectOption(it.id, it.name) },
+                    onSelected = onCategoryChange,
+                    modifier = fieldModifier,
+                )
+            }
+            if (maxWidth < 600.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    clientField(Modifier.fillMaxWidth())
+                    categoryField(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    clientField(Modifier.weight(1f))
+                    categoryField(Modifier.weight(1f))
                 }
             }
         }
@@ -383,78 +783,131 @@ private fun TaskRow(
     onClick: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
-    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+            hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+        },
+        animationSpec = tween(SupportDeskMotion.quick),
+        label = "taskRowBackground",
+    )
 
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .background(containerColor, MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .padding(spacing.md),
-        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+            .hoverable(interactionSource)
+            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            modifier = Modifier.fillMaxWidth().padding(spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .background(parseColor(category?.colorHex ?: "#6B7A5B"), MaterialTheme.shapes.small)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
             ) {
-                Text(
-                    text = category?.name ?: "Sin etiqueta",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Lucide.ListTodo,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
-            Text(
-                text = if (task.completed) "Hecha" else "Activa",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = task.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    TaskStatusBadge(completed = task.completed)
+                }
+                Text(
+                    text = client?.companyName ?: "Sin cliente asociado",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    TaskCategoryBadge(category)
+                    TaskFact(icon = Lucide.CalendarDays, text = task.dueDate?.let(::formatTaskDate) ?: "Sin fecha")
+                    TaskFact(icon = Lucide.Clock, text = formatSupportDeskDuration(task.loggedMinutes))
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun TaskCategoryBadge(category: TaskCategory?) {
+    val accent = parseColor(category?.colorHex ?: "#6B7A5B")
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = accent.copy(alpha = 0.16f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+    ) {
         Text(
-            text = task.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            text = category?.name ?: "Sin etiqueta",
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
         )
-        if (task.description.isNotBlank()) {
-            Text(
-                text = task.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
-            text = client?.companyName ?: "Sin cliente asociado",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = task.dueDate?.let { "Programada para $it" } ?: "Sin fecha programada",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    }
+}
+
+@Composable
+private fun TaskStatusBadge(completed: Boolean) {
+    val label = if (completed) "Completada" else "Activa"
+    val background = if (completed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+    val content = if (completed) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    Surface(shape = MaterialTheme.shapes.small, color = background, contentColor = content) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = formatSupportDeskDuration(task.loggedMinutes),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = formatSupportDeskDateTime(task.updatedAt),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (completed) {
+                Icon(imageVector = Lucide.CircleCheck, contentDescription = null, modifier = Modifier.size(14.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
         }
+    }
+}
+
+@Composable
+private fun TaskFact(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(15.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -465,146 +918,310 @@ private fun TaskEditorPane(
     categories: List<TaskCategory>,
     selectedPlanningDay: String?,
     todayIsoDate: String,
-    onUpdateTask: (String, String, String, String, String?) -> Unit,
-    onUpdateTaskClient: (String, String?) -> Unit,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onUpdateTask: (String, String, String, String, String?, String?) -> Unit,
     onToggleCompleted: (String) -> Unit,
-    onDeleteTask: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     if (task == null) {
-        SectionCard(
-            modifier = modifier.fillMaxSize(),
-            title = "Ficha de tarea",
-            subtitle = "Selecciona una tarea para editarla y asociarla a un cliente.",
+        Surface(
+            modifier = modifier,
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
         ) {
-            EmptyState(
-                title = "Nada seleccionado",
-                message = "La ficha lateral aparecera aqui cuando elijas una tarea.",
-            )
+            Box(modifier = Modifier.fillMaxSize().padding(spacing.lg), contentAlignment = Alignment.Center) {
+                EmptyState(
+                    title = "Ninguna tarea seleccionada",
+                    message = "Elige una tarea de la lista para consultar y editar su ficha.",
+                )
+            }
         }
         return
     }
 
-    var confirmDelete by rememberSaveable(task.id) { mutableStateOf(false) }
     var title by remember(task.id) { mutableStateOf(task.title) }
     var description by remember(task.id) { mutableStateOf(task.description) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
-    var selectedClientId by remember(task.id) { mutableStateOf(task.clientId ?: "none") }
+    var selectedClientId by remember(task.id) { mutableStateOf(task.clientId) }
     var dueDate by remember(task.id) { mutableStateOf(task.dueDate.orEmpty()) }
-    val linkedClient = clients.firstOrNull { it.id == task.clientId }
+    val linkedClient = clients.firstOrNull { it.id == selectedClientId }
+    val category = categories.firstOrNull { it.id == selectedCategoryId }
+    val isDirty = title != task.title ||
+        description != task.description ||
+        selectedCategoryId != task.categoryId ||
+        selectedClientId != task.clientId ||
+        dueDate != task.dueDate.orEmpty()
+    val saveTask = {
+        onUpdateTask(
+            task.id,
+            title.trim(),
+            description.trim(),
+            selectedCategoryId,
+            dueDate.takeIf { it.isNotBlank() },
+            selectedClientId,
+        )
+    }
 
-    SectionCard(
-        modifier = modifier.fillMaxSize(),
-        title = task.title,
-        subtitle = "Ficha lateral para cliente, etiqueta y datos basicos.",
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(spacing.lg)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Titulo") },
-                singleLine = true,
+            TaskEditorHeader(
+                task = task,
+                category = category,
+                isDirty = isDirty,
             )
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Descripcion") },
-                minLines = 3,
+            TaskEditorActions(
+                completed = task.completed,
+                isLoading = isLoading,
+                canSave = title.isNotBlank() && selectedCategoryId.isNotBlank() && isDirty,
+                onSave = saveTask,
+                onToggleCompleted = { onToggleCompleted(task.id) },
             )
-            FilterBar(
-                label = "Etiqueta",
-                options = categories.map { FilterOption(it.id, it.name) },
-                selected = selectedCategoryId,
-                onSelected = { selectedCategoryId = it.orEmpty() },
-                wrap = true,
-            )
-            FilterBar(
-                label = "Cliente",
-                options = listOf(FilterOption("none", "Sin cliente")) + clients.map { FilterOption(it.id, it.companyName) },
-                selected = selectedClientId,
-                onSelected = { selectedClientId = it ?: "none" },
-                wrap = true,
-            )
-            TaskScheduleEditor(
-                selectedDate = dueDate,
-                onSelectedDateChange = { dueDate = it },
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            TaskFormFields(
+                title = title,
+                description = description,
+                selectedClientId = selectedClientId,
+                selectedCategoryId = selectedCategoryId,
+                dueDate = dueDate,
+                clients = clients,
+                categories = categories,
                 selectedPlanningDay = selectedPlanningDay,
                 todayIsoDate = todayIsoDate,
+                onTitleChange = { title = it },
+                onDescriptionChange = { description = it },
+                onClientChange = { selectedClientId = it },
+                onCategoryChange = { selectedCategoryId = it.orEmpty() },
+                onDueDateChange = { dueDate = it },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            errorMessage?.takeIf { it.isNotBlank() }?.let { TaskInlineError(it) }
+            TaskClientSummary(linkedClient)
+            TaskMetadata(task)
+        }
+    }
+}
+
+@Composable
+private fun TaskEditorHeader(
+    task: WorkTask,
+    category: TaskCategory?,
+    isDirty: Boolean,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 540.dp
+        val icon: @Composable () -> Unit = {
+            Surface(
+                modifier = Modifier.size(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
             ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Lucide.ListTodo,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        }
+        val heading: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = task.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                    )
+                    if (isDirty) {
+                        Text(
+                            "Cambios sin guardar",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    TaskCategoryBadge(category)
+                    TaskStatusBadge(task.completed)
+                }
+            }
+        }
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                icon()
+                heading()
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                icon()
+                heading()
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskEditorActions(
+    completed: Boolean,
+    isLoading: Boolean,
+    canSave: Boolean,
+    onSave: () -> Unit,
+    onToggleCompleted: () -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stackedActions = maxWidth < 480.dp
+        if (stackedActions) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 PrimaryButton(
-                    text = "Guardar",
-                    onClick = {
-                        onUpdateTask(task.id, title, description, selectedCategoryId, dueDate.takeIf { it.isNotBlank() })
-                        onUpdateTaskClient(task.id, selectedClientId.takeUnless { it == "none" })
-                    },
-                    enabled = title.isNotBlank() && selectedCategoryId.isNotBlank(),
+                    text = "Guardar cambios",
+                    onClick = onSave,
+                    enabled = canSave && !isLoading,
+                    isLoading = isLoading,
+                    fullWidth = true,
+                )
+                SecondaryButton(
+                    text = if (completed) "Reabrir tarea" else "Marcar como hecha",
+                    onClick = onToggleCompleted,
+                    enabled = !isLoading,
+                    fullWidth = true,
+                    icon = Lucide.CircleCheck,
+                )
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                PrimaryButton(
+                    text = "Guardar cambios",
+                    onClick = onSave,
+                    enabled = canSave && !isLoading,
+                    isLoading = isLoading,
                     modifier = Modifier.weight(1f),
                 )
                 SecondaryButton(
-                    text = if (task.completed) "Reabrir" else "Marcar hecha",
-                    onClick = { onToggleCompleted(task.id) },
+                    text = if (completed) "Reabrir tarea" else "Marcar como hecha",
+                    onClick = onToggleCompleted,
+                    enabled = !isLoading,
+                    icon = Lucide.CircleCheck,
                     modifier = Modifier.weight(1f),
                 )
             }
-            SecondaryButton(
-                text = "Borrar tarea",
-                onClick = { confirmDelete = true },
-                fullWidth = true,
-            )
+        }
+    }
+}
 
-            SectionCard(
-                title = linkedClient?.companyName ?: "Sin cliente asociado",
-                subtitle = "Resumen rapido del cliente enlazado a esta tarea.",
-            ) {
-                if (linkedClient == null) {
-                    EmptyState(
-                        title = "Tarea interna",
-                        message = "Puedes dejarla sin cliente o asociarla desde los filtros superiores.",
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                        ) {
-                            ClientServiceTierBadge(linkedClient.serviceTier)
-                            ClientAccountStatusBadge(linkedClient.accountStatus)
-                        }
-                        InfoRow(label = "Contacto", value = linkedClient.contactName, supportingText = linkedClient.email)
-                        InfoRow(label = "Producto", value = linkedClient.productName)
-                        task.dueDate?.let { scheduledDate ->
-                            InfoRow(label = "Programada", value = scheduledDate)
-                        }
-                    }
+@Composable
+private fun TaskClientSummary(client: Client?) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Lucide.UserRound,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    client?.companyName ?: "Sin cliente asociado",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (client == null) {
+                Text(
+                    "Esta tarea es interna. Puedes asociar un cliente desde el selector superior.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    ClientServiceTierBadge(client.serviceTier)
+                    ClientAccountStatusBadge(client.accountStatus)
+                }
+                Text(
+                    listOf(client.contactName, client.email).filter(String::isNotBlank).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                client.productName.takeIf { it.isNotBlank() }?.let {
+                    Text("Producto: $it", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
     }
+}
 
-    ConfirmDialog(
-        visible = confirmDelete,
-        title = "Borrar tarea",
-        message = "Esta accion eliminara la tarea y sus registros de tiempo asociados.",
-        confirmText = "Borrar",
-        dismissText = "Cancelar",
-        onConfirm = {
-            confirmDelete = false
-            onDeleteTask(task.id)
-        },
-        onDismiss = { confirmDelete = false },
-    )
+@Composable
+private fun TaskMetadata(task: WorkTask) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            Text("Información de la tarea", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(spacing.md),
+            ) {
+                TaskMetadataItem("ID", task.id)
+                TaskMetadataItem("Tiempo registrado", formatSupportDeskDuration(task.loggedMinutes))
+                TaskMetadataItem("Creada", formatSupportDeskDateTime(task.createdAt))
+                TaskMetadataItem("Actualizada", formatSupportDeskDateTime(task.updatedAt))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskMetadataItem(label: String, value: String) {
+    Column(
+        modifier = Modifier.widthIn(min = 150.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+    }
 }
 
 @Composable
@@ -619,12 +1236,12 @@ private fun TaskScheduleEditor(
     var showCalendarPicker by rememberSaveable(selectedDate, selectablePlanningDay, todayIsoDate) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         Text(
-            text = "Programacion",
+            text = "Programación",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = selectedDate.ifBlank { "Sin fecha programada" },
+            text = selectedDate.takeIf { it.isNotBlank() }?.let(::formatTaskDate) ?: "Sin fecha programada",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -644,7 +1261,7 @@ private fun TaskScheduleEditor(
         }
         Text(
             text = if (selectablePlanningDay != null && selectablePlanningDay != todayIsoDate) {
-                "El calendario se abre tomando como referencia el dia activo del dashboard: $selectablePlanningDay."
+                "El calendario se abre tomando como referencia el día activo del dashboard: ${formatTaskDate(selectablePlanningDay)}."
             } else {
                 "Usa el calendario para elegir una fecha de hoy en adelante."
             },
@@ -675,7 +1292,7 @@ private fun ScheduleCalendarButton(
 ) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 44.dp),
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -781,29 +1398,37 @@ private fun TaskCalendarPickerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "<",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.clickable {
+                    IconButton(
+                        onClick = {
                             val previous = month.previous()
                             visibleYear = previous.year
                             visibleMonth = previous.month
                         },
-                    )
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Icon(
+                            imageVector = Lucide.ChevronLeft,
+                            contentDescription = "Mes anterior",
+                        )
+                    }
                     Text(
                         text = month.label,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        text = ">",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.clickable {
+                    IconButton(
+                        onClick = {
                             val next = month.next()
                             visibleYear = next.year
                             visibleMonth = next.month
                         },
-                    )
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Icon(
+                            imageVector = Lucide.ChevronRight,
+                            contentDescription = "Mes siguiente",
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -843,7 +1468,7 @@ private fun TaskCalendarPickerDialog(
                     }
                 }
                 Text(
-                    text = "Solo puedes programar tareas para hoy o dias futuros.",
+                    text = "Solo puedes programar tareas para hoy o días futuros.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -890,7 +1515,7 @@ private fun TaskCalendarDayCell(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
         color = backgroundColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -898,7 +1523,7 @@ private fun TaskCalendarDayCell(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
                 .clickable(enabled = !day.isPast, onClick = onClick)
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center,
@@ -994,6 +1619,11 @@ private fun parseTaskCalendarMonth(isoDate: String): TaskCalendarMonth {
 
 private fun taskIsoDate(year: Int, month: Int, day: Int): String =
     "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}"
+
+private fun formatTaskDate(isoDate: String): String {
+    val parts = isoDate.split("-")
+    return if (parts.size == 3) "${parts[2]}/${parts[1]}/${parts[0]}" else isoDate
+}
 
 private fun taskDaysInMonth(year: Int, month: Int): Int = when (month) {
     1, 3, 5, 7, 8, 10, 12 -> 31

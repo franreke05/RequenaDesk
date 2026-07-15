@@ -77,24 +77,28 @@ fun AppDestination.displayTitle(): String = when (this) {
     AppDestination.Login -> "Acceso Admin"
     AppDestination.Dashboard -> "Dashboard"
     AppDestination.Tasks -> "Tareas"
+    AppDestination.Pinboard -> "Tablon"
     AppDestination.Labels -> "Etiquetas"
     AppDestination.Tickets -> "Agenda"
     AppDestination.CreateTicket -> "Agenda"
     is AppDestination.TicketDetail -> "Agenda"
     AppDestination.Clients -> "Clientes"
     AppDestination.Notifications -> "Etiquetas"
+    is AppDestination.Invoices -> "Facturas"
 }
 
 fun AppDestination.displaySubtitle(): String = when (this) {
     AppDestination.Login -> "Workspace solo admin para operar clientes."
     AppDestination.Dashboard -> "Tiempo central, cliente activo y ruedas mensuales."
     AppDestination.Tasks -> "Trabajo operativo con cliente opcional y etiquetas."
+    AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy."
     AppDestination.Labels -> "Colores y grupos para ordenar tareas."
     AppDestination.Tickets -> "Ruta legacy retirada de la navegacion principal."
     AppDestination.CreateTicket -> "Ruta legacy retirada de la navegacion principal."
     is AppDestination.TicketDetail -> "Ruta legacy retirada de la navegacion principal."
     AppDestination.Clients -> "Directorio limpio y ficha rapida de clientes."
     AppDestination.Notifications -> "Categorias de tareas y colores de seccion."
+    is AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
 }
 
 fun formatSupportDeskDateTime(raw: String): String {

@@ -23,6 +23,7 @@ data class TasksUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val statusMessage: String? = null,
+    val lastCreatedTaskId: String? = null,
 ) {
     val todayIsoDate: String
         get() = currentIsoDate()

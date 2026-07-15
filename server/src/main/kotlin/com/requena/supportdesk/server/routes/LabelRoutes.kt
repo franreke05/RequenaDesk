@@ -9,6 +9,8 @@ import com.requena.supportdesk.server.utils.labelJson
 import com.requena.supportdesk.server.utils.labelsJson
 import com.requena.supportdesk.server.utils.messageJson
 import com.requena.supportdesk.server.utils.requireAdminIdentity
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
+import com.requena.supportdesk.server.utils.ownerAdminIdFor
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -23,7 +25,9 @@ import io.ktor.server.routing.route
 fun Route.labelRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/labels") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
+            val ownerAdminId = service.ownerAdminIdFor(identity)
+                ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
             call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels(ownerAdminId))))
         }
         post("/labels") {

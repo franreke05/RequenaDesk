@@ -5,6 +5,7 @@ import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSLocale
 import platform.Foundation.NSTimeZone
 import platform.Foundation.localeWithLocaleIdentifier
+import platform.Foundation.localTimeZone
 
 actual fun currentIsoDate(): String {
     val formatter = NSDateFormatter()

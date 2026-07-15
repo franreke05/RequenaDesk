@@ -39,3 +39,10 @@ supportdesk.properties
 *.swo
 *.jvm.args
 Caddyfile
+
+# Claude Code local settings (per-machine permissions/scratch paths, not shared)
+.claude/settings.local.json
+
+# Python bytecode cache (skill scripts under .claude/skills/)
+__pycache__/
+*.pyc

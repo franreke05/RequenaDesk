@@ -7,6 +7,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -42,10 +47,12 @@ fun TicketListItem(
     showClient: Boolean = true,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-    } else {
-        MaterialTheme.colorScheme.surface
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val backgroundColor = when {
+        selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+        hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        else -> MaterialTheme.colorScheme.surface
     }
     val textColor = if (selected) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -55,7 +62,7 @@ fun TicketListItem(
 
     val animatedBackground = animateColorAsState(
         targetValue = backgroundColor,
-        animationSpec = tween(durationMillis = SupportDeskMotion.regular),
+        animationSpec = tween(durationMillis = SupportDeskMotion.quick),
         label = "ticketItemBackground",
     )
     val animatedTextColor = animateColorAsState(
@@ -64,14 +71,15 @@ fun TicketListItem(
         label = "ticketItemText",
     )
     val animatedElevation = animateDpAsState(
-        targetValue = if (selected) SupportDeskThemeTokens.elevations.raised else SupportDeskThemeTokens.elevations.subtle,
-        animationSpec = tween(durationMillis = SupportDeskMotion.regular),
+        targetValue = if (selected) SupportDeskThemeTokens.elevations.raised else if (hovered) SupportDeskThemeTokens.elevations.subtle * 2f else SupportDeskThemeTokens.elevations.subtle,
+        animationSpec = tween(durationMillis = SupportDeskMotion.quick),
         label = "ticketItemElevation",
     )
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .hoverable(interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         color = animatedBackground.value,
         shape = MaterialTheme.shapes.medium,
         tonalElevation = animatedElevation.value,

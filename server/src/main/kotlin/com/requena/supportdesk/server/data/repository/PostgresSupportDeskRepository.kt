@@ -22,6 +22,10 @@ import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTicketMessageSnapshot
+import com.requena.supportdesk.server.domain.model.ServerInternalCommentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTicketEventSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTicketAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
@@ -46,16 +50,15 @@ class PostgresSupportDeskRepository(
     override fun authenticate(email: String, password: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id
+            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id, password_hash
             FROM users
-            WHERE email = ? AND password_hash = ? AND is_active = TRUE
+            WHERE email = ? AND is_active = TRUE
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, email)
-            statement.setString(2, PasswordHasher.hash(password))
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) {
+                if (resultSet.next() && PasswordHasher.verify(password, resultSet.getString("password_hash"))) {
                     updateLastLogin(connection, resultSet.getString("user_id"))
                     ServerAuthIdentity(
                         userId = resultSet.getString("user_id"),
@@ -72,7 +75,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
         dataSource.withConnection { connection ->
             connection.prepareStatement(
                 """
@@ -93,8 +96,8 @@ class PostgresSupportDeskRepository(
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? = dataSource.withConnection { connection ->
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
-        val replacementRefreshTokenHash = PasswordHasher.hash(replacementRefreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
+        val replacementRefreshTokenHash = PasswordHasher.hashToken(replacementRefreshToken)
         connection.autoCommit = false
         try {
             val identity = connection.prepareStatement(
@@ -158,7 +161,7 @@ class PostgresSupportDeskRepository(
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean = dataSource.withConnection { connection ->
-        val refreshTokenHash = PasswordHasher.hash(refreshToken)
+        val refreshTokenHash = PasswordHasher.hashToken(refreshToken)
         connection.prepareStatement(
             "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL",
         ).use { statement ->
@@ -168,12 +171,18 @@ class PostgresSupportDeskRepository(
     }
 
     override fun getTickets(): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
-        connection.prepareStatement(
+        val tickets = connection.prepareStatement(
             """
-            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
-                   app_version, client_reference, status, priority, waiting_on, resolution_summary
-            FROM tickets
-            ORDER BY updated_at DESC, created_at DESC
+            SELECT t.id::text, t.client_id::text, t.ticket_number, t.subject, t.description, t.category,
+                   t.affected_app, t.platform, t.app_version, t.steps_to_reproduce, t.client_reference,
+                   t.status, t.priority, t.waiting_on, t.resolution_summary,
+                   t.requester_id::text, requester.name AS requester_name, requester.email::text AS requester_email,
+                   t.assignee_id::text, assignee.name AS assignee_name, assignee.email::text AS assignee_email,
+                   t.created_at, t.updated_at
+            FROM tickets t
+            JOIN users requester ON requester.id = t.requester_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            ORDER BY t.updated_at DESC, t.created_at DESC
             """.trimIndent(),
         ).use { statement ->
             statement.executeQuery().use { resultSet ->
@@ -184,15 +193,22 @@ class PostgresSupportDeskRepository(
                 }
             }
         }
+        tickets.map { hydrateTicket(connection, it) }
     }
 
     override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.withConnection { connection ->
-        connection.prepareStatement(
+        val ticket = connection.prepareStatement(
             """
-            SELECT id::text, ticket_number, subject, description, category, affected_app, platform,
-                   app_version, client_reference, status, priority, waiting_on, resolution_summary
-            FROM tickets
-            WHERE id::text = ? OR ticket_number = ?
+            SELECT t.id::text, t.client_id::text, t.ticket_number, t.subject, t.description, t.category,
+                   t.affected_app, t.platform, t.app_version, t.steps_to_reproduce, t.client_reference,
+                   t.status, t.priority, t.waiting_on, t.resolution_summary,
+                   t.requester_id::text, requester.name AS requester_name, requester.email::text AS requester_email,
+                   t.assignee_id::text, assignee.name AS assignee_name, assignee.email::text AS assignee_email,
+                   t.created_at, t.updated_at
+            FROM tickets t
+            JOIN users requester ON requester.id = t.requester_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            WHERE t.id::text = ? OR t.ticket_number = ?
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
@@ -202,6 +218,7 @@ class PostgresSupportDeskRepository(
                 if (resultSet.next()) ticketSnapshot(resultSet) else null
             }
         }
+        ticket?.let { hydrateTicket(connection, it) }
     }
 
     override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = dataSource.withConnection { connection ->
@@ -217,8 +234,7 @@ class PostgresSupportDeskRepository(
             VALUES (
                 CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'ADMIN'
             )
-            RETURNING id::text, ticket_number, subject, description, category, affected_app, platform,
-                      app_version, client_reference, status, priority, waiting_on, resolution_summary
+            RETURNING id::text
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.clientId)
@@ -234,9 +250,9 @@ class PostgresSupportDeskRepository(
             statement.setString(11, request.priority)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
-                val ticket = ticketSnapshot(resultSet)
-                insertEvent(connection, ticket.id, requesterId, "TICKET_CREATED", "Ticket created")
-                ticket
+                val ticketId = resultSet.getString("id")
+                insertEvent(connection, ticketId, requesterId, "TICKET_CREATED", "Ticket created")
+                findTicket(connection, ticketId) ?: error("Created ticket could not be loaded")
             }
         }
     }
@@ -971,12 +987,12 @@ class PostgresSupportDeskRepository(
         val totals = connection.prepareStatement(
             """
             SELECT
-                COALESCE(SUM(minutes), 0)::integer AS total_minutes,
-                COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes,
+                COALESCE(SUM(tl.minutes), 0)::integer AS total_minutes,
+                COALESCE(SUM(tl.minutes) FILTER (WHERE tl.billable = TRUE), 0)::integer AS billable_minutes,
                 TO_CHAR(CURRENT_DATE, 'TMMonth YYYY') AS month_label
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
-            WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+            WHERE DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
               AND (? IS NULL OR t.owner_admin_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
@@ -997,13 +1013,13 @@ class PostgresSupportDeskRepository(
             connection.prepareStatement(
                 """
                 SELECT
-                    COALESCE(SUM(minutes), 0)::integer AS total_minutes,
-                    COALESCE(SUM(minutes) FILTER (WHERE billable = TRUE), 0)::integer AS billable_minutes
+                    COALESCE(SUM(tl.minutes), 0)::integer AS total_minutes,
+                    COALESCE(SUM(tl.minutes) FILTER (WHERE tl.billable = TRUE), 0)::integer AS billable_minutes
                 FROM time_logs tl
                 JOIN tasks t ON t.id = tl.task_id
-                WHERE client_id::text = ?
+                WHERE tl.client_id::text = ?
                   AND (? IS NULL OR t.owner_admin_id::text = ?)
-                  AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+                  AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
@@ -1017,14 +1033,14 @@ class PostgresSupportDeskRepository(
         }
         val dailyMinutes = connection.prepareStatement(
             """
-            SELECT work_date::text AS work_date, COALESCE(SUM(minutes), 0)::integer AS minutes
+            SELECT tl.work_date::text AS work_date, COALESCE(SUM(tl.minutes), 0)::integer AS minutes
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
-            WHERE DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
-              AND (? IS NULL OR client_id::text = ?)
+            WHERE DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
+              AND (? IS NULL OR tl.client_id::text = ?)
               AND (? IS NULL OR t.owner_admin_id::text = ?)
-            GROUP BY work_date
-            ORDER BY work_date ASC
+            GROUP BY tl.work_date
+            ORDER BY tl.work_date ASC
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
@@ -1131,7 +1147,7 @@ class PostgresSupportDeskRepository(
         ).use { statement ->
             statement.setString(1, clientId)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.getString("id") else error("No active client user found for client $clientId")
+                if (resultSet.next()) resultSet.getString("id") else throw ServerNotFoundException("No active client user found for client $clientId")
             }
         }
 
@@ -1146,7 +1162,7 @@ class PostgresSupportDeskRepository(
         ).use { statement ->
             statement.setString(1, clientId)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.getString("product_name") else error("Client not found: $clientId")
+                if (resultSet.next()) resultSet.getString("product_name") else throw ServerNotFoundException("Client not found: $clientId")
             }
         }
 
@@ -1167,6 +1183,7 @@ class PostgresSupportDeskRepository(
 
     private fun ticketSnapshot(resultSet: ResultSet): ServerTicketSnapshot = ServerTicketSnapshot(
         id = resultSet.getString("id"),
+        clientId = resultSet.getString("client_id"),
         ticketNumber = resultSet.getString("ticket_number"),
         subject = resultSet.getString("subject"),
         description = resultSet.getString("description"),
@@ -1174,12 +1191,170 @@ class PostgresSupportDeskRepository(
         affectedApp = resultSet.getString("affected_app"),
         platform = resultSet.getString("platform"),
         appVersion = resultSet.getString("app_version"),
+        stepsToReproduce = resultSet.getString("steps_to_reproduce"),
         clientReference = resultSet.getString("client_reference"),
         status = resultSet.getString("status"),
         priority = resultSet.getString("priority"),
         waitingOn = resultSet.getString("waiting_on"),
         resolutionSummary = resultSet.getString("resolution_summary"),
+        requesterId = resultSet.getString("requester_id"),
+        requesterName = resultSet.getString("requester_name"),
+        requesterEmail = resultSet.getString("requester_email"),
+        assigneeId = resultSet.getString("assignee_id"),
+        assigneeName = resultSet.getString("assignee_name"),
+        assigneeEmail = resultSet.getString("assignee_email"),
+        createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+        updatedAt = resultSet.getTimestamp("updated_at").toInstant().toString(),
     )
+
+    private fun findTicket(connection: Connection, id: String): ServerTicketSnapshot? =
+        connection.prepareStatement(
+            """
+            SELECT t.id::text, t.client_id::text, t.ticket_number, t.subject, t.description, t.category,
+                   t.affected_app, t.platform, t.app_version, t.steps_to_reproduce, t.client_reference,
+                   t.status, t.priority, t.waiting_on, t.resolution_summary,
+                   t.requester_id::text, requester.name AS requester_name, requester.email::text AS requester_email,
+                   t.assignee_id::text, assignee.name AS assignee_name, assignee.email::text AS assignee_email,
+                   t.created_at, t.updated_at
+            FROM tickets t
+            JOIN users requester ON requester.id = t.requester_id
+            LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            WHERE t.id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) hydrateTicket(connection, ticketSnapshot(resultSet)) else null
+            }
+        }
+
+    private fun hydrateTicket(connection: Connection, ticket: ServerTicketSnapshot): ServerTicketSnapshot = ticket.copy(
+        messages = ticketMessages(connection, ticket.id),
+        internalComments = ticketInternalComments(connection, ticket.id),
+        events = ticketEvents(connection, ticket.id),
+        attachments = ticketAttachments(connection, ticket.id),
+    )
+
+    private fun ticketMessages(connection: Connection, ticketId: String): List<ServerTicketMessageSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT m.id::text, m.ticket_id::text, m.author_id::text, u.name AS author_name, m.body, m.created_at
+            FROM ticket_messages m
+            JOIN users u ON u.id = m.author_id
+            WHERE m.ticket_id::text = ?
+            ORDER BY m.created_at ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerTicketMessageSnapshot(
+                                id = resultSet.getString("id"),
+                                ticketId = resultSet.getString("ticket_id"),
+                                authorId = resultSet.getString("author_id"),
+                                authorName = resultSet.getString("author_name"),
+                                body = resultSet.getString("body"),
+                                createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun ticketInternalComments(connection: Connection, ticketId: String): List<ServerInternalCommentSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT c.id::text, c.ticket_id::text, c.author_id::text, u.name AS author_name, c.body, c.created_at
+            FROM internal_comments c
+            JOIN users u ON u.id = c.author_id
+            WHERE c.ticket_id::text = ?
+            ORDER BY c.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerInternalCommentSnapshot(
+                                id = resultSet.getString("id"),
+                                ticketId = resultSet.getString("ticket_id"),
+                                authorId = resultSet.getString("author_id"),
+                                authorName = resultSet.getString("author_name"),
+                                body = resultSet.getString("body"),
+                                createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun ticketEvents(connection: Connection, ticketId: String): List<ServerTicketEventSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT e.id::text, e.ticket_id::text, e.type, e.description,
+                   COALESCE(u.name, 'Sistema') AS actor_name, e.created_at
+            FROM ticket_events e
+            LEFT JOIN users u ON u.id = e.actor_id
+            WHERE e.ticket_id::text = ?
+            ORDER BY e.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerTicketEventSnapshot(
+                                id = resultSet.getString("id"),
+                                ticketId = resultSet.getString("ticket_id"),
+                                type = resultSet.getString("type"),
+                                description = resultSet.getString("description"),
+                                actorName = resultSet.getString("actor_name"),
+                                createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun ticketAttachments(connection: Connection, ticketId: String): List<ServerTicketAttachmentSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT a.id::text, a.file_name, a.content_type, a.size_bytes,
+                   u.name AS uploaded_by, a.uploaded_at
+            FROM attachments a
+            JOIN users u ON u.id = a.uploaded_by
+            LEFT JOIN ticket_messages m ON m.id = a.message_id
+            WHERE a.ticket_id::text = ? OR m.ticket_id::text = ?
+            ORDER BY a.uploaded_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ticketId)
+            statement.setString(2, ticketId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerTicketAttachmentSnapshot(
+                                id = resultSet.getString("id"),
+                                fileName = resultSet.getString("file_name"),
+                                contentType = resultSet.getString("content_type"),
+                                sizeBytes = resultSet.getLong("size_bytes"),
+                                uploadedBy = resultSet.getString("uploaded_by"),
+                                uploadedAt = resultSet.getTimestamp("uploaded_at").toInstant().toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
 
     private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
         id = resultSet.getString("id"),
@@ -1292,12 +1467,12 @@ class PostgresSupportDeskRepository(
     private fun getClientMonthlyMinutes(connection: Connection, clientId: String, ownerAdminId: String? = null): Int =
         connection.prepareStatement(
             """
-            SELECT COALESCE(SUM(minutes), 0)::integer AS monthly_minutes
+            SELECT COALESCE(SUM(tl.minutes), 0)::integer AS monthly_minutes
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
-            WHERE client_id::text = ?
+            WHERE tl.client_id::text = ?
               AND (? IS NULL OR t.owner_admin_id::text = ?)
-              AND DATE_TRUNC('month', work_date) = DATE_TRUNC('month', CURRENT_DATE)
+              AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)

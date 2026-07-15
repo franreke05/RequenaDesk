@@ -87,15 +87,19 @@ class ClientsViewModel(
         val draft = event.toDraft()
         if (!draft.isValid()) return
         launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null, lastCreatedClientId = null) }
             when (val result = createClientUseCase(draft)) {
                 is AppResult.Error -> {
                     _state.update { it.copy(errorMessage = result.message) }
                     _effects.emit(ClientsUiEffect.ShowMessage(result.message))
                 }
-                is AppResult.Success -> loadClients(
-                    preferredSelectedId = result.data.id,
-                    successMessage = "Cliente creado",
-                )
+                is AppResult.Success -> {
+                    _state.update { it.copy(lastCreatedClientId = result.data.id) }
+                    loadClients(
+                        preferredSelectedId = result.data.id,
+                        successMessage = "Cliente creado",
+                    )
+                }
             }
         }
     }

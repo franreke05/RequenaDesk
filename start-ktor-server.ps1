@@ -74,6 +74,9 @@ function Ensure-Java {
 
 function Assert-DatabaseConfig {
     $databaseUrl = Get-EnvValue "SUPABASE_DATABASE_URL"
+    if (-not $databaseUrl) {
+        $databaseUrl = Get-EnvValue "DATABASE_URL"
+    }
     if ($databaseUrl) {
         return
     }
@@ -95,6 +98,9 @@ Ensure-Java
 $authSecret = Get-EnvValue "SUPPORTDESK_AUTH_SECRET"
 if (-not $authSecret) {
     throw "SUPPORTDESK_AUTH_SECRET es obligatorio."
+}
+if ($authSecret.Length -lt 32) {
+    throw "SUPPORTDESK_AUTH_SECRET debe tener al menos 32 caracteres."
 }
 
 Assert-DatabaseConfig

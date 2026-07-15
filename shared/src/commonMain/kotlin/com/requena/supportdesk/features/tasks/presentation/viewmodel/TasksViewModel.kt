@@ -1,7 +1,6 @@
 package com.requena.supportdesk.features.tasks.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
-import com.requena.supportdesk.core.common.SupportDeskSeed
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
@@ -23,12 +22,16 @@ import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
+import com.requena.supportdesk.features.tasks.presentation.effect.TasksUiEffect
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,6 +50,9 @@ class TasksViewModel(
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TasksUiState())
     val state: StateFlow<TasksUiState> = _state.asStateFlow()
+
+    private val _effects = MutableSharedFlow<TasksUiEffect>(extraBufferCapacity = 4)
+    val effects: SharedFlow<TasksUiEffect> = _effects.asSharedFlow()
 
     private var timerJob: Job? = null
     private var categories = emptyList<TaskCategory>()
@@ -115,6 +121,10 @@ class TasksViewModel(
             tasks = (tasksResult as AppResult.Success).data
             logs = (logsResult as AppResult.Success).data
 
+            if (statusMessage != null) {
+                _effects.emit(TasksUiEffect.ShowMessage(statusMessage))
+            }
+
             publish(
                 selectedDay = selectedDay,
                 selectedTaskId = selectedTaskId,
@@ -134,7 +144,11 @@ class TasksViewModel(
     private fun createLabel(name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = AdminSessionContext.currentUserId()
+        if (ownerAdminId == null) {
+            handleWorkspaceError("No se encontro una sesion de administrador activa.")
+            return
+        }
         launch {
             when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -149,7 +163,11 @@ class TasksViewModel(
     private fun updateLabel(labelId: String, name: String, colorHex: String) {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
-        val ownerAdminId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id
+        val ownerAdminId = AdminSessionContext.currentUserId()
+        if (ownerAdminId == null) {
+            handleWorkspaceError("No se encontro una sesion de administrador activa.")
+            return
+        }
         launch {
             when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
@@ -183,6 +201,7 @@ class TasksViewModel(
             }
         }
         launch {
+            _state.update { it.copy(errorMessage = null, lastCreatedTaskId = null) }
             when (
                 val result = createTaskUseCase(
                     TaskDraft(
@@ -195,13 +214,16 @@ class TasksViewModel(
                 )
             ) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
-                is AppResult.Success -> loadWorkspace(
-                    selectedTaskId = result.data.id,
-                    selectedCategoryId = result.data.categoryId,
-                    selectedClientFilterId = result.data.clientId,
-                    selectedDashboardClientId = result.data.clientId ?: state.value.selectedDashboardClientId,
-                    statusMessage = "Tarea creada",
-                )
+                is AppResult.Success -> {
+                    _state.update { it.copy(lastCreatedTaskId = result.data.id) }
+                    loadWorkspace(
+                        selectedTaskId = result.data.id,
+                        selectedCategoryId = result.data.categoryId,
+                        selectedClientFilterId = result.data.clientId,
+                        selectedDashboardClientId = result.data.clientId ?: state.value.selectedDashboardClientId,
+                        statusMessage = "Tarea creada",
+                    )
+                }
             }
         }
     }
@@ -237,7 +259,7 @@ class TasksViewModel(
             input = TaskUpdateInput(
                 title = cleanTitle,
                 description = event.description.trim(),
-                clientId = current.clientId,
+                clientId = event.clientId,
                 categoryId = event.categoryId,
                 dueDate = dueDate,
                 completed = current.completed,
@@ -369,12 +391,24 @@ class TasksViewModel(
         }
 
         val workDate = current.selectedDay ?: currentIsoDate()
+        val authorId = AdminSessionContext.currentUserId()
+        if (authorId == null) {
+            val message = "No se encontro una sesion de administrador activa."
+            handleWorkspaceError(message)
+            publish(
+                activeTaskId = null,
+                activeTaskSeconds = 0,
+                isTimerRunning = false,
+                statusMessage = message,
+            )
+            return
+        }
         launch {
             when (
                 val result = createTimeLogUseCase(
                     TaskTimeLogDraft(
                         taskId = taskId,
-                        authorId = AdminSessionContext.currentUserId() ?: SupportDeskSeed.adminUser.id,
+                        authorId = authorId,
                         workDate = workDate,
                         minutes = minutesToAdd,
                         seconds = secondsToAdd,
@@ -459,6 +493,7 @@ class TasksViewModel(
                 statusMessage = message,
             )
         }
+        launch { _effects.emit(TasksUiEffect.ShowMessage(message)) }
     }
 
     private fun nextSelectionAfterDelete(taskId: String): String? {

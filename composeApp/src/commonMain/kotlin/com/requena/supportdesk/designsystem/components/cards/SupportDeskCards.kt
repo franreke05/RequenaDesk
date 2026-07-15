@@ -1,6 +1,12 @@
 package com.requena.supportdesk.designsystem.components.cards
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -9,8 +15,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +24,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
+
+private val CardTextCrossfade =
+    fadeIn(tween(SupportDeskMotion.regular)) togetherWith fadeOut(tween(SupportDeskMotion.quick))
+
+// Flat card, no drop shadow - a crisp accent-colored border reads as "neon" without the
+// muddy gray halo Compose's elevation shadow produces. MaterialTheme.colorScheme.primary
+// already resolves per light/dark theme, so this needs no separate dark-mode variant.
+@Composable
+private fun neonCardBorder(): BorderStroke = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
 
 @Composable
 fun SectionCard(
@@ -30,12 +46,13 @@ fun SectionCard(
     val spacing = SupportDeskThemeTokens.spacing
     val resolvedTitle = title?.takeIf { it.isNotBlank() }
     val resolvedSubtitle = subtitle?.takeIf { it.isNotBlank() }
-    ElevatedCard(
+    Card(
         modifier = modifier.animateContentSize(),
-        colors = CardDefaults.elevatedCardColors(
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = SupportDeskThemeTokens.elevations.subtle),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = neonCardBorder(),
     ) {
         Column(
             modifier = Modifier
@@ -53,7 +70,13 @@ fun SectionCard(
                         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
                     ) {
                         resolvedTitle?.let {
-                            Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            AnimatedContent(
+                                targetState = it,
+                                transitionSpec = { CardTextCrossfade },
+                                label = "sectionCardTitle",
+                            ) { titleValue ->
+                                Text(titleValue, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                         resolvedSubtitle?.let {
                             Text(
@@ -79,14 +102,15 @@ fun MetricCard(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    ElevatedCard(
+    Card(
         modifier = modifier
             .heightIn(min = 132.dp)
             .animateContentSize(),
-        colors = CardDefaults.elevatedCardColors(
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = SupportDeskThemeTokens.elevations.subtle),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = neonCardBorder(),
     ) {
         Column(
             modifier = Modifier
@@ -99,11 +123,17 @@ fun MetricCard(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = { CardTextCrossfade },
+                label = "metricCardValue",
+            ) { valueText ->
+                Text(
+                    text = valueText,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 text = supportingText,
                 style = MaterialTheme.typography.bodySmall,

@@ -1,0 +1,3 @@
+-- Historical invoice migrations are managed automatically by Flyway when Ktor starts.
+-- V3 and V4 remove every invoice table and sequence. Invoices are PDFs saved
+-- locally by the desktop app and are never persisted in PostgreSQL.

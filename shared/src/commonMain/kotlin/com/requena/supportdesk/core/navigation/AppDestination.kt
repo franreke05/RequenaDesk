@@ -15,6 +15,10 @@ sealed interface AppDestination {
         override val route: String = "tasks"
     }
 
+    object Pinboard : AppDestination {
+        override val route: String = "pinboard"
+    }
+
     object Labels : AppDestination {
         override val route: String = "labels"
     }
@@ -37,5 +41,9 @@ sealed interface AppDestination {
 
     object Notifications : AppDestination {
         override val route: String = "notifications"
+    }
+
+    data class Invoices(val preselectedClientId: String? = null) : AppDestination {
+        override val route: String = "invoices"
     }
 }

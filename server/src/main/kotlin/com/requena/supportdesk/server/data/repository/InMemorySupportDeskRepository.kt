@@ -42,6 +42,8 @@ class InMemorySupportDeskRepository(
         val name: String,
         val email: String,
         val password: String,
+        val role: String = "ADMIN",
+        val clientId: String? = null,
     )
 
     private val adminAccounts = listOf(
@@ -49,13 +51,21 @@ class InMemorySupportDeskRepository(
             userId = "user-admin",
             name = "Admin Requena",
             email = "admin@orykai.dev",
-            password = "Admin1requena",
+            password = "UnitTestAdminPassword1",
         ),
         LocalAdminAccount(
             userId = "user-admin-2",
             name = "Admin Sanchez",
             email = "admin2@orykai.dev",
-            password = "Admin2Sanchez",
+            password = "UnitTestAdminPassword2",
+        ),
+        LocalAdminAccount(
+            userId = "user-client",
+            name = "Ana Northwind",
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+            role = "CLIENT",
+            clientId = "client-1",
         ),
     )
 
@@ -180,12 +190,13 @@ class InMemorySupportDeskRepository(
                 userId = account.userId,
                 name = account.name,
                 email = account.email,
-                role = "ADMIN",
+                role = account.role,
+                clientId = account.clientId,
             )
         }
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
-        refreshTokens[PasswordHasher.hash(refreshToken)] = userId
+        refreshTokens[PasswordHasher.hashToken(refreshToken)] = userId
     }
 
     override fun rotateRefreshToken(
@@ -193,19 +204,20 @@ class InMemorySupportDeskRepository(
         replacementRefreshToken: String,
         expiresAt: Instant,
     ): ServerAuthIdentity? {
-        val userId = refreshTokens.remove(PasswordHasher.hash(refreshToken)) ?: return null
-        refreshTokens[PasswordHasher.hash(replacementRefreshToken)] = userId
+        val userId = refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) ?: return null
+        refreshTokens[PasswordHasher.hashToken(replacementRefreshToken)] = userId
         val account = adminAccounts.firstOrNull { it.userId == userId } ?: return null
         return ServerAuthIdentity(
             userId = account.userId,
             name = account.name,
             email = account.email,
-            role = "ADMIN",
+            role = account.role,
+            clientId = account.clientId,
         )
     }
 
     override fun revokeRefreshToken(refreshToken: String): Boolean =
-        refreshTokens.remove(PasswordHasher.hash(refreshToken)) != null
+        refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) != null
 
     override fun getTickets(): List<ServerTicketSnapshot> = dataSource.tickets().map(SupportDeskMapper::ticket)
 
@@ -213,6 +225,7 @@ class InMemorySupportDeskRepository(
 
     override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = ServerTicketSnapshot(
         id = "ticket-created",
+        clientId = request.clientId,
         ticketNumber = "RDS-999999",
         subject = request.subject.ifBlank { "Nuevo ticket" },
         description = request.description.ifBlank { "Ticket creado en modo local." },
@@ -220,11 +233,21 @@ class InMemorySupportDeskRepository(
         affectedApp = request.affectedApp.ifBlank { "Assigned product" },
         platform = request.platform,
         appVersion = request.appVersion,
+        stepsToReproduce = request.stepsToReproduce,
         clientReference = request.clientReference,
         status = "OPEN",
         priority = request.priority,
         waitingOn = "ADMIN",
         resolutionSummary = null,
+        requesterId = request.requesterId ?: "user-client",
+        requesterName = clients.firstOrNull { it.id == request.clientId }?.contactName
+            ?: adminAccounts.firstOrNull { it.userId == request.requesterId }?.name
+            ?: "Cliente",
+        requesterEmail = clients.firstOrNull { it.id == request.clientId }?.email
+            ?: adminAccounts.firstOrNull { it.userId == request.requesterId }?.email
+            .orEmpty(),
+        createdAt = Instant.now().toString(),
+        updatedAt = Instant.now().toString(),
     )
 
     override fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated =
@@ -510,4 +533,5 @@ class InMemorySupportDeskRepository(
             throw ServerNotFoundException("Task not found")
         }
     }
+
 }

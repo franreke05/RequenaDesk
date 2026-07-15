@@ -44,6 +44,8 @@ import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCa
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
+import com.requena.supportdesk.features.invoices.data.storage.createInvoicePdfStorage
+import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
@@ -111,6 +113,10 @@ object SupportDeskSharedModule {
     fun createDashboardViewModel(): DashboardViewModel = DashboardViewModel(getDashboardSummaryUseCase)
 
     fun createNotificationsViewModel(): NotificationsViewModel = NotificationsViewModel(registerDeviceUseCase)
+
+    fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
+        invoicePdfStorage = createInvoicePdfStorage(),
+    )
 
     fun createTasksViewModel(): TasksViewModel = TasksViewModel(
         getTaskLabelsUseCase = getTaskLabelsUseCase,

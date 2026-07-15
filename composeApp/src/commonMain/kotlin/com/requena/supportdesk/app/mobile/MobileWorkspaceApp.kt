@@ -55,6 +55,7 @@ import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
@@ -246,7 +247,7 @@ private fun MobileLoginScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 24.dp),
         ) {
-            val compactLayout = maxWidth < 380.dp
+            val compactLayout = maxWidth < SupportDeskBreakpoints.mobileCompact
 
             Column(
                 verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
@@ -318,6 +319,7 @@ private fun MobileLoginScreen(
                     ActionButton(
                         text = if (state.isLoading) "Entrando..." else "Entrar",
                         emphasized = true,
+                        enabled = !state.isLoading,
                         onClick = { onEvent(AuthUiEvent.Submit) },
                     )
                 }
@@ -417,7 +419,7 @@ private fun MobileHeader(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compactLayout = maxWidth < 380.dp
+            val compactLayout = maxWidth < SupportDeskBreakpoints.mobileCompact
 
             if (compactLayout) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1693,7 +1695,7 @@ private fun CardHeader(
     trailing: @Composable (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val stacked = trailing != null && maxWidth < 360.dp
+        val stacked = trailing != null && maxWidth < SupportDeskBreakpoints.mobileStackedTrailing
 
         if (stacked) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1851,14 +1853,19 @@ private fun ActionButton(
     text: String,
     emphasized: Boolean = false,
     compact: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = MaterialTheme.shapes.small,
-        color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        color = when {
+            !enabled -> MaterialTheme.colorScheme.surfaceVariant
+            emphasized -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        },
     ) {
         Box(
             modifier = Modifier.padding(
@@ -1870,7 +1877,11 @@ private fun ActionButton(
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (emphasized) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                color = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                    emphasized -> MaterialTheme.colorScheme.onPrimary
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
             )
         }
     }

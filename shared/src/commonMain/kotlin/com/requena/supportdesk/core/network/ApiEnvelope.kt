@@ -33,7 +33,7 @@ suspend inline fun <reified T> HttpResponse.requireApiData(): T {
     if (!status.isSuccess()) {
         val message = runCatching {
             supportDeskNetworkJson.decodeFromString<ApiErrorEnvelope>(payload).message
-        }.getOrDefault("Request failed with status ${status.value}")
+        }.getOrDefault("El servidor respondió con estado ${status.value}.")
         error(message)
     }
     return supportDeskNetworkJson.decodeFromString<ApiEnvelope<T>>(payload).data
@@ -44,7 +44,7 @@ suspend fun HttpResponse.requireSuccess() {
     if (!status.isSuccess()) {
         val message = runCatching {
             supportDeskNetworkJson.decodeFromString<ApiErrorEnvelope>(payload).message
-        }.getOrDefault("Request failed with status ${status.value}")
+        }.getOrDefault("El servidor respondió con estado ${status.value}.")
         error(message)
     }
 }

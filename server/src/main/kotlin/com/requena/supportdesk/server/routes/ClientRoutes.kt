@@ -9,6 +9,8 @@ import com.requena.supportdesk.server.utils.clientsJson
 import com.requena.supportdesk.server.utils.errorResponse
 import com.requena.supportdesk.server.utils.messageJson
 import com.requena.supportdesk.server.utils.requireAdminIdentity
+import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
+import com.requena.supportdesk.server.utils.isAdmin
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -23,8 +25,13 @@ import io.ktor.server.routing.route
 fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/clients") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
-            call.respondJson(body = successResponse("/admin/clients", clientsJson(service.clients(ownerAdminId))))
+            val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
+            val clients = if (identity.isAdmin) {
+                service.clients(identity.userId)
+            } else {
+                service.clients().filter { it.id == identity.clientId }
+            }
+            call.respondJson(body = successResponse("/admin/clients", clientsJson(clients)))
         }
         post("/clients") {
             val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post

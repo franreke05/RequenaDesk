@@ -1,11 +1,16 @@
 package com.requena.supportdesk.app.admin.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -55,6 +60,8 @@ import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import kotlin.math.max
@@ -68,9 +75,13 @@ fun AdminDashboardScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = clients.firstOrNull { it.id == tasksState.selectedDashboardClientId }
-    val globalSeconds = tasksState.logs.sumOf { it.seconds }
-    val globalBillableSeconds = tasksState.logs.filter { it.billable }.sumOf { it.seconds }
-    val clientLogs = tasksState.logs.filter { log ->
+    val currentMonth = tasksState.todayIsoDate.take(7)
+    val monthLogs = remember(tasksState.logs, currentMonth) {
+        tasksState.logs.filter { it.workDate.take(7) == currentMonth }
+    }
+    val globalSeconds = monthLogs.sumOf { it.seconds }
+    val globalBillableSeconds = monthLogs.filter { it.billable }.sumOf { it.seconds }
+    val clientLogs = monthLogs.filter { log ->
         tasksState.selectedDashboardClientId == null || log.clientId == tasksState.selectedDashboardClientId
     }
     val clientSeconds = clientLogs.sumOf { it.seconds }
@@ -94,6 +105,7 @@ fun AdminDashboardScreen(
             selectedClient = selectedClient,
             categories = tasksState.categories,
             tasks = dashboardTasks,
+            selectedTask = selectedTask,
             tasksState = tasksState,
             onTasksEvent = onTasksEvent,
         )
@@ -121,7 +133,7 @@ fun AdminDashboardScreen(
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val stacked = maxWidth < 1180.dp
+            val stacked = maxWidth < SupportDeskBreakpoints.adminMedium
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
                     WheelSummaryRow(
@@ -166,11 +178,10 @@ private fun CounterHeroCard(
     selectedClient: Client?,
     categories: List<TaskCategory>,
     tasks: List<WorkTask>,
+    selectedTask: WorkTask?,
     tasksState: TasksUiState,
     onTasksEvent: (TasksUiEvent) -> Unit,
 ) {
-    val selectedTask = tasksState.selectedTask?.takeIf { candidate -> tasks.any { it.id == candidate.id } } ?: tasks.firstOrNull()
-
     SectionCard(
         title = "Tiempo y foco",
         subtitle = null,
@@ -224,6 +235,7 @@ private fun CounterHeroCard(
                     },
                 )
             } else {
+                val categoriesById = remember(categories) { categories.associateBy { it.id } }
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 180.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -231,7 +243,7 @@ private fun CounterHeroCard(
                     items(tasks, key = { it.id }) { task ->
                         DashboardTaskRow(
                             task = task,
-                            category = categories.firstOrNull { it.id == task.categoryId },
+                            category = categoriesById[task.categoryId],
                             selected = tasksState.selectedTaskId == task.id,
                             onSelect = { onTasksEvent(TasksUiEvent.SelectTask(task.id)) },
                         )
@@ -323,17 +335,24 @@ private fun DashboardTaskRow(
     selected: Boolean,
     onSelect: () -> Unit,
 ) {
-    val surfaceColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
-    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val surfaceColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
+        },
+        animationSpec = tween(SupportDeskMotion.quick),
+        label = "dashboardTaskRowBackground",
+    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(surfaceColor, MaterialTheme.shapes.medium)
-            .clickable(onClick = onSelect)
+            .hoverable(interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onSelect)
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -572,6 +591,8 @@ private fun CompactCalendarDayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
     val alpha = if (day.minutes == 0) 0.06f else 0.14f + (day.minutes.toFloat() / maxMinutes.toFloat()) * 0.28f
     val borderColor = when {
         day.selected -> MaterialTheme.colorScheme.primary
@@ -581,10 +602,16 @@ private fun CompactCalendarDayCell(
     }
     val backgroundColor = when {
         day.selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        !day.isPast && hovered -> MaterialTheme.colorScheme.primary.copy(alpha = alpha + 0.12f)
         day.isPast -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
         day.inCurrentMonth -> MaterialTheme.colorScheme.primary.copy(alpha = alpha)
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
     }
+    val animatedBackgroundColor by animateColorAsState(
+        targetValue = backgroundColor,
+        animationSpec = tween(SupportDeskMotion.quick),
+        label = "calendarDayBackground",
+    )
     val contentColor = if (day.isPast) {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
     } else if (day.inCurrentMonth) {
@@ -596,9 +623,10 @@ private fun CompactCalendarDayCell(
     Box(
         modifier = modifier
             .aspectRatio(1.1f)
-            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-            .background(backgroundColor, RoundedCornerShape(14.dp))
-            .clickable(enabled = !day.isPast, onClick = onClick)
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .background(animatedBackgroundColor, RoundedCornerShape(8.dp))
+            .hoverable(interactionSource, enabled = !day.isPast)
+            .clickable(interactionSource = interactionSource, indication = null, enabled = !day.isPast, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 5.dp),
     ) {
         Text(

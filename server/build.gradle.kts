@@ -8,7 +8,7 @@ plugins {
 group = "com.requena.orykaisoftware"
 version = "1.0.0"
 application {
-    mainClass.set("com.example.crmfreelance.ApplicationKt")
+    mainClass.set("com.requena.supportdesk.server.ApplicationKt")
     
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
@@ -19,6 +19,10 @@ dependencies {
     implementation(libs.java.jwt)
     implementation(libs.logback)
     implementation(libs.postgresql)
+    implementation(libs.jbcrypt)
+    implementation(libs.hikaricp)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.database.postgresql)
     implementation(libs.ktor.serverCallLogging)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverCore)
@@ -27,4 +31,5 @@ dependencies {
     implementation(libs.ktor.serializationKotlinxJson)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.embedded.postgres)
 }
