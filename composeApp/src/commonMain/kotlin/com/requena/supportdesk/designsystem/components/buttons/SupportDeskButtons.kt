@@ -48,6 +48,7 @@ fun PrimaryButton(
         onClick = onClick,
         enabled = enabled && !isLoading,
         interactionSource = interactionSource,
+        shape = MaterialTheme.shapes.large,
         modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier)
             .heightIn(min = 44.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale },
@@ -78,6 +79,7 @@ fun SecondaryButton(
         onClick = onClick,
         enabled = enabled && !isLoading,
         interactionSource = interactionSource,
+        shape = MaterialTheme.shapes.large,
         modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier)
             .heightIn(min = 44.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale },

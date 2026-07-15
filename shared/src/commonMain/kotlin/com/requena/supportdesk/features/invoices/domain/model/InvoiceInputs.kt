@@ -9,6 +9,7 @@ data class CreateInvoiceItemInput(
 
 data class CreateInvoiceInput(
     val clientId: String,
+    val clientName: String,
     val issuedAt: String,
     val dueAt: String?,
     val notes: String?,

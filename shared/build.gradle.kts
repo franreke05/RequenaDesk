@@ -35,6 +35,7 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation(libs.ktor.clientCio)
+            implementation(libs.pdfbox)
         }
         jvmTest.dependencies {
             implementation(libs.ktor.clientMock)

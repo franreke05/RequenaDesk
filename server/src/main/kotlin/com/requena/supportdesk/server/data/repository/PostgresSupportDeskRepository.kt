@@ -2,9 +2,6 @@ package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
-import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
-import com.requena.supportdesk.server.domain.model.ServerInvoiceItemSnapshot
-import com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
@@ -1575,43 +1572,6 @@ class PostgresSupportDeskRepository(
             else -> return ""
         }
         return DateTimeFormatter.ISO_INSTANT.format(instant)
-    }
-
-    // ── Invoices ─────────────────────────────────────────────────────────────
-    // Invoices are generated on demand and never persisted; only the sequence
-    // is touched, to claim a unique, gap-free invoice number.
-
-    override fun generateInvoice(request: CreateInvoiceRequest, ownerAdminId: String): ServerInvoiceSnapshot {
-        val client = getClients(ownerAdminId).firstOrNull { it.id == request.clientId }
-            ?: throw ServerNotFoundException("Client not found")
-        val invoiceNumber = dataSource.withConnection { connection -> generateInvoiceNumber(connection) }
-        return ServerInvoiceSnapshot(
-            invoiceNumber = invoiceNumber,
-            clientId = client.id,
-            clientName = client.companyName,
-            issuedAt = request.issuedAt,
-            dueAt = request.dueAt?.takeIf { it.isNotBlank() },
-            notes = request.notes?.takeIf { it.isNotBlank() },
-            taxPercent = request.taxPercent.coerceIn(0.0, 100.0),
-            items = request.items.mapIndexed { index, item ->
-                val sortOrder = item.sortOrder.takeIf { it >= 0 } ?: index
-                ServerInvoiceItemSnapshot(
-                    id = sortOrder.toString(),
-                    description = item.description,
-                    quantity = item.quantity.coerceAtLeast(0.0),
-                    unitPrice = item.unitPrice.coerceAtLeast(0.0),
-                    sortOrder = sortOrder,
-                )
-            },
-        )
-    }
-
-    private fun generateInvoiceNumber(connection: Connection): String {
-        val seq = connection.prepareStatement("SELECT nextval('invoice_number_seq')").use { stmt ->
-            stmt.executeQuery().use { rs -> rs.next(); rs.getLong(1) }
-        }
-        val year = java.time.LocalDate.now().year
-        return "FAC-$year-${seq.toString().padStart(3, '0')}"
     }
 
     private companion object {

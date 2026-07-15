@@ -137,7 +137,6 @@ class InMemorySupportDeskRepository(
         "task-3" to "user-admin",
     )
     private val refreshTokens = mutableMapOf<String, String>()
-    private var invoiceNumberCounter = 0
     private val timeLogs = mutableListOf(
         ServerTimeLogSnapshot(
             id = "time-log-1",
@@ -535,32 +534,4 @@ class InMemorySupportDeskRepository(
         }
     }
 
-    override fun generateInvoice(
-        request: com.requena.supportdesk.server.domain.model.CreateInvoiceRequest,
-        ownerAdminId: String,
-    ): com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot {
-        val client = getClients(ownerAdminId).firstOrNull { it.id == request.clientId }
-            ?: throw ServerNotFoundException("Client not found")
-        invoiceNumberCounter += 1
-        val invoiceNumber = "FAC-${java.time.LocalDate.now().year}-${invoiceNumberCounter.toString().padStart(3, '0')}"
-        return com.requena.supportdesk.server.domain.model.ServerInvoiceSnapshot(
-            invoiceNumber = invoiceNumber,
-            clientId = client.id,
-            clientName = client.companyName,
-            issuedAt = request.issuedAt,
-            dueAt = request.dueAt?.takeIf { it.isNotBlank() },
-            notes = request.notes?.takeIf { it.isNotBlank() },
-            taxPercent = request.taxPercent.coerceIn(0.0, 100.0),
-            items = request.items.mapIndexed { index, item ->
-                val sortOrder = item.sortOrder.takeIf { it >= 0 } ?: index
-                com.requena.supportdesk.server.domain.model.ServerInvoiceItemSnapshot(
-                    id = sortOrder.toString(),
-                    description = item.description,
-                    quantity = item.quantity.coerceAtLeast(0.0),
-                    unitPrice = item.unitPrice.coerceAtLeast(0.0),
-                    sortOrder = sortOrder,
-                )
-            },
-        )
-    }
 }

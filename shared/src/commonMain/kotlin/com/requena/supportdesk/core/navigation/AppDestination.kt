@@ -43,7 +43,7 @@ sealed interface AppDestination {
         override val route: String = "notifications"
     }
 
-    object Invoices : AppDestination {
+    data class Invoices(val preselectedClientId: String? = null) : AppDestination {
         override val route: String = "invoices"
     }
 }

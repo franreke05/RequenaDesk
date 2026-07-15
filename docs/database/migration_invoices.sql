@@ -1,3 +1,3 @@
--- The invoices schema is managed automatically by Flyway when Ktor starts.
--- Canonical migration:
--- server/src/main/resources/db/migration/V2__invoices.sql
+-- Historical invoice migrations are managed automatically by Flyway when Ktor starts.
+-- V3 and V4 remove every invoice table and sequence. Invoices are PDFs saved
+-- locally by the desktop app and are never persisted in PostgreSQL.

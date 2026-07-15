@@ -44,9 +44,7 @@ import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCa
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
-import com.requena.supportdesk.features.invoices.data.datasource.RemoteInvoicesDataSource
-import com.requena.supportdesk.features.invoices.data.repository.InvoicesRepositoryImpl
-import com.requena.supportdesk.features.invoices.domain.usecase.GenerateInvoiceUseCase
+import com.requena.supportdesk.features.invoices.data.storage.createInvoicePdfStorage
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
@@ -63,7 +61,6 @@ object SupportDeskSharedModule {
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
     private val dashboardRepository = DashboardRepositoryImpl(RemoteDashboardDataSource(httpClient))
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
-    private val invoicesRepository = InvoicesRepositoryImpl(RemoteInvoicesDataSource(sessionManager))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
@@ -90,7 +87,6 @@ object SupportDeskSharedModule {
     private val createTimeLogUseCase = CreateTimeLogUseCase(tasksRepository)
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
-    private val generateInvoiceUseCase = GenerateInvoiceUseCase(invoicesRepository)
 
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
@@ -119,7 +115,7 @@ object SupportDeskSharedModule {
     fun createNotificationsViewModel(): NotificationsViewModel = NotificationsViewModel(registerDeviceUseCase)
 
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
-        generateInvoiceUseCase = generateInvoiceUseCase,
+        invoicePdfStorage = createInvoicePdfStorage(),
     )
 
     fun createTasksViewModel(): TasksViewModel = TasksViewModel(

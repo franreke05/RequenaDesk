@@ -25,6 +25,7 @@ hikaricp = "5.1.0"
 flyway = "12.10.0"
 embeddedPostgres = "2.2.2"
 lucideCmp = "2.2.1"
+pdfbox = "2.0.35"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -70,6 +71,7 @@ flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 embedded-postgres = { module = "io.zonky.test:embedded-postgres", version.ref = "embeddedPostgres" }
 lucide-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucideCmp" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

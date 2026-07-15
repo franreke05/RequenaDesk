@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.admin.screens.AdminClientsScreen
@@ -71,7 +70,6 @@ fun AdminWorkspaceApp() {
     val module = remember { AdminAppModule() }
     var navigation by remember { mutableStateOf(AdminNavigationState()) }
     var statusMessage by remember { mutableStateOf("Workspace admin listo.") }
-    val uriHandler = LocalUriHandler.current
 
     val authState by module.authViewModel.state.collectAsState()
     val currentUser = authState.authenticatedUser
@@ -129,7 +127,6 @@ fun AdminWorkspaceApp() {
             module.invoicesViewModel.effects.collect { effect ->
                 when (effect) {
                     is InvoicesUiEffect.ShowMessage -> statusMessage = effect.message
-                    is InvoicesUiEffect.OpenGeneratedInvoice -> uriHandler.openUri(effect.url)
                 }
             }
         }
@@ -237,7 +234,7 @@ fun AdminWorkspaceApp() {
                         supportingText = "Colores y organización",
                     ),
                     NavigationItemSpec(
-                        key = AppDestination.Invoices,
+                        key = AppDestination.Invoices(),
                         title = "Facturas",
                         supportingText = "Crear y gestionar pagos",
                         icon = Lucide.ReceiptText,
@@ -268,7 +265,6 @@ fun AdminWorkspaceApp() {
                         statusMessage = uiStatus,
                         navigation = navigation,
                         onNavigate = { destination -> navigation = navigation.copy(destination = destination) },
-                        onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                         clientsState = clientsState,
                         tasksState = tasksState,
                         invoicesState = invoicesState,
@@ -291,7 +287,6 @@ fun AdminWorkspaceApp() {
                                 statusMessage = uiStatus,
                                 navigation = navigation,
                                 onNavigate = { destination -> navigation = navigation.copy(destination = destination) },
-                                onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                                 clientsState = clientsState,
                                 tasksState = tasksState,
                                 invoicesState = invoicesState,
@@ -306,7 +301,6 @@ fun AdminWorkspaceApp() {
                             statusMessage = uiStatus,
                             navigation = navigation,
                             onNavigate = { destination -> navigation = navigation.copy(destination = destination) },
-                            onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
                             clientsState = clientsState,
                             tasksState = tasksState,
                             invoicesState = invoicesState,
@@ -332,7 +326,6 @@ private fun AdminContentArea(
     statusMessage: String,
     navigation: AdminNavigationState,
     onNavigate: (AppDestination) -> Unit,
-    onSignOut: () -> Unit,
     clientsState: com.requena.supportdesk.features.clients.presentation.state.ClientsUiState,
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
     invoicesState: InvoicesUiState,
@@ -375,7 +368,6 @@ private fun AdminContentArea(
                         modifier = Modifier.weight(1f),
                     )
                     ThemeModeButton()
-                    SecondaryButton(text = "Cerrar sesion", onClick = onSignOut)
                 }
             }
         } else {
@@ -403,7 +395,6 @@ private fun AdminContentArea(
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 ThemeModeButton()
-                SecondaryButton(text = "Cerrar sesion", onClick = onSignOut)
             }
         }
 
@@ -444,7 +435,12 @@ private fun AdminContentArea(
             AppDestination.Clients -> AdminClientsScreen(
                 state = clientsState,
                 tasksState = tasksState,
+                ticketsState = ticketsState,
+                currentAdminId = module.authViewModel.state.value.authenticatedUser?.id.orEmpty(),
+                currentAdminName = module.authViewModel.state.value.authenticatedUser?.name.orEmpty(),
                 onEvent = module.clientsViewModel::onEvent,
+                onNavigateToInvoices = { clientId -> onNavigate(AppDestination.Invoices(preselectedClientId = clientId)) },
+                onNavigateToLabels = { onNavigate(AppDestination.Labels) },
                 modifier = Modifier.weight(1f),
             )
 
@@ -475,10 +471,12 @@ private fun AdminContentArea(
                 modifier = Modifier.weight(1f),
             )
 
-            AppDestination.Invoices -> AdminInvoicesScreen(
+            is AppDestination.Invoices -> AdminInvoicesScreen(
                 clients = clientsState.clients,
+                tasksState = tasksState,
                 state = invoicesState,
                 onEvent = module.invoicesViewModel::onEvent,
+                preselectedClientId = navigation.destination.preselectedClientId,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -492,7 +490,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Pinboard -> AppDestination.Pinboard
     AppDestination.Labels,
     AppDestination.Notifications -> AppDestination.Labels
-    AppDestination.Invoices -> AppDestination.Invoices
+    is AppDestination.Invoices -> AppDestination.Invoices()
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> AppDestination.Tickets
@@ -506,7 +504,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Pinboard -> "Tablon"
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
-    AppDestination.Invoices -> "Facturas"
+    is AppDestination.Invoices -> "Facturas"
     AppDestination.Tickets -> "Tickets"
     AppDestination.CreateTicket -> "Nuevo ticket"
     is AppDestination.TicketDetail -> "Detalle del ticket"
@@ -520,7 +518,7 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy, organizadas por etiqueta."
     AppDestination.Labels,
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
-    AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
+    is AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
     AppDestination.Tickets,
     AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Gestiona solicitudes, conversacion, estado y prioridad."

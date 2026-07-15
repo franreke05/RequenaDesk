@@ -84,7 +84,7 @@ fun AppDestination.displayTitle(): String = when (this) {
     is AppDestination.TicketDetail -> "Agenda"
     AppDestination.Clients -> "Clientes"
     AppDestination.Notifications -> "Etiquetas"
-    AppDestination.Invoices -> "Facturas"
+    is AppDestination.Invoices -> "Facturas"
 }
 
 fun AppDestination.displaySubtitle(): String = when (this) {
@@ -98,7 +98,7 @@ fun AppDestination.displaySubtitle(): String = when (this) {
     is AppDestination.TicketDetail -> "Ruta legacy retirada de la navegacion principal."
     AppDestination.Clients -> "Directorio limpio y ficha rapida de clientes."
     AppDestination.Notifications -> "Categorias de tareas y colores de seccion."
-    AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
+    is AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
 }
 
 fun formatSupportDeskDateTime(raw: String): String {

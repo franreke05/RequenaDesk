@@ -8,7 +8,6 @@ import com.requena.supportdesk.server.domain.model.CreateTicketRequest
 import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
-import com.requena.supportdesk.server.domain.model.CreateInvoiceRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
@@ -134,13 +133,6 @@ class SupportDeskService(
         repository.getDashboard(clientId, labelId, ownerAdminId)
 
     fun registerDevice(request: RegisterDeviceRequest) = repository.registerDevice(request)
-
-    fun generateInvoice(request: CreateInvoiceRequest, ownerAdminId: String) = run {
-        if (request.clientId.isBlank()) throw ServerValidationException("clientId es obligatorio")
-        if (request.issuedAt.isBlank()) throw ServerValidationException("issuedAt es obligatorio")
-        if (request.items.isEmpty()) throw ServerValidationException("Se requiere al menos un item")
-        repository.generateInvoice(request, ownerAdminId)
-    }
 
     private fun validateTaskDueDate(dueDate: String?) {
         val normalized = dueDate?.trim().orEmpty()

@@ -25,12 +25,13 @@ class DatabaseMigrationTest {
     }
 
     @Test
-    fun invoicePersistenceRemovalDropsTablesButKeepsTheNumberingSequence() {
-        val migration = migrationText("db/migration/V3__remove_invoice_persistence.sql")
+    fun invoicePersistenceRemovalDropsTablesAndTheNumberingSequence() {
+        val persistenceRemoval = migrationText("db/migration/V3__remove_invoice_persistence.sql")
+        val sequenceRemoval = migrationText("db/migration/V4__remove_invoice_sequence.sql")
 
-        assertTrue(migration.contains("DROP TABLE IF EXISTS invoice_items"))
-        assertTrue(migration.contains("DROP TABLE IF EXISTS invoices"))
-        assertFalse(migration.contains("DROP SEQUENCE"))
+        assertTrue(persistenceRemoval.contains("DROP TABLE IF EXISTS invoice_items"))
+        assertTrue(persistenceRemoval.contains("DROP TABLE IF EXISTS invoices"))
+        assertTrue(sequenceRemoval.contains("DROP SEQUENCE IF EXISTS invoice_number_seq"))
     }
 
     private fun migrationText(path: String): String {
