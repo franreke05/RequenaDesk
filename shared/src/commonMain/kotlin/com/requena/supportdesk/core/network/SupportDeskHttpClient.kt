@@ -3,6 +3,7 @@ package com.requena.supportdesk.core.network
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.plugin
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
@@ -73,6 +74,11 @@ private fun createRefreshHttpClient(sessionManager: SupportDeskSessionManager): 
     }
 
 private fun io.ktor.client.HttpClientConfig<*>.installSupportDeskHttpPlugins() {
+    install(HttpTimeout) {
+        requestTimeoutMillis = 15_000
+        connectTimeoutMillis = 10_000
+        socketTimeoutMillis = 15_000
+    }
     install(ContentNegotiation) {
         json(
             Json {

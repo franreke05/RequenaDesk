@@ -17,6 +17,7 @@ import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
+import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
@@ -37,6 +38,7 @@ import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import java.sql.Connection
 import java.sql.PreparedStatement
+import java.util.UUID
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
@@ -193,7 +195,19 @@ class PostgresSupportDeskRepository(
                 }
             }
         }
-        tickets.map { hydrateTicket(connection, it) }
+        val ticketIds = tickets.map { it.id }
+        val messagesByTicket = ticketMessagesByTicketIds(connection, ticketIds)
+        val commentsByTicket = ticketInternalCommentsByTicketIds(connection, ticketIds)
+        val eventsByTicket = ticketEventsByTicketIds(connection, ticketIds)
+        val attachmentsByTicket = ticketAttachmentsByTicketIds(connection, ticketIds)
+        tickets.map { ticket ->
+            ticket.copy(
+                messages = messagesByTicket[ticket.id].orEmpty(),
+                internalComments = commentsByTicket[ticket.id].orEmpty(),
+                events = eventsByTicket[ticket.id].orEmpty(),
+                attachments = attachmentsByTicket[ticket.id].orEmpty(),
+            )
+        }
     }
 
     override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.withConnection { connection ->
@@ -222,6 +236,9 @@ class PostgresSupportDeskRepository(
     }
 
     override fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot = dataSource.withConnection { connection ->
+        if (!isValidUuid(request.clientId)) {
+            throw ServerValidationException("clientId must be a valid UUID")
+        }
         val requesterId = request.requesterId ?: findRequesterId(connection, request.clientId)
         val affectedApp = request.affectedApp.ifBlank { findAffectedApp(connection, request.clientId) }
 
@@ -249,10 +266,10 @@ class PostgresSupportDeskRepository(
             statement.setString(10, request.clientReference)
             statement.setString(11, request.priority)
             statement.executeQuery().use { resultSet ->
-                resultSet.next()
+                if (!resultSet.next()) throw ServerValidationException("Could not create ticket with the given data")
                 val ticketId = resultSet.getString("id")
                 insertEvent(connection, ticketId, requesterId, "TICKET_CREATED", "Ticket created")
-                findTicket(connection, ticketId) ?: error("Created ticket could not be loaded")
+                findTicket(connection, ticketId) ?: throw ServerNotFoundException("Created ticket could not be loaded")
             }
         }
     }
@@ -270,7 +287,7 @@ class PostgresSupportDeskRepository(
                 statement.setString(2, request.authorId)
                 statement.setString(3, request.body)
                 statement.executeQuery().use { resultSet ->
-                    resultSet.next()
+                    if (!resultSet.next()) throw ServerNotFoundException("Ticket not found")
                     insertEvent(connection, ticketId, request.authorId, "MESSAGE_ADDED", "Reply added to ticket")
                     ServerTicketMessageCreated(ticketId = ticketId, messageId = resultSet.getString("id"))
                 }
@@ -301,7 +318,7 @@ class PostgresSupportDeskRepository(
                 repeat(5) { statement.setString(it + 1, request.status) }
                 statement.setString(6, ticketId)
                 statement.executeQuery().use { resultSet ->
-                    resultSet.next()
+                    if (!resultSet.next()) throw ServerNotFoundException("Ticket not found")
                     ServerTicketFieldUpdate(
                         ticketId = resultSet.getString("id"),
                         value = resultSet.getString("status"),
@@ -323,7 +340,7 @@ class PostgresSupportDeskRepository(
                 statement.setString(1, request.priority)
                 statement.setString(2, ticketId)
                 statement.executeQuery().use { resultSet ->
-                    resultSet.next()
+                    if (!resultSet.next()) throw ServerNotFoundException("Ticket not found")
                     ServerTicketFieldUpdate(
                         ticketId = resultSet.getString("id"),
                         value = resultSet.getString("priority"),
@@ -359,7 +376,7 @@ class PostgresSupportDeskRepository(
                 statement.setLong(10, request.sizeBytes)
                 statement.setString(11, request.uploadedBy)
                 statement.executeQuery().use { resultSet ->
-                    resultSet.next()
+                    if (!resultSet.next()) throw ServerValidationException("Could not store attachment for the given ticket/message")
                     insertEvent(connection, ticketId, request.uploadedBy, "ATTACHMENT_ADDED", "Attachment metadata stored")
                     ServerAttachmentCreated(ticketId = ticketId, attachmentId = resultSet.getString("id"))
                 }
@@ -1181,6 +1198,8 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    private fun isValidUuid(value: String): Boolean = runCatching { UUID.fromString(value) }.isSuccess
+
     private fun ticketSnapshot(resultSet: ResultSet): ServerTicketSnapshot = ServerTicketSnapshot(
         id = resultSet.getString("id"),
         clientId = resultSet.getString("client_id"),
@@ -1355,6 +1374,142 @@ class PostgresSupportDeskRepository(
                 }
             }
         }
+
+    // Batch variants of ticketMessages/ticketInternalComments/ticketEvents/ticketAttachments above,
+    // used by getTickets() to avoid a 1+4N query pattern when hydrating a whole ticket list.
+    private fun ticketMessagesByTicketIds(connection: Connection, ticketIds: List<String>): Map<String, List<ServerTicketMessageSnapshot>> {
+        if (ticketIds.isEmpty()) return emptyMap()
+        return connection.prepareStatement(
+            """
+            SELECT m.id::text, m.ticket_id::text, m.author_id::text, u.name AS author_name, m.body, m.created_at
+            FROM ticket_messages m
+            JOIN users u ON u.id = m.author_id
+            WHERE m.ticket_id = ANY(?)
+            ORDER BY m.created_at ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setArray(1, connection.createArrayOf("uuid", ticketIds.toTypedArray()))
+            statement.executeQuery().use { resultSet ->
+                val grouped = linkedMapOf<String, MutableList<ServerTicketMessageSnapshot>>()
+                while (resultSet.next()) {
+                    val ticketId = resultSet.getString("ticket_id")
+                    grouped.getOrPut(ticketId) { mutableListOf() }.add(
+                        ServerTicketMessageSnapshot(
+                            id = resultSet.getString("id"),
+                            ticketId = ticketId,
+                            authorId = resultSet.getString("author_id"),
+                            authorName = resultSet.getString("author_name"),
+                            body = resultSet.getString("body"),
+                            createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                        ),
+                    )
+                }
+                grouped
+            }
+        }
+    }
+
+    private fun ticketInternalCommentsByTicketIds(connection: Connection, ticketIds: List<String>): Map<String, List<ServerInternalCommentSnapshot>> {
+        if (ticketIds.isEmpty()) return emptyMap()
+        return connection.prepareStatement(
+            """
+            SELECT c.id::text, c.ticket_id::text, c.author_id::text, u.name AS author_name, c.body, c.created_at
+            FROM internal_comments c
+            JOIN users u ON u.id = c.author_id
+            WHERE c.ticket_id = ANY(?)
+            ORDER BY c.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setArray(1, connection.createArrayOf("uuid", ticketIds.toTypedArray()))
+            statement.executeQuery().use { resultSet ->
+                val grouped = linkedMapOf<String, MutableList<ServerInternalCommentSnapshot>>()
+                while (resultSet.next()) {
+                    val ticketId = resultSet.getString("ticket_id")
+                    grouped.getOrPut(ticketId) { mutableListOf() }.add(
+                        ServerInternalCommentSnapshot(
+                            id = resultSet.getString("id"),
+                            ticketId = ticketId,
+                            authorId = resultSet.getString("author_id"),
+                            authorName = resultSet.getString("author_name"),
+                            body = resultSet.getString("body"),
+                            createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                        ),
+                    )
+                }
+                grouped
+            }
+        }
+    }
+
+    private fun ticketEventsByTicketIds(connection: Connection, ticketIds: List<String>): Map<String, List<ServerTicketEventSnapshot>> {
+        if (ticketIds.isEmpty()) return emptyMap()
+        return connection.prepareStatement(
+            """
+            SELECT e.id::text, e.ticket_id::text, e.type, e.description,
+                   COALESCE(u.name, 'Sistema') AS actor_name, e.created_at
+            FROM ticket_events e
+            LEFT JOIN users u ON u.id = e.actor_id
+            WHERE e.ticket_id = ANY(?)
+            ORDER BY e.created_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setArray(1, connection.createArrayOf("uuid", ticketIds.toTypedArray()))
+            statement.executeQuery().use { resultSet ->
+                val grouped = linkedMapOf<String, MutableList<ServerTicketEventSnapshot>>()
+                while (resultSet.next()) {
+                    val ticketId = resultSet.getString("ticket_id")
+                    grouped.getOrPut(ticketId) { mutableListOf() }.add(
+                        ServerTicketEventSnapshot(
+                            id = resultSet.getString("id"),
+                            ticketId = ticketId,
+                            type = resultSet.getString("type"),
+                            description = resultSet.getString("description"),
+                            actorName = resultSet.getString("actor_name"),
+                            createdAt = resultSet.getTimestamp("created_at").toInstant().toString(),
+                        ),
+                    )
+                }
+                grouped
+            }
+        }
+    }
+
+    private fun ticketAttachmentsByTicketIds(connection: Connection, ticketIds: List<String>): Map<String, List<ServerTicketAttachmentSnapshot>> {
+        if (ticketIds.isEmpty()) return emptyMap()
+        return connection.prepareStatement(
+            """
+            SELECT COALESCE(a.ticket_id, m.ticket_id)::text AS resolved_ticket_id,
+                   a.id::text, a.file_name, a.content_type, a.size_bytes,
+                   u.name AS uploaded_by, a.uploaded_at
+            FROM attachments a
+            JOIN users u ON u.id = a.uploaded_by
+            LEFT JOIN ticket_messages m ON m.id = a.message_id
+            WHERE a.ticket_id = ANY(?) OR m.ticket_id = ANY(?)
+            ORDER BY a.uploaded_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            val idsArray = connection.createArrayOf("uuid", ticketIds.toTypedArray())
+            statement.setArray(1, idsArray)
+            statement.setArray(2, idsArray)
+            statement.executeQuery().use { resultSet ->
+                val grouped = linkedMapOf<String, MutableList<ServerTicketAttachmentSnapshot>>()
+                while (resultSet.next()) {
+                    val ticketId = resultSet.getString("resolved_ticket_id")
+                    grouped.getOrPut(ticketId) { mutableListOf() }.add(
+                        ServerTicketAttachmentSnapshot(
+                            id = resultSet.getString("id"),
+                            fileName = resultSet.getString("file_name"),
+                            contentType = resultSet.getString("content_type"),
+                            sizeBytes = resultSet.getLong("size_bytes"),
+                            uploadedBy = resultSet.getString("uploaded_by"),
+                            uploadedAt = resultSet.getTimestamp("uploaded_at").toInstant().toString(),
+                        ),
+                    )
+                }
+                grouped
+            }
+        }
+    }
 
     private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
         id = resultSet.getString("id"),

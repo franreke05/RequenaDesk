@@ -1,5 +1,6 @@
 package com.requena.supportdesk.features.tickets.domain.usecase
 
+import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.features.tickets.domain.model.CreateTicketInput
@@ -33,11 +34,13 @@ class ReplyTicketUseCase(
 class ChangeTicketStatusUseCase(
     private val repository: TicketsRepository,
 ) {
-    suspend operator fun invoke(ticketId: String, status: TicketStatus) = repository.changeStatus(ticketId, status)
+    suspend operator fun invoke(ticketId: String, status: TicketStatus, currentSnapshot: Ticket) =
+        repository.changeStatus(ticketId, status, currentSnapshot)
 }
 
 class ChangeTicketPriorityUseCase(
     private val repository: TicketsRepository,
 ) {
-    suspend operator fun invoke(ticketId: String, priority: TicketPriority) = repository.changePriority(ticketId, priority)
+    suspend operator fun invoke(ticketId: String, priority: TicketPriority, currentSnapshot: Ticket) =
+        repository.changePriority(ticketId, priority, currentSnapshot)
 }
