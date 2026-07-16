@@ -5,6 +5,7 @@ import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.User
 import com.requena.supportdesk.core.model.UserRole
+import com.requena.supportdesk.core.model.WaitingOn
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tickets.data.datasource.TicketsDataSource
@@ -22,7 +23,11 @@ class TicketsRepositoryImpl(
 ) : TicketsRepository {
     override suspend fun getTickets(filters: TicketFilters): AppResult<List<Ticket>> = runCatching {
         dataSource.getTickets()
-            .map(TicketsMapper::fromDto)
+            .mapNotNull { dto ->
+                runCatching { TicketsMapper.fromDto(dto) }
+                    .onFailure { println("[Tickets] Ignorando ticket ${dto.id} (${dto.ticketNumber}): ${it.message}") }
+                    .getOrNull()
+            }
             .filter { ticket ->
                 (filters.query.isBlank() || listOf(ticket.subject, ticket.ticketNumber, ticket.affectedApp, ticket.clientReference.orEmpty())
                     .any { it.contains(filters.query, ignoreCase = true) }) &&
@@ -79,21 +84,31 @@ class TicketsRepositoryImpl(
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo enviar la respuesta.", cause = it) },
     )
 
-    override suspend fun changeStatus(ticketId: String, status: TicketStatus): AppResult<Ticket> = runCatching {
-        dataSource.changeStatus(ticketId, UpdateTicketStatusRequestDto(status.name))
-        dataSource.getTicket(ticketId)?.let(TicketsMapper::fromDto)
-            ?: error("Ticket no encontrado.")
-    }.fold(
-        onSuccess = { AppResult.Success(it) },
-        onFailure = { AppResult.Error(message = it.message ?: "No se pudo cambiar el estado.", cause = it) },
-    )
+    override suspend fun changeStatus(ticketId: String, status: TicketStatus, currentSnapshot: Ticket): AppResult<Ticket> {
+        val patch = runCatching { dataSource.changeStatus(ticketId, UpdateTicketStatusRequestDto(status.name)) }
+        val patchFailure = patch.exceptionOrNull()
+        if (patchFailure != null) {
+            return AppResult.Error(message = patchFailure.message ?: "No se pudo cambiar el estado.", cause = patchFailure)
+        }
+        // The PATCH itself already succeeded server-side at this point. A failure of this follow-up
+        // GET must not be reported as "status change failed" - fall back to a local approximation
+        // of the server's derived fields instead of losing the confirmed update.
+        val refreshed = runCatching { dataSource.getTicket(ticketId)?.let(TicketsMapper::fromDto) }.getOrNull()
+        val ticket = refreshed ?: currentSnapshot.copy(
+            status = status,
+            waitingOn = if (status == TicketStatus.PENDING_CLIENT) WaitingOn.CLIENT else WaitingOn.ADMIN,
+        )
+        return AppResult.Success(ticket)
+    }
 
-    override suspend fun changePriority(ticketId: String, priority: TicketPriority): AppResult<Ticket> = runCatching {
-        dataSource.changePriority(ticketId, UpdateTicketPriorityRequestDto(priority.name))
-        dataSource.getTicket(ticketId)?.let(TicketsMapper::fromDto)
-            ?: error("Ticket no encontrado.")
-    }.fold(
-        onSuccess = { AppResult.Success(it) },
-        onFailure = { AppResult.Error(message = it.message ?: "No se pudo cambiar la prioridad.", cause = it) },
-    )
+    override suspend fun changePriority(ticketId: String, priority: TicketPriority, currentSnapshot: Ticket): AppResult<Ticket> {
+        val patch = runCatching { dataSource.changePriority(ticketId, UpdateTicketPriorityRequestDto(priority.name)) }
+        val patchFailure = patch.exceptionOrNull()
+        if (patchFailure != null) {
+            return AppResult.Error(message = patchFailure.message ?: "No se pudo cambiar la prioridad.", cause = patchFailure)
+        }
+        val refreshed = runCatching { dataSource.getTicket(ticketId)?.let(TicketsMapper::fromDto) }.getOrNull()
+        val ticket = refreshed ?: currentSnapshot.copy(priority = priority)
+        return AppResult.Success(ticket)
+    }
 }

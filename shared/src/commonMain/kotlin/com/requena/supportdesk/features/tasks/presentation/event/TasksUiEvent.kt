@@ -7,6 +7,8 @@ sealed interface TasksUiEvent {
     data class SelectCategory(val categoryId: String?) : TasksUiEvent
     data class SelectClientFilter(val clientId: String?) : TasksUiEvent
     data class SelectDashboardClient(val clientId: String?) : TasksUiEvent
+    data class ToggleDashboardCategoryFilter(val categoryId: String) : TasksUiEvent
+    object ClearDashboardFilters : TasksUiEvent
     data class CreateCategory(val name: String, val colorHex: String) : TasksUiEvent
     data class UpdateLabel(val labelId: String, val name: String, val colorHex: String) : TasksUiEvent
     data class DeleteLabel(val labelId: String) : TasksUiEvent

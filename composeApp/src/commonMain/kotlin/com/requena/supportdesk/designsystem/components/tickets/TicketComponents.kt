@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -165,14 +167,17 @@ fun MessageBubble(
     timestamp: String,
     isOwnMessage: Boolean,
     modifier: Modifier = Modifier,
+    roleLabel: String? = null,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = if (isOwnMessage) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        verticalAlignment = Alignment.Top,
     ) {
+        MessageAvatar(name = authorName, isOwnMessage = isOwnMessage)
         Surface(
-            modifier = Modifier.fillMaxWidth(0.78f),
+            modifier = Modifier.weight(1f),
             shape = MaterialTheme.shapes.large,
             color = if (isOwnMessage) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -187,17 +192,26 @@ fun MessageBubble(
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = authorName,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    if (roleLabel != null) {
+                        Text(
+                            text = roleLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         text = formatSupportDeskDateTime(timestamp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
                     )
                 }
                 Text(
@@ -206,6 +220,30 @@ fun MessageBubble(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageAvatar(name: String, isOwnMessage: Boolean) {
+    val initials = name.trim().split(" ").mapNotNull { it.firstOrNull()?.uppercaseChar() }.take(2).joinToString("")
+    val containerColor = if (isOwnMessage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    Surface(
+        modifier = Modifier.size(36.dp),
+        shape = CircleShape,
+        color = containerColor,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = initials.ifBlank { "?" },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary,
+            )
         }
     }
 }

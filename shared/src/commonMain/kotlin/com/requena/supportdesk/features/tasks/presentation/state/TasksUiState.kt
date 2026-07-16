@@ -17,6 +17,7 @@ data class TasksUiState(
     val selectedCategoryId: String? = null,
     val selectedClientFilterId: String? = null,
     val selectedDashboardClientId: String? = null,
+    val selectedDashboardCategoryIds: Set<String> = emptySet(),
     val activeTaskId: String? = null,
     val activeTaskSeconds: Int = 0,
     val isTimerRunning: Boolean = false,
@@ -70,6 +71,11 @@ data class TasksUiState(
     val dashboardClientTasks: List<WorkTask>
         get() = tasks.filter { task ->
             selectedDashboardClientId == null || task.clientId == selectedDashboardClientId
+        }
+
+    val dashboardFilteredTasks: List<WorkTask>
+        get() = dashboardClientTasks.filter { task ->
+            selectedDashboardCategoryIds.isEmpty() || task.categoryId in selectedDashboardCategoryIds
         }
 
     fun trackedSecondsFor(task: WorkTask): Int =

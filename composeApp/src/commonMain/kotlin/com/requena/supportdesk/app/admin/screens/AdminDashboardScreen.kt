@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,18 +23,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.TaskCategory
@@ -58,12 +69,16 @@ import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
-import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.X
 import kotlin.math.max
 
 @Composable
@@ -75,24 +90,29 @@ fun AdminDashboardScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val selectedClient = clients.firstOrNull { it.id == tasksState.selectedDashboardClientId }
-    val currentMonth = tasksState.todayIsoDate.take(7)
-    val monthLogs = remember(tasksState.logs, currentMonth) {
-        tasksState.logs.filter { it.workDate.take(7) == currentMonth }
+    val calendarState = rememberDashboardCalendarState(
+        initialIsoDate = tasksState.selectedDay ?: tasksState.todayIsoDate,
+    )
+    val monthLogs = remember(tasksState.logs, calendarState.monthKey) {
+        tasksState.logs.filter { it.workDate.take(7) == calendarState.monthKey }
     }
     val globalSeconds = monthLogs.sumOf { it.seconds }
     val globalBillableSeconds = monthLogs.filter { it.billable }.sumOf { it.seconds }
-    val clientLogs = monthLogs.filter { log ->
-        tasksState.selectedDashboardClientId == null || log.clientId == tasksState.selectedDashboardClientId
+    val clientLogs = remember(monthLogs, tasksState.selectedDashboardClientId) {
+        monthLogs.filter { log ->
+            tasksState.selectedDashboardClientId != null && log.clientId == tasksState.selectedDashboardClientId
+        }
     }
     val clientSeconds = clientLogs.sumOf { it.seconds }
     val clientBillableSeconds = clientLogs.filter { it.billable }.sumOf { it.seconds }
     val selectedPlanningDay = tasksState.selectedDay.takeIf { tasksState.selectedDayIsFuture }
-    val dashboardTasks = tasksState.tasks.filter { task ->
-        (tasksState.selectedDashboardClientId == null || task.clientId == tasksState.selectedDashboardClientId) &&
-            (tasksState.selectedCategoryId == null || task.categoryId == tasksState.selectedCategoryId) &&
-            (selectedPlanningDay == null || task.dueDate == selectedPlanningDay)
+    val dashboardTasks = remember(tasksState.dashboardFilteredTasks, selectedPlanningDay) {
+        tasksState.dashboardFilteredTasks.filter { task ->
+            selectedPlanningDay == null || task.dueDate == selectedPlanningDay
+        }
     }
-    val selectedTask = tasksState.selectedTask?.takeIf { candidate -> dashboardTasks.any { it.id == candidate.id } } ?: dashboardTasks.firstOrNull()
+    val selectedTask = tasksState.selectedTask?.takeIf { candidate -> dashboardTasks.any { it.id == candidate.id } }
+        ?: dashboardTasks.firstOrNull()
 
     Column(
         modifier = modifier
@@ -100,7 +120,7 @@ fun AdminDashboardScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
-        CounterHeroCard(
+        DashboardFocusPanel(
             clients = clients,
             selectedClient = selectedClient,
             categories = tasksState.categories,
@@ -121,12 +141,12 @@ fun AdminDashboardScreen(
                 modifier = Modifier.weight(1f),
             )
             MetricCard(
-                label = "Horas del mes",
+                label = "Horas de ${calendarState.shortLabel}",
                 value = formatSupportDeskPreciseDuration(globalSeconds),
-                supportingText = if (selectedPlanningDay == null) {
-                    "${dashboardTasks.count()} tareas visibles tras los filtros."
-                } else {
-                    "${dashboardTasks.count()} tareas programadas para $selectedPlanningDay."
+                supportingText = when {
+                    selectedPlanningDay != null -> "${dashboardTasks.count()} tareas programadas para $selectedPlanningDay."
+                    globalSeconds == 0 -> "Sin registros en ${calendarState.label}."
+                    else -> "${dashboardTasks.count()} tareas visibles tras los filtros."
                 },
                 modifier = Modifier.weight(1f),
             )
@@ -137,13 +157,16 @@ fun AdminDashboardScreen(
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
                     WheelSummaryRow(
+                        monthLabel = calendarState.label,
                         globalSeconds = globalSeconds,
                         globalBillableSeconds = globalBillableSeconds,
+                        hasClientSelected = selectedClient != null,
                         clientName = selectedClient?.companyName ?: "Cliente",
                         clientSeconds = clientSeconds,
                         clientBillableSeconds = clientBillableSeconds,
                     )
-                    CompactCalendarCard(
+                    DashboardCalendarCard(
+                        calendarState = calendarState,
                         tasksState = tasksState,
                         onSelectDay = { onTasksEvent(TasksUiEvent.SelectDay(it)) },
                     )
@@ -154,14 +177,17 @@ fun AdminDashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(spacing.lg),
                 ) {
                     WheelSummaryRow(
+                        monthLabel = calendarState.label,
                         globalSeconds = globalSeconds,
                         globalBillableSeconds = globalBillableSeconds,
+                        hasClientSelected = selectedClient != null,
                         clientName = selectedClient?.companyName ?: "Cliente",
                         clientSeconds = clientSeconds,
                         clientBillableSeconds = clientBillableSeconds,
                         modifier = Modifier.weight(0.52f),
                     )
-                    CompactCalendarCard(
+                    DashboardCalendarCard(
+                        calendarState = calendarState,
                         tasksState = tasksState,
                         onSelectDay = { onTasksEvent(TasksUiEvent.SelectDay(it)) },
                         modifier = Modifier.weight(0.48f),
@@ -172,8 +198,10 @@ fun AdminDashboardScreen(
     }
 }
 
+// region Foco: filtros, selección de tarea y contador
+
 @Composable
-private fun CounterHeroCard(
+private fun DashboardFocusPanel(
     clients: List<Client>,
     selectedClient: Client?,
     categories: List<TaskCategory>,
@@ -186,140 +214,131 @@ private fun CounterHeroCard(
         title = "Tiempo y foco",
         subtitle = null,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            FilterBar(
-                label = "Cliente activo",
-                options = clients.map { FilterOption(it.id, it.companyName) },
-                selected = tasksState.selectedDashboardClientId,
-                onSelected = { onTasksEvent(TasksUiEvent.SelectDashboardClient(it)) },
-                allLabel = "Todos",
-                wrap = true,
+        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            DashboardFiltersRow(
+                clients = clients,
+                selectedClient = selectedClient,
+                categories = categories,
+                selectedCategoryIds = tasksState.selectedDashboardCategoryIds,
+                onTasksEvent = onTasksEvent,
             )
 
-            selectedClient?.let {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ClientServiceTierBadge(it.serviceTier)
-                    ClientAccountStatusBadge(it.accountStatus)
-                    Text(
-                        text = "${it.companyName} · ${it.productName}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            FilterBar(
-                label = "Etiquetas",
-                options = categories.map { FilterOption(it.id, it.name) },
-                selected = tasksState.selectedCategoryId,
-                onSelected = { onTasksEvent(TasksUiEvent.SelectCategory(it)) },
-                allLabel = "Todas",
-                wrap = true,
+            DashboardTaskPicker(
+                tasks = tasks,
+                categories = categories,
+                selectedTaskId = tasksState.selectedTaskId,
+                selectedDayIsFuture = tasksState.selectedDayIsFuture,
+                selectedDay = tasksState.selectedDay,
+                onSelect = { taskId -> onTasksEvent(TasksUiEvent.SelectTask(taskId)) },
             )
 
-            if (tasks.isEmpty()) {
-                EmptyState(
-                    title = if (tasksState.selectedDayIsFuture) {
-                        "Sin tareas programadas para ${tasksState.selectedDay}"
-                    } else {
-                        "Sin tareas para este contexto"
-                    },
-                    message = if (tasksState.selectedDayIsFuture) {
-                        "Programa nuevas tareas desde la pantalla de Tareas usando el dia seleccionado."
-                    } else {
-                        ""
-                    },
-                )
-            } else {
-                val categoriesById = remember(categories) { categories.associateBy { it.id } }
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 180.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(tasks, key = { it.id }) { task ->
-                        DashboardTaskRow(
-                            task = task,
-                            category = categoriesById[task.categoryId],
-                            selected = tasksState.selectedTaskId == task.id,
-                            onSelect = { onTasksEvent(TasksUiEvent.SelectTask(task.id)) },
-                        )
-                    }
-                }
-            }
+            DashboardSelectedTaskPanel(
+                selectedTask = selectedTask,
+                tasksState = tasksState,
+                onTasksEvent = onTasksEvent,
+            )
+        }
+    }
+}
 
-            SectionCard(
-                modifier = Modifier.animateContentSize(),
-                title = selectedTask?.title ?: "Selecciona una tarea",
-                subtitle = null,
+@Composable
+private fun DashboardFiltersRow(
+    clients: List<Client>,
+    selectedClient: Client?,
+    categories: List<TaskCategory>,
+    selectedCategoryIds: Set<String>,
+    onTasksEvent: (TasksUiEvent) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FilterBar(
+            label = "Cliente activo",
+            options = clients.map { FilterOption(it.id, it.companyName) },
+            selected = selectedClient?.id,
+            onSelected = { onTasksEvent(TasksUiEvent.SelectDashboardClient(it)) },
+            allLabel = "Todos",
+            wrap = true,
+        )
+
+        selectedClient?.let {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        text = formatSupportDeskClockDuration(tasksState.selectedTaskTrackedSeconds),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.SemiBold,
+                ClientServiceTierBadge(it.serviceTier)
+                ClientAccountStatusBadge(it.accountStatus)
+                Text(
+                    text = "${it.companyName} · ${it.productName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        DashboardTagFilterRow(
+            categories = categories,
+            selectedCategoryIds = selectedCategoryIds,
+            onToggle = { onTasksEvent(TasksUiEvent.ToggleDashboardCategoryFilter(it)) },
+        )
+    }
+}
+
+@Composable
+private fun DashboardTagFilterRow(
+    categories: List<TaskCategory>,
+    selectedCategoryIds: Set<String>,
+    onToggle: (String) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val selectedCategories = remember(categories, selectedCategoryIds) {
+        categories.filter { it.id in selectedCategoryIds }
+    }
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        selectedCategories.forEach { category ->
+            DashboardActiveTagChip(
+                category = category,
+                onRemove = { onToggle(category.id) },
+            )
+        }
+
+        Box {
+            OutlinedButton(
+                onClick = { menuExpanded = true },
+                shape = MaterialTheme.shapes.medium,
+                enabled = categories.isNotEmpty(),
+            ) {
+                Icon(imageVector = Lucide.Plus, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(
+                    text = if (selectedCategories.isEmpty()) "Filtrar etiquetas" else "Editar etiquetas",
+                    modifier = Modifier.padding(start = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
+            ) {
+                if (categories.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No hay etiquetas creadas") },
+                        enabled = false,
+                        onClick = {},
                     )
-                    Text(
-                        text = if (selectedTask == null) {
-                            if (tasksState.selectedDayIsFuture) {
-                                "Dia futuro: puedes revisar y planificar tareas, pero no imputar tiempo."
-                            } else {
-                                "Tiempo total de la tarea seleccionada"
-                            }
-                        } else if (tasksState.selectedDayIsFuture) {
-                            "Planificada para ${selectedTask.dueDate ?: "sin fecha"}"
-                        } else if (tasksState.selectedDayIsPast) {
-                            "Los dias anteriores estan bloqueados para registrar horas."
-                        } else if (tasksState.activeTaskId == selectedTask.id && tasksState.activeTaskSeconds > 0) {
-                            "Sesion actual: ${formatSupportDeskClockDuration(tasksState.activeTaskSeconds)}"
-                        } else {
-                            "Total acumulado de esta tarea"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        PrimaryButton(
-                            text = if (tasksState.isTimerRunning) "En marcha" else "Iniciar",
-                            onClick = {
-                                selectedTask?.id?.let { onTasksEvent(TasksUiEvent.StartTimer(it)) }
+                } else {
+                    categories.forEach { category ->
+                        val checked = category.id in selectedCategoryIds
+                        DropdownMenuItem(
+                            text = { Text(category.name) },
+                            leadingIcon = {
+                                Checkbox(checked = checked, onCheckedChange = { onToggle(category.id) })
                             },
-                            enabled = selectedTask != null && !tasksState.isTimerRunning && tasksState.canTrackSelectedDay,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton(
-                            text = "Pausar",
-                            onClick = { onTasksEvent(TasksUiEvent.PauseTimer) },
-                            enabled = tasksState.isTimerRunning,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton(
-                            text = "Detener",
-                            onClick = { onTasksEvent(TasksUiEvent.StopTimer) },
-                            enabled = tasksState.activeTaskId != null,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Text(
-                        text = "Dia imputado: ${tasksState.selectedDay ?: "-"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!tasksState.canTrackSelectedDay) {
-                        Text(
-                            text = if (tasksState.selectedDayIsFuture) {
-                                "Solo hoy permite registrar horas. El futuro queda para planificacion."
-                            } else {
-                                "Los dias anteriores no admiten cambios ni imputaciones."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = { onToggle(category.id) },
                         )
                     }
                 }
@@ -329,55 +348,141 @@ private fun CounterHeroCard(
 }
 
 @Composable
+private fun DashboardActiveTagChip(
+    category: TaskCategory,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .background(parseColor(category.colorHex).copy(alpha = 0.16f), RoundedCornerShape(8.dp))
+            .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(modifier = Modifier.size(8.dp).background(parseColor(category.colorHex), CircleShape))
+        Text(
+            text = category.name,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            imageVector = Lucide.X,
+            contentDescription = "Quitar etiqueta ${category.name}",
+            modifier = Modifier.size(14.dp).clickable(onClick = onRemove),
+        )
+    }
+}
+
+@Composable
+private fun DashboardTaskPicker(
+    tasks: List<WorkTask>,
+    categories: List<TaskCategory>,
+    selectedTaskId: String?,
+    selectedDayIsFuture: Boolean,
+    selectedDay: String?,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Selecciona una tarea",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (tasks.isEmpty()) {
+            EmptyState(
+                title = if (selectedDayIsFuture) {
+                    "Sin tareas programadas para $selectedDay"
+                } else {
+                    "Sin tareas para este contexto"
+                },
+                message = if (selectedDayIsFuture) {
+                    "Programa nuevas tareas desde la pantalla de Tareas usando el dia seleccionado."
+                } else {
+                    "Prueba a quitar filtros de cliente o etiquetas."
+                },
+            )
+        } else {
+            val categoriesById = remember(categories) { categories.associateBy { it.id } }
+            val taskItems = remember(tasks, categoriesById, selectedTaskId) {
+                tasks.map { task ->
+                    DashboardTaskItemUi(
+                        task = task,
+                        category = categoriesById[task.categoryId],
+                        selected = selectedTaskId == task.id,
+                    )
+                }
+            }
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(taskItems, key = { it.task.id }) { item ->
+                    DashboardTaskRow(item = item, onSelect = { onSelect(item.task.id) })
+                }
+            }
+        }
+    }
+}
+
+private data class DashboardTaskItemUi(
+    val task: WorkTask,
+    val category: TaskCategory?,
+    val selected: Boolean,
+)
+
+@Composable
 private fun DashboardTaskRow(
-    task: WorkTask,
-    category: TaskCategory?,
-    selected: Boolean,
+    item: DashboardTaskItemUi,
     onSelect: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     val surfaceColor by animateColorAsState(
         targetValue = when {
-            selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-            hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
-            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
+            item.selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+            hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
         },
         animationSpec = tween(SupportDeskMotion.quick),
         label = "dashboardTaskRowBackground",
     )
+    val accentColor = parseColor(item.category?.colorHex ?: "#6B7A5B")
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(surfaceColor, MaterialTheme.shapes.medium)
+            .border(
+                width = if (item.selected) 1.5.dp else 0.dp,
+                color = if (item.selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = MaterialTheme.shapes.medium,
+            )
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onSelect)
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(parseColor(category?.colorHex ?: "#6B7A5B"), CircleShape),
-        )
+        Box(modifier = Modifier.size(12.dp).background(accentColor, CircleShape))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = task.title,
+                text = item.task.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = task.dueDate?.let { "Planificada: $it" } ?: "${formatSupportDeskClockDuration(task.loggedSeconds)} registradas",
+                text = item.task.dueDate?.let { "Planificada: $it" }
+                    ?: "${formatSupportDeskClockDuration(item.task.loggedSeconds)} registradas",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (selected) {
+        if (item.selected) {
             Text(
                 text = "Activa",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
@@ -385,9 +490,96 @@ private fun DashboardTaskRow(
 }
 
 @Composable
+private fun DashboardSelectedTaskPanel(
+    selectedTask: WorkTask?,
+    tasksState: TasksUiState,
+    onTasksEvent: (TasksUiEvent) -> Unit,
+) {
+    SectionCard(
+        modifier = Modifier.animateContentSize(),
+        title = selectedTask?.title ?: "Selecciona una tarea",
+        subtitle = null,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                text = formatSupportDeskClockDuration(tasksState.selectedTaskTrackedSeconds),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = if (selectedTask == null) {
+                    if (tasksState.selectedDayIsFuture) {
+                        "Dia futuro: puedes revisar y planificar tareas, pero no imputar tiempo."
+                    } else {
+                        "Tiempo total de la tarea seleccionada"
+                    }
+                } else if (tasksState.selectedDayIsFuture) {
+                    "Planificada para ${selectedTask.dueDate ?: "sin fecha"}"
+                } else if (tasksState.selectedDayIsPast) {
+                    "Los dias anteriores estan bloqueados para registrar horas."
+                } else if (tasksState.activeTaskId == selectedTask.id && tasksState.activeTaskSeconds > 0) {
+                    "Sesion actual: ${formatSupportDeskClockDuration(tasksState.activeTaskSeconds)}"
+                } else {
+                    "Total acumulado de esta tarea"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                PrimaryButton(
+                    text = if (tasksState.isTimerRunning) "En marcha" else "Iniciar",
+                    onClick = {
+                        selectedTask?.id?.let { onTasksEvent(TasksUiEvent.StartTimer(it)) }
+                    },
+                    enabled = selectedTask != null && !tasksState.isTimerRunning && tasksState.canTrackSelectedDay,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryButton(
+                    text = "Pausar",
+                    onClick = { onTasksEvent(TasksUiEvent.PauseTimer) },
+                    enabled = tasksState.isTimerRunning,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryButton(
+                    text = "Detener",
+                    onClick = { onTasksEvent(TasksUiEvent.StopTimer) },
+                    enabled = tasksState.activeTaskId != null,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                text = "Dia imputado: ${tasksState.selectedDay ?: "-"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!tasksState.canTrackSelectedDay) {
+                Text(
+                    text = if (tasksState.selectedDayIsFuture) {
+                        "Solo hoy permite registrar horas. El futuro queda para planificacion."
+                    } else {
+                        "Los dias anteriores no admiten cambios ni imputaciones."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// endregion
+
+// region Resumen: ruedas del mes
+
+@Composable
 private fun WheelSummaryRow(
+    monthLabel: String,
     globalSeconds: Int,
     globalBillableSeconds: Int,
+    hasClientSelected: Boolean,
     clientName: String,
     clientSeconds: Int,
     clientBillableSeconds: Int,
@@ -399,22 +591,38 @@ private fun WheelSummaryRow(
     ) {
         WheelCard(
             title = "Global",
+            monthLabel = monthLabel,
             totalSeconds = globalSeconds,
             billableSeconds = globalBillableSeconds,
             modifier = Modifier.weight(1f),
         )
-        WheelCard(
-            title = clientName,
-            totalSeconds = clientSeconds,
-            billableSeconds = clientBillableSeconds,
-            modifier = Modifier.weight(1f),
-        )
+        if (hasClientSelected) {
+            WheelCard(
+                title = clientName,
+                monthLabel = monthLabel,
+                totalSeconds = clientSeconds,
+                billableSeconds = clientBillableSeconds,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            SectionCard(
+                modifier = Modifier.weight(1f),
+                title = "Cliente",
+                subtitle = null,
+            ) {
+                EmptyState(
+                    title = "Sin cliente seleccionado",
+                    message = "Elige un cliente activo arriba para ver su tiempo de $monthLabel.",
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun WheelCard(
     title: String,
+    monthLabel: String,
     totalSeconds: Int,
     billableSeconds: Int,
     modifier: Modifier = Modifier,
@@ -468,11 +676,18 @@ private fun WheelCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "Mes actual",
+                        text = monthLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (totalSeconds == 0) {
+                Text(
+                    text = "Sin registros en $monthLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -496,20 +711,105 @@ private fun WheelCard(
 }
 
 @Composable
-private fun CompactCalendarCard(
+private fun LegendChip(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(modifier = Modifier.size(10.dp).background(color, CircleShape))
+        Text(
+            text = "$label: $value",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+// endregion
+
+// region Calendario
+
+@Stable
+private class DashboardCalendarState(initialYear: Int, initialMonth: Int) {
+    var year by mutableIntStateOf(initialYear)
+        private set
+    var month by mutableIntStateOf(initialMonth)
+        private set
+
+    val label: String
+        get() = "${SPANISH_MONTH_NAMES[month - 1]} de $year"
+
+    val shortLabel: String
+        get() = "${SPANISH_MONTH_NAMES[month - 1]} $year"
+
+    val monthKey: String
+        get() = "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}"
+
+    fun previous() {
+        if (month == 1) {
+            month = 12
+            year -= 1
+        } else {
+            month -= 1
+        }
+    }
+
+    fun next() {
+        if (month == 12) {
+            month = 1
+            year += 1
+        } else {
+            month += 1
+        }
+    }
+
+    fun jumpTo(targetYear: Int, targetMonth: Int) {
+        year = targetYear
+        month = targetMonth
+    }
+}
+
+private val DashboardCalendarStateSaver: Saver<DashboardCalendarState, List<Int>> = Saver(
+    save = { listOf(it.year, it.month) },
+    restore = { DashboardCalendarState(it[0], it[1]) },
+)
+
+@Composable
+private fun rememberDashboardCalendarState(initialIsoDate: String): DashboardCalendarState {
+    val initial = remember(initialIsoDate) { parseCalendarMonth(initialIsoDate) }
+    return rememberSaveable(saver = DashboardCalendarStateSaver) {
+        DashboardCalendarState(initial.year, initial.month)
+    }
+}
+
+@Composable
+private fun DashboardCalendarCard(
+    calendarState: DashboardCalendarState,
     tasksState: TasksUiState,
     onSelectDay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val initialMonth = remember(tasksState.selectedDay) {
-        tasksState.selectedDay?.let(::parseCalendarMonth) ?: parseCalendarMonth(tasksState.todayIsoDate)
-    }
-    var visibleYear by rememberSaveable(initialMonth.year) { mutableIntStateOf(initialMonth.year) }
-    var visibleMonth by rememberSaveable(initialMonth.month) { mutableIntStateOf(initialMonth.month) }
-    val month = remember(visibleYear, visibleMonth) { CalendarMonth(visibleYear, visibleMonth) }
     val maxMinutes = max(1, tasksState.logs.maxOfOrNull { it.minutes } ?: 0)
-    val cells = remember(tasksState.logs, tasksState.tasks, tasksState.selectedDay, tasksState.todayIsoDate, month) {
-        buildCalendarCells(month, tasksState.logs, tasksState.tasks, tasksState.selectedDay, tasksState.todayIsoDate)
+    val cells = remember(
+        tasksState.logs,
+        tasksState.tasks,
+        tasksState.selectedDay,
+        tasksState.todayIsoDate,
+        calendarState.year,
+        calendarState.month,
+    ) {
+        buildCalendarCells(
+            CalendarMonth(calendarState.year, calendarState.month),
+            tasksState.logs,
+            tasksState.tasks,
+            tasksState.selectedDay,
+            tasksState.todayIsoDate,
+        )
     }
 
     SectionCard(
@@ -517,31 +817,29 @@ private fun CompactCalendarCard(
         title = "Calendario",
         subtitle = null,
         actions = {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "<",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.clickable {
-                        val previous = month.previous()
-                        visibleYear = previous.year
-                        visibleMonth = previous.month
-                    },
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(
+                    imageVector = Lucide.ChevronLeft,
+                    contentDescription = "Mes anterior",
+                    modifier = Modifier
+                        .clickable(onClick = calendarState::previous)
+                        .padding(6.dp)
+                        .size(18.dp),
                 )
-                Text(
-                    text = ">",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.clickable {
-                        val next = month.next()
-                        visibleYear = next.year
-                        visibleMonth = next.month
-                    },
+                Icon(
+                    imageVector = Lucide.ChevronRight,
+                    contentDescription = "Mes siguiente",
+                    modifier = Modifier
+                        .clickable(onClick = calendarState::next)
+                        .padding(6.dp)
+                        .size(18.dp),
                 )
             }
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = month.label,
+                text = calendarState.label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -572,8 +870,7 @@ private fun CompactCalendarCard(
                             onClick = {
                                 onSelectDay(day.isoDate)
                                 if (!day.inCurrentMonth) {
-                                    visibleYear = day.year
-                                    visibleMonth = day.month
+                                    calendarState.jumpTo(day.year, day.month)
                                 }
                             },
                         )
@@ -658,30 +955,6 @@ private fun CompactCalendarDayCell(
     }
 }
 
-@Composable
-private fun LegendChip(
-    label: String,
-    value: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(color, CircleShape),
-        )
-        Text(
-            text = "$label: $value",
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
-}
-
 private data class CalendarDay(
     val isoDate: String,
     val year: Int,
@@ -698,9 +971,6 @@ private data class CalendarMonth(
     val year: Int,
     val month: Int,
 ) {
-    val label: String
-        get() = "${SPANISH_MONTH_NAMES[month - 1]} de $year"
-
     fun previous(): CalendarMonth = if (month == 1) CalendarMonth(year - 1, 12) else CalendarMonth(year, month - 1)
 
     fun next(): CalendarMonth = if (month == 12) CalendarMonth(year + 1, 1) else CalendarMonth(year, month + 1)
@@ -813,3 +1083,5 @@ private fun parseColor(hex: String): Color = runCatching {
 }.getOrElse {
     Color(0xFF6B7A5B)
 }
+
+// endregion

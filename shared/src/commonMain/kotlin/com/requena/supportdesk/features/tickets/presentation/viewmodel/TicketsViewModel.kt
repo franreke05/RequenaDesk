@@ -42,10 +42,10 @@ class TicketsViewModel(
     private var sourceTickets = emptyList<Ticket>()
     private val ticketOverrides = mutableMapOf<String, Ticket>()
 
-    init {
-        onEvent(TicketsUiEvent.Load)
-    }
-
+    // Tickets are loaded explicitly by AdminWorkspaceApp's login effect (once per session start),
+    // not from init - this VM is constructed lazily the moment its state is first read during
+    // composition, which happens in the same frame as that login effect and would otherwise race
+    // it into two concurrent loadTickets() calls.
     fun onEvent(event: TicketsUiEvent) {
         when (event) {
             TicketsUiEvent.Load -> loadTickets()
@@ -73,6 +73,18 @@ class TicketsViewModel(
                 _state.update { it.copy(waitingOnFilter = event.waitingOn) }
                 renderTickets()
             }
+            TicketsUiEvent.ClearFilters -> {
+                _state.update {
+                    it.copy(
+                        statusFilter = null,
+                        priorityFilter = null,
+                        categoryFilter = null,
+                        platformFilter = null,
+                        waitingOnFilter = null,
+                    )
+                }
+                renderTickets()
+            }
             is TicketsUiEvent.SelectTicket -> selectTicket(event.ticketId)
             is TicketsUiEvent.CreateTicket -> createTicket(event.input)
             is TicketsUiEvent.ReplyToSelected -> replyToSelected(event.message)
@@ -98,19 +110,9 @@ class TicketsViewModel(
     }
 
     private fun selectTicket(ticketId: String) {
-        launch {
-            when (val result = getTicketUseCase(ticketId)) {
-                is AppResult.Error -> {
-                    _state.update { it.copy(isLoading = false, errorMessage = result.message) }
-                    _effects.emit(TicketsUiEffect.ShowMessage(result.message))
-                }
-                is AppResult.Success -> {
-                    ticketOverrides[ticketId] = mergeWithLocal(result.data)
-                    renderTickets(selectId = ticketId)
-                    _effects.emit(TicketsUiEffect.TicketSelected(ticketId))
-                }
-            }
-        }
+        // The full ticket is already present in sourceTickets from the last load - no need to
+        // round-trip to the server just to select a row the UI already has data for.
+        renderTickets(selectId = ticketId)
     }
 
     private fun createTicket(input: CreateTicketInput) {
@@ -141,8 +143,18 @@ class TicketsViewModel(
                     _effects.emit(TicketsUiEffect.ShowMessage(result.message))
                 }
                 is AppResult.Success -> {
-                    selectTicket(selected.id)
-                    loadTickets()
+                    // The reply already succeeded server-side here. A failure of this single
+                    // follow-up refresh must not be reported as "the reply failed".
+                    when (val refreshed = getTicketUseCase(selected.id)) {
+                        is AppResult.Success -> {
+                            ticketOverrides[selected.id] = mergeWithLocal(refreshed.data)
+                            renderTickets(selectId = selected.id)
+                            _effects.emit(TicketsUiEffect.ShowMessage("Respuesta enviada"))
+                        }
+                        is AppResult.Error -> {
+                            _effects.emit(TicketsUiEffect.ShowMessage("Respuesta enviada, pero no se pudo refrescar la conversacion."))
+                        }
+                    }
                 }
             }
         }
@@ -151,7 +163,7 @@ class TicketsViewModel(
     private fun changeSelectedStatus(status: TicketStatus) {
         val selected = state.value.selectedTicket ?: return
         launch {
-            when (val result = changeTicketStatusUseCase(selected.id, status)) {
+            when (val result = changeTicketStatusUseCase(selected.id, status, selected)) {
                 is AppResult.Error -> {
                     _state.update { it.copy(errorMessage = result.message) }
                     _effects.emit(TicketsUiEffect.ShowMessage(result.message))
@@ -167,7 +179,7 @@ class TicketsViewModel(
     private fun changeSelectedPriority(priority: TicketPriority) {
         val selected = state.value.selectedTicket ?: return
         launch {
-            when (val result = changeTicketPriorityUseCase(selected.id, priority)) {
+            when (val result = changeTicketPriorityUseCase(selected.id, priority, selected)) {
                 is AppResult.Error -> {
                     _state.update { it.copy(errorMessage = result.message) }
                     _effects.emit(TicketsUiEffect.ShowMessage(result.message))

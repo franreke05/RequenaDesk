@@ -30,7 +30,6 @@ import com.requena.supportdesk.app.admin.screens.AdminNotificationsScreen
 import com.requena.supportdesk.app.admin.screens.AdminPinboardScreen
 import com.requena.supportdesk.app.admin.screens.AdminTasksScreen
 import com.requena.supportdesk.app.admin.screens.AdminTicketsScreen
-import com.requena.supportdesk.app.admin.screens.AdminCreateTicketScreen
 import com.requena.supportdesk.app.admin.screens.AdminTicketDetailScreen
 import com.requena.supportdesk.core.navigation.AppDestination
 import com.requena.supportdesk.core.time.currentIsoDate
@@ -137,12 +136,11 @@ fun AdminWorkspaceApp() {
             module.ticketsViewModel.effects.collect { effect ->
                 when (effect) {
                     is TicketsUiEffect.ShowMessage -> statusMessage = effect.message
-                    is TicketsUiEffect.TicketSelected -> Unit
-                    is TicketsUiEffect.TicketCreated -> {
-                        if (currentUser.role == com.requena.supportdesk.core.model.UserRole.ADMIN) {
-                            navigation = navigation.copy(destination = AppDestination.TicketDetail(effect.ticketId))
-                        }
-                    }
+                    // Ticket creation now happens from a dialog on top of the Tickets screen
+                    // itself; the ViewModel already selects the new ticket (renderTickets(selectId
+                    // = ...) in createTicket()), so the list/detail panes update in place without
+                    // forcing navigation away from wherever the admin already is.
+                    is TicketsUiEffect.TicketCreated -> Unit
                 }
             }
         }
@@ -409,24 +407,16 @@ private fun AdminContentArea(
             AppDestination.Tickets -> AdminTicketsScreen(
                 layoutMode = layoutMode,
                 state = ticketsState,
-                onEvent = module.ticketsViewModel::onEvent,
-                onOpenCreateTicket = { onNavigate(AppDestination.CreateTicket) },
-                onOpenDetail = { ticket -> onNavigate(AppDestination.TicketDetail(ticket.id)) },
-                modifier = Modifier.weight(1f),
-            )
-
-            AppDestination.CreateTicket -> AdminCreateTicketScreen(
                 clients = clientsState.clients,
-                isSubmitting = ticketsState.isLoading,
-                errorMessage = ticketsState.errorMessage,
-                onBack = { onNavigate(AppDestination.Tickets) },
-                onCreateTicket = { input -> module.ticketsViewModel.onEvent(TicketsUiEvent.CreateTicket(input)) },
+                onEvent = module.ticketsViewModel::onEvent,
+                onOpenDetail = { ticket -> onNavigate(AppDestination.TicketDetail(ticket.id)) },
                 modifier = Modifier.weight(1f),
             )
 
             is AppDestination.TicketDetail -> AdminTicketDetailScreen(
                 ticket = ticketsState.tickets.firstOrNull { it.id == navigation.destination.ticketId }
                     ?: ticketsState.selectedTicket,
+                clients = clientsState.clients,
                 onBack = { onNavigate(AppDestination.Tickets) },
                 onEvent = module.ticketsViewModel::onEvent,
                 modifier = Modifier.weight(1f),
@@ -492,7 +482,6 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Notifications -> AppDestination.Labels
     is AppDestination.Invoices -> AppDestination.Invoices()
     AppDestination.Tickets,
-    AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> AppDestination.Tickets
     AppDestination.Login -> AppDestination.Dashboard
 }
@@ -506,7 +495,6 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Notifications -> "Etiquetas"
     is AppDestination.Invoices -> "Facturas"
     AppDestination.Tickets -> "Tickets"
-    AppDestination.CreateTicket -> "Nuevo ticket"
     is AppDestination.TicketDetail -> "Detalle del ticket"
     AppDestination.Login -> "OryKai software Admin"
 }
@@ -520,7 +508,6 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
     is AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."
     AppDestination.Tickets,
-    AppDestination.CreateTicket,
     is AppDestination.TicketDetail -> "Gestiona solicitudes, conversacion, estado y prioridad."
     AppDestination.Login -> "Workspace admin para organizar trabajo compartido."
 }
