@@ -12,6 +12,6 @@ interface TicketsRepository {
     suspend fun getTicket(id: String): AppResult<Ticket>
     suspend fun createTicket(input: CreateTicketInput): AppResult<Ticket>
     suspend fun replyTicket(ticketId: String, message: String): AppResult<Unit>
-    suspend fun changeStatus(ticketId: String, status: TicketStatus): AppResult<Ticket>
-    suspend fun changePriority(ticketId: String, priority: TicketPriority): AppResult<Ticket>
+    suspend fun changeStatus(ticketId: String, status: TicketStatus, currentSnapshot: Ticket): AppResult<Ticket>
+    suspend fun changePriority(ticketId: String, priority: TicketPriority, currentSnapshot: Ticket): AppResult<Ticket>
 }

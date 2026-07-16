@@ -16,6 +16,7 @@ sealed interface TicketsUiEvent {
     data class CategoryFilterChanged(val category: TicketCategory?) : TicketsUiEvent
     data class PlatformFilterChanged(val platform: SupportPlatform?) : TicketsUiEvent
     data class WaitingOnFilterChanged(val waitingOn: WaitingOn?) : TicketsUiEvent
+    object ClearFilters : TicketsUiEvent
     data class SelectTicket(val ticketId: String) : TicketsUiEvent
     data class CreateTicket(val input: CreateTicketInput) : TicketsUiEvent
     data class ReplyToSelected(val message: String) : TicketsUiEvent

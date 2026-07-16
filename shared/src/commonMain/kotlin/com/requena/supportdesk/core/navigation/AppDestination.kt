@@ -27,10 +27,6 @@ sealed interface AppDestination {
         override val route: String = "tickets"
     }
 
-    object CreateTicket : AppDestination {
-        override val route: String = "tickets/create"
-    }
-
     data class TicketDetail(val ticketId: String) : AppDestination {
         override val route: String = "tickets/$ticketId"
     }

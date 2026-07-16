@@ -71,6 +71,11 @@ class TasksViewModel(
             is TasksUiEvent.SelectCategory -> publish(selectedCategoryId = event.categoryId)
             is TasksUiEvent.SelectClientFilter -> publish(selectedClientFilterId = event.clientId)
             is TasksUiEvent.SelectDashboardClient -> publish(selectedDashboardClientId = event.clientId)
+            is TasksUiEvent.ToggleDashboardCategoryFilter -> toggleDashboardCategoryFilter(event.categoryId)
+            TasksUiEvent.ClearDashboardFilters -> publish(
+                selectedDashboardClientId = null,
+                selectedDashboardCategoryIds = emptySet(),
+            )
             is TasksUiEvent.CreateCategory -> createLabel(event.name, event.colorHex)
             is TasksUiEvent.UpdateLabel -> updateLabel(event.labelId, event.name, event.colorHex)
             is TasksUiEvent.DeleteLabel -> deleteLabel(event.labelId)
@@ -91,6 +96,7 @@ class TasksViewModel(
         selectedCategoryId: String? = state.value.selectedCategoryId,
         selectedClientFilterId: String? = state.value.selectedClientFilterId,
         selectedDashboardClientId: String? = state.value.selectedDashboardClientId,
+        selectedDashboardCategoryIds: Set<String> = state.value.selectedDashboardCategoryIds,
         activeTaskId: String? = state.value.activeTaskId,
         activeTaskSeconds: Int = state.value.activeTaskSeconds,
         isTimerRunning: Boolean = state.value.isTimerRunning,
@@ -131,6 +137,7 @@ class TasksViewModel(
                 selectedCategoryId = selectedCategoryId,
                 selectedClientFilterId = selectedClientFilterId,
                 selectedDashboardClientId = selectedDashboardClientId,
+                selectedDashboardCategoryIds = selectedDashboardCategoryIds,
                 activeTaskId = activeTaskId,
                 activeTaskSeconds = activeTaskSeconds,
                 isTimerRunning = isTimerRunning,
@@ -444,6 +451,7 @@ class TasksViewModel(
         selectedCategoryId: String? = state.value.selectedCategoryId,
         selectedClientFilterId: String? = state.value.selectedClientFilterId,
         selectedDashboardClientId: String? = state.value.selectedDashboardClientId,
+        selectedDashboardCategoryIds: Set<String> = state.value.selectedDashboardCategoryIds,
         activeTaskId: String? = state.value.activeTaskId,
         activeTaskSeconds: Int = state.value.activeTaskSeconds,
         isTimerRunning: Boolean = state.value.isTimerRunning,
@@ -464,6 +472,8 @@ class TasksViewModel(
             else -> null
         }
         val resolvedActiveTaskId = activeTaskId?.takeIf { id -> tasks.any { it.id == id } }
+        val resolvedDashboardCategoryIds = selectedDashboardCategoryIds
+            .filterTo(mutableSetOf()) { id -> categories.any { it.id == id } }
 
         _state.update {
             it.copy(
@@ -475,6 +485,7 @@ class TasksViewModel(
                 selectedCategoryId = resolvedSelectedCategoryId,
                 selectedClientFilterId = selectedClientFilterId,
                 selectedDashboardClientId = selectedDashboardClientId,
+                selectedDashboardCategoryIds = resolvedDashboardCategoryIds,
                 activeTaskId = resolvedActiveTaskId,
                 activeTaskSeconds = if (resolvedActiveTaskId == null) 0 else activeTaskSeconds,
                 isTimerRunning = resolvedActiveTaskId != null && isTimerRunning,
@@ -501,6 +512,12 @@ class TasksViewModel(
         val index = currentTasks.indexOfFirst { it.id == taskId }
         if (index < 0) return state.value.selectedTaskId
         return currentTasks.getOrNull(index + 1)?.id ?: currentTasks.getOrNull(index - 1)?.id
+    }
+
+    private fun toggleDashboardCategoryFilter(categoryId: String) {
+        val current = state.value.selectedDashboardCategoryIds
+        val updated = if (categoryId in current) current - categoryId else current + categoryId
+        publish(selectedDashboardCategoryIds = updated)
     }
 
     private fun selectDay(dayIsoDate: String) {
