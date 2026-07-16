@@ -13,3 +13,8 @@ data class ClientDraft(
     val serviceTier: ClientServiceTier = ClientServiceTier.STANDARD,
     val preferredContactChannel: PreferredContactChannel = PreferredContactChannel.TICKET,
 )
+
+data class ClientCredentialsDraft(
+    val email: String,
+    val password: String,
+)

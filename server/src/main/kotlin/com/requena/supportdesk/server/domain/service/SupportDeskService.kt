@@ -12,6 +12,7 @@ import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -95,6 +96,9 @@ class SupportDeskService(
 
     fun updatedClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null) =
         repository.updateClient(clientId, request, ownerAdminId)
+
+    fun updatedClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null) =
+        repository.updateClientCredentials(clientId, request, ownerAdminId)
 
     fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
 

@@ -1,5 +1,12 @@
 package com.requena.supportdesk.app.admin
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -34,6 +41,7 @@ import com.requena.supportdesk.app.admin.screens.AdminTicketDetailScreen
 import com.requena.supportdesk.core.navigation.AppDestination
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
@@ -103,7 +111,7 @@ fun AdminWorkspaceApp() {
                 when (effect) {
                     AuthUiEffect.NavigateToHome -> {
                         navigation = navigation.copy(destination = AppDestination.Dashboard)
-                        statusMessage = "Sesion iniciada como admin"
+                        statusMessage = "Sesion iniciada."
                     }
                     is AuthUiEffect.ShowMessage -> statusMessage = effect.message
                 }
@@ -150,7 +158,11 @@ fun AdminWorkspaceApp() {
         currentUser?.id ?: return@LaunchedEffect
 
         navigation = navigation.copy(destination = AppDestination.Dashboard)
-        statusMessage = "Sesion iniciada como ${currentUser.name}"
+        statusMessage = if (currentUser.role == com.requena.supportdesk.core.model.UserRole.CLIENT) {
+            "Bienvenido al portal de cliente, ${currentUser.name}."
+        } else {
+            "Sesion iniciada como ${currentUser.name}."
+        }
 
         module.clientsViewModel.onEvent(ClientsUiEvent.Load)
         module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
@@ -396,12 +408,25 @@ private fun AdminContentArea(
             }
         }
 
-        when (navigation.destination) {
+        AnimatedContent(
+            targetState = navigation.destination,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            transitionSpec = {
+                (fadeIn(tween(SupportDeskMotion.regular)) +
+                    slideInVertically(tween(SupportDeskMotion.page)) { it / 18 }) togetherWith
+                    (fadeOut(tween(SupportDeskMotion.quick)) +
+                        slideOutVertically(tween(SupportDeskMotion.quick)) { -it / 24 })
+            },
+            label = "adminDestination",
+        ) { destination ->
+            when (destination) {
             AppDestination.Dashboard -> AdminDashboardScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Tickets -> AdminTicketsScreen(
@@ -410,16 +435,16 @@ private fun AdminContentArea(
                 clients = clientsState.clients,
                 onEvent = module.ticketsViewModel::onEvent,
                 onOpenDetail = { ticket -> onNavigate(AppDestination.TicketDetail(ticket.id)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             is AppDestination.TicketDetail -> AdminTicketDetailScreen(
-                ticket = ticketsState.tickets.firstOrNull { it.id == navigation.destination.ticketId }
+                ticket = ticketsState.tickets.firstOrNull { it.id == destination.ticketId }
                     ?: ticketsState.selectedTicket,
                 clients = clientsState.clients,
                 onBack = { onNavigate(AppDestination.Tickets) },
                 onEvent = module.ticketsViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Clients -> AdminClientsScreen(
@@ -431,34 +456,34 @@ private fun AdminContentArea(
                 onEvent = module.clientsViewModel::onEvent,
                 onNavigateToInvoices = { clientId -> onNavigate(AppDestination.Invoices(preselectedClientId = clientId)) },
                 onNavigateToLabels = { onNavigate(AppDestination.Labels) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Tasks -> AdminTasksScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Pinboard -> AdminPinboardScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Labels,
             AppDestination.Notifications -> AdminNotificationsScreen(
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             AppDestination.Login -> AdminLoginScreen(
                 state = module.authViewModel.state.value,
                 onEvent = module.authViewModel::onEvent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
             )
 
             is AppDestination.Invoices -> AdminInvoicesScreen(
@@ -466,9 +491,10 @@ private fun AdminContentArea(
                 tasksState = tasksState,
                 state = invoicesState,
                 onEvent = module.invoicesViewModel::onEvent,
-                preselectedClientId = navigation.destination.preselectedClientId,
-                modifier = Modifier.weight(1f),
+                preselectedClientId = destination.preselectedClientId,
+                modifier = Modifier.fillMaxSize(),
             )
+                }
         }
     }
 }

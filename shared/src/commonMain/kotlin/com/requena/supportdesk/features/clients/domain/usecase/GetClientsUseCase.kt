@@ -1,6 +1,7 @@
 package com.requena.supportdesk.features.clients.domain.usecase
 
 import com.requena.supportdesk.features.clients.domain.model.ClientDraft
+import com.requena.supportdesk.features.clients.domain.model.ClientCredentialsDraft
 import com.requena.supportdesk.features.clients.domain.repository.ClientsRepository
 
 class GetClientsUseCase(
@@ -19,6 +20,13 @@ class UpdateClientUseCase(
     private val repository: ClientsRepository,
 ) {
     suspend operator fun invoke(clientId: String, input: ClientDraft) = repository.updateClient(clientId, input)
+}
+
+class UpdateClientCredentialsUseCase(
+    private val repository: ClientsRepository,
+) {
+    suspend operator fun invoke(clientId: String, input: ClientCredentialsDraft) =
+        repository.updateClientCredentials(clientId, input)
 }
 
 class DeleteClientUseCase(

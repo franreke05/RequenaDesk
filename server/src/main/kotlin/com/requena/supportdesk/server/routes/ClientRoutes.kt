@@ -2,6 +2,7 @@ package com.requena.supportdesk.server.routes
 
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.clientJson
@@ -70,6 +71,26 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                 body = successResponse(
                     "/admin/clients/$clientId",
                     clientJson(service.updatedClient(clientId, request, ownerAdminId)),
+                ),
+            )
+        }
+        post("/clients/{clientId}/credentials") {
+            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+            val clientId = call.parameters["clientId"].orEmpty()
+            val request = call.receiveOrDefault(UpdateClientCredentialsRequest())
+            if (
+                clientId.isBlank() ||
+                request.email.isBlank() ||
+                !request.email.contains("@") ||
+                request.password.length < 8
+            ) {
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid client credentials payload"))
+            }
+            service.updatedClientCredentials(clientId, request, ownerAdminId)
+            call.respondJson(
+                body = successResponse(
+                    "/admin/clients/$clientId/credentials",
+                    messageJson("Client credentials updated"),
                 ),
             )
         }

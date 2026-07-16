@@ -5,8 +5,10 @@ import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.clients.data.datasource.ClientsDataSource
 import com.requena.supportdesk.features.clients.data.dto.CreateClientRequestDto
 import com.requena.supportdesk.features.clients.data.dto.UpdateClientRequestDto
+import com.requena.supportdesk.features.clients.data.dto.UpdateClientCredentialsRequestDto
 import com.requena.supportdesk.features.clients.data.mapper.ClientsMapper
 import com.requena.supportdesk.features.clients.domain.model.ClientDraft
+import com.requena.supportdesk.features.clients.domain.model.ClientCredentialsDraft
 import com.requena.supportdesk.features.clients.domain.repository.ClientsRepository
 
 class ClientsRepositoryImpl(
@@ -52,6 +54,19 @@ class ClientsRepositoryImpl(
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo actualizar el cliente.", cause = it) },
+    )
+
+    override suspend fun updateClientCredentials(clientId: String, input: ClientCredentialsDraft): AppResult<Unit> = runCatching {
+        dataSource.updateClientCredentials(
+            clientId = clientId,
+            request = UpdateClientCredentialsRequestDto(
+                email = input.email,
+                password = input.password,
+            ),
+        )
+    }.fold(
+        onSuccess = { AppResult.Success(Unit) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudieron guardar las credenciales.", cause = it) },
     )
 
     override suspend fun deleteClient(clientId: String): AppResult<Unit> = runCatching {

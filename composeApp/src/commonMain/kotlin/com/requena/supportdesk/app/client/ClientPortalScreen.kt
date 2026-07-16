@@ -8,11 +8,20 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,10 +48,13 @@ import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
+import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
 import com.requena.supportdesk.designsystem.components.navigation.NavigationItemSpec
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
+import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
@@ -210,6 +222,29 @@ fun ClientPortalScreen(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    if (clientId.isNullOrBlank()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(spacing.xl),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            SectionCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = "Acceso pendiente de configurar",
+                subtitle = "Tu cuenta aun no esta vinculada a una empresa.",
+            ) {
+                Text(
+                    text = "Pide al equipo de OryKai que active el acceso a tu portal. No mostramos datos hasta que la vinculacion este lista.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SecondaryButton(text = "Cerrar sesion", onClick = onSignOut)
+            }
+        }
+        return
+    }
     var today by remember { mutableStateOf(currentIsoDate()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -258,33 +293,18 @@ fun ClientPortalScreen(
     val displayCompany = companyName.ifBlank { clientName }
     val displayContact = if (companyName.isNotBlank() && clientName.isNotBlank() && clientName != companyName) clientName else ""
 
-    Row(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        AppSidebar(
-            brandTitle = displayCompany,
-            brandSubtitle = if (displayContact.isNotBlank()) displayContact else "Portal cliente",
-            items = clientNavItems,
-            selected = destination,
-            onSelect = { destination = it },
-            footer = {
-                ThemeModeButton()
-                SecondaryButton(text = "Actualizar", onClick = onRefresh)
-                SecondaryButton(text = "Salir", onClick = onSignOut)
-            },
-        )
-
+    val portalContent: @Composable (Modifier) -> Unit = { contentModifier ->
         AnimatedContent(
             targetState = destination,
-            modifier = Modifier.fillMaxSize(),
+            modifier = contentModifier,
             transitionSpec = {
                 val from = ClientDestination.entries.indexOf(initialState)
                 val to = ClientDestination.entries.indexOf(targetState)
                 val forward = to > from
-                (slideInHorizontally(tween(320)) { if (forward) it / 3 else -it / 3 } + fadeIn(tween(260))) togetherWith
-                    (slideOutHorizontally(tween(260)) { if (forward) -it / 3 else it / 3 } + fadeOut(tween(200)))
+                (slideInHorizontally(tween(SupportDeskMotion.page)) { if (forward) it / 3 else -it / 3 } +
+                    fadeIn(tween(SupportDeskMotion.regular))) togetherWith
+                    (slideOutHorizontally(tween(SupportDeskMotion.regular)) { if (forward) -it / 3 else it / 3 } +
+                        fadeOut(tween(SupportDeskMotion.quick)))
             },
             label = "client_nav",
         ) { dest ->
@@ -351,6 +371,139 @@ fun ClientPortalScreen(
                     onRefresh = onRefresh,
                     onSignOut = onSignOut,
                 )
+            }
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        if (maxWidth < SupportDeskBreakpoints.clientWide) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                ClientCompactHeader(
+                    companyName = displayCompany,
+                    contactName = displayContact,
+                    onRefresh = onRefresh,
+                    onSignOut = onSignOut,
+                )
+                ClientCompactNavigation(
+                    selected = destination,
+                    onSelect = { destination = it },
+                )
+                portalContent(Modifier.weight(1f).fillMaxWidth())
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxSize()) {
+                AppSidebar(
+                    brandTitle = displayCompany,
+                    brandSubtitle = if (displayContact.isNotBlank()) displayContact else "Portal cliente",
+                    items = clientNavItems,
+                    selected = destination,
+                    onSelect = { destination = it },
+                    footer = {
+                        ThemeModeButton()
+                        SecondaryButton(text = "Actualizar", onClick = onRefresh)
+                        SecondaryButton(text = "Salir", onClick = onSignOut)
+                    },
+                )
+                portalContent(Modifier.weight(1f).fillMaxHeight())
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClientCompactHeader(
+    companyName: String,
+    contactName: String,
+    onRefresh: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = SupportDeskThemeTokens.elevations.subtle,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = companyName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (contactName.isBlank()) "Portal cliente" else contactName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ThemeModeButton()
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                SecondaryButton(
+                    text = "Actualizar",
+                    onClick = onRefresh,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryButton(
+                    text = "Salir",
+                    onClick = onSignOut,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClientCompactNavigation(
+    selected: ClientDestination,
+    onSelect: (ClientDestination) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        clientNavItems.forEach { item ->
+            val isSelected = item.key == selected
+            Surface(
+                modifier = Modifier.clickable { onSelect(item.key) },
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    item.icon?.let { icon ->
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
     }

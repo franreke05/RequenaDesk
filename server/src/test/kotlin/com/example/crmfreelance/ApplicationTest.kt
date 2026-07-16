@@ -119,6 +119,60 @@ class ApplicationTest {
     }
 
     @Test
+    fun testAdminCanConfigureClientCredentialsForPortalLogin() = testApplication {
+        application { testModule() }
+
+        val existingSession = client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"ana@northwind.dev","password":"UnitTestClientPassword1"}""")
+        }
+        assertEquals(HttpStatusCode.OK, existingSession.status)
+        val oldRefreshToken = extractField(existingSession.bodyAsText(), "refreshToken")
+
+        val password = "UpdatedClientPassword1"
+        val updateResponse = client.post("/admin/clients/client-1/credentials") {
+            bearer(client.accessToken())
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"portal.northwind@example.dev","password":"$password"}""")
+        }
+
+        assertEquals(HttpStatusCode.OK, updateResponse.status)
+        assertTrue(!updateResponse.bodyAsText().contains(password))
+
+        val refreshResponse = client.post("/auth/refresh") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"refreshToken":"$oldRefreshToken"}""")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, refreshResponse.status)
+
+        val clientToken = client.accessToken(
+            email = "portal.northwind@example.dev",
+            password = password,
+        )
+        val clientsResponse = client.get("/admin/clients") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.OK, clientsResponse.status)
+        assertTrue(clientsResponse.bodyAsText().contains("client-1"))
+    }
+
+    @Test
+    fun testClientCannotConfigureCredentials() = testApplication {
+        application { testModule() }
+
+        val response = client.post("/admin/clients/client-1/credentials") {
+            bearer(
+                client.accessToken(
+                    email = "ana@northwind.dev",
+                    password = "UnitTestClientPassword1",
+                ),
+            )
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"other@example.dev","password":"AnotherClientPassword1"}""")
+        }
+
+        assertEquals(HttpStatusCode.Forbidden, response.status)
+    }
+
+    @Test
     fun testClientCreatedTaskCannotSpoofAnotherClient() = testApplication {
         application { testModule() }
         val clientToken = client.accessToken(

@@ -20,6 +20,7 @@ import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -42,6 +43,7 @@ interface SupportDeskRepository {
     fun getClients(ownerAdminId: String? = null): List<ServerClientSnapshot>
     fun createClient(request: CreateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
     fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
+    fun updateClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null)
     fun deleteClient(clientId: String, ownerAdminId: String? = null)
     fun getTaskLabels(ownerAdminId: String? = null): List<ServerTaskLabelSnapshot>
     fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot

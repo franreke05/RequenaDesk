@@ -323,7 +323,7 @@ private fun TicketPreviewCard(
     SectionCard(
         modifier = modifier,
         title = "Vista previa",
-        subtitle = if (!hasContent) "Completa el formulario" else "${(animatedCompleteness * 100).toInt()}% completado",
+        subtitle = if (!hasContent) "Completa el formulario" else "Asi recibira el equipo tu solicitud",
     ) {
         // Live indicator dot
         Row(
@@ -345,7 +345,7 @@ private fun TicketPreviewCard(
             )
         }
 
-        // Mock ticket card
+        // Esta es una previsualizacion del formulario: el servidor asigna el numero real al enviarlo.
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
@@ -362,7 +362,7 @@ private fun TicketPreviewCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "#????",
+                    text = "ID pendiente de asignar",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

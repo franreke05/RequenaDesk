@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,6 +59,7 @@ fun AdminLoginScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var clientAccessSelected by rememberSaveable { mutableStateOf(true) }
     val canSubmit = state.email.isNotBlank() && state.password.isNotBlank() && !state.isLoading
     Box(
         modifier = modifier
@@ -81,13 +85,45 @@ fun AdminLoginScreen(
                 SectionCard(
                     modifier = Modifier.widthIn(max = 520.dp),
                     title = "OryKai software",
-                    subtitle = "Acceso al espacio de gestion y al portal de cliente.",
+                    subtitle = "Accede a tu espacio de trabajo o al portal de soporte.",
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                         SupportDeskBadge(
                             text = "Acceso seguro",
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            text = "Como vas a acceder?",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        ) {
+                            AccessAudienceOption(
+                                title = "Soy cliente",
+                                supportingText = "Tickets, tareas y seguimiento",
+                                selected = clientAccessSelected,
+                                onClick = { clientAccessSelected = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                            AccessAudienceOption(
+                                title = "Soy equipo",
+                                supportingText = "Gestion de clientes y soporte",
+                                selected = !clientAccessSelected,
+                                onClick = { clientAccessSelected = false },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Text(
+                            text = if (clientAccessSelected) {
+                                "Usa el correo asociado a tu cuenta. Al entrar veras solo la informacion de tu empresa."
+                            } else {
+                                "Entra con tu cuenta de equipo. El sistema abrira las herramientas de tus permisos."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         OutlinedTextField(
                             value = state.email,
@@ -132,7 +168,7 @@ fun AdminLoginScreen(
                             )
                         }
                         PrimaryButton(
-                            text = "Entrar",
+                            text = if (clientAccessSelected) "Entrar a mi portal" else "Entrar al espacio de trabajo",
                             onClick = { onEvent(AuthUiEvent.Submit) },
                             enabled = canSubmit,
                             fullWidth = true,
@@ -141,6 +177,52 @@ fun AdminLoginScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AccessAudienceOption(
+    title: String,
+    supportingText: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.xxs),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = contentColor,
+            )
+            Text(
+                text = supportingText,
+                style = MaterialTheme.typography.bodySmall,
+                color = contentColor.copy(alpha = 0.78f),
+            )
         }
     }
 }

@@ -72,6 +72,12 @@ data class UpdateClientRequest(
 )
 
 @Serializable
+data class UpdateClientCredentialsRequest(
+    val email: String = "",
+    val password: String = "",
+)
+
+@Serializable
 data class CreateTaskLabelRequest(
     val ownerAdminId: String = "",
     val name: String = "",

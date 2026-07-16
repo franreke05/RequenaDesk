@@ -4,4 +4,5 @@ object SupportDeskMotion {
     const val quick = 140
     const val regular = 180
     const val emphasized = 220
+    const val page = 260
 }

@@ -5,10 +5,12 @@ import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.core.utils.matchesQuery
 import com.requena.supportdesk.features.clients.domain.model.ClientDraft
+import com.requena.supportdesk.features.clients.domain.model.ClientCredentialsDraft
 import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.DeleteClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.GetClientsUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientUseCase
+import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientCredentialsUseCase
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
@@ -24,6 +26,7 @@ class ClientsViewModel(
     private val getClientsUseCase: GetClientsUseCase,
     private val createClientUseCase: CreateClientUseCase,
     private val updateClientUseCase: UpdateClientUseCase,
+    private val updateClientCredentialsUseCase: UpdateClientCredentialsUseCase,
     private val deleteClientUseCase: DeleteClientUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(ClientsUiState())
@@ -48,6 +51,7 @@ class ClientsViewModel(
             is ClientsUiEvent.SelectClient -> _state.update { it.copy(selectedClientId = event.clientId) }
             is ClientsUiEvent.CreateClient -> createClient(event)
             is ClientsUiEvent.UpdateClient -> updateClient(event)
+            is ClientsUiEvent.UpdateClientCredentials -> updateClientCredentials(event)
             is ClientsUiEvent.DeleteClient -> deleteClient(event.clientId)
             is ClientsUiEvent.AddClientNote -> {
                 // Notes are out of scope for the current remote CRUD flow.
@@ -117,6 +121,30 @@ class ClientsViewModel(
                     preferredSelectedId = result.data.id,
                     successMessage = "Cliente actualizado",
                 )
+            }
+        }
+    }
+
+    private fun updateClientCredentials(event: ClientsUiEvent.UpdateClientCredentials) {
+        val draft = ClientCredentialsDraft(
+            email = event.email.trim(),
+            password = event.password,
+        )
+        if (draft.email.isBlank() || draft.password.length < 8) {
+            launch { _effects.emit(ClientsUiEffect.ShowMessage("Indica un correo y una contrasena de al menos 8 caracteres.")) }
+            return
+        }
+        launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            when (val result = updateClientCredentialsUseCase(event.clientId, draft)) {
+                is AppResult.Error -> {
+                    _state.update { it.copy(isLoading = false, errorMessage = result.message) }
+                    _effects.emit(ClientsUiEffect.ShowMessage(result.message))
+                }
+                is AppResult.Success -> {
+                    _state.update { it.copy(isLoading = false) }
+                    _effects.emit(ClientsUiEffect.ShowMessage("Credenciales de acceso actualizadas"))
+                }
             }
         }
     }

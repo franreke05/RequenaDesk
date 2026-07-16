@@ -27,6 +27,11 @@ sealed interface ClientsUiEvent {
         val serviceTier: ClientServiceTier,
         val preferredContactChannel: PreferredContactChannel,
     ) : ClientsUiEvent
+    data class UpdateClientCredentials(
+        val clientId: String,
+        val email: String,
+        val password: String,
+    ) : ClientsUiEvent
     data class DeleteClient(val clientId: String) : ClientsUiEvent
     data class AddClientNote(
         val clientId: String,

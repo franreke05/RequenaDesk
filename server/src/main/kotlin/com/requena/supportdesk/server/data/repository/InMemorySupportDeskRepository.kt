@@ -25,6 +25,7 @@ import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -46,7 +47,7 @@ class InMemorySupportDeskRepository(
         val clientId: String? = null,
     )
 
-    private val adminAccounts = listOf(
+    private val adminAccounts = mutableListOf(
         LocalAdminAccount(
             userId = "user-admin",
             name = "Admin Requena",
@@ -306,6 +307,39 @@ class InMemorySupportDeskRepository(
         )
         clients[index] = updated
         return updated
+    }
+
+    override fun updateClientCredentials(
+        clientId: String,
+        request: UpdateClientCredentialsRequest,
+        ownerAdminId: String?,
+    ) {
+        requireClientIndex(clientId, ownerAdminId)
+        val normalizedEmail = request.email.trim()
+        val existingIndex = adminAccounts.indexOfFirst { account ->
+            account.role == "CLIENT" && account.clientId == clientId
+        }
+        val conflictingAccount = adminAccounts.firstOrNull { account ->
+            account.email.equals(normalizedEmail, ignoreCase = true) && account.clientId != clientId
+        }
+        if (conflictingAccount != null) {
+            throw ServerConflictException("Email is already used by another account")
+        }
+        val client = clients.first { it.id == clientId }
+        val updatedAccount = LocalAdminAccount(
+            userId = if (existingIndex >= 0) adminAccounts[existingIndex].userId else "user-client-$clientId",
+            name = client.contactName,
+            email = normalizedEmail,
+            password = request.password,
+            role = "CLIENT",
+            clientId = clientId,
+        )
+        if (existingIndex >= 0) {
+            adminAccounts[existingIndex] = updatedAccount
+        } else {
+            adminAccounts.add(updatedAccount)
+        }
+        refreshTokens.entries.removeAll { it.value == updatedAccount.userId }
     }
 
     override fun deleteClient(clientId: String, ownerAdminId: String?) {

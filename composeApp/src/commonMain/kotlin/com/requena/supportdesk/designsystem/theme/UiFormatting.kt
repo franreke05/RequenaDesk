@@ -87,7 +87,7 @@ fun AppDestination.displayTitle(): String = when (this) {
 }
 
 fun AppDestination.displaySubtitle(): String = when (this) {
-    AppDestination.Login -> "Workspace solo admin para operar clientes."
+    AppDestination.Login -> "Acceso del equipo y portal seguro para clientes."
     AppDestination.Dashboard -> "Tiempo central, cliente activo y ruedas mensuales."
     AppDestination.Tasks -> "Trabajo operativo con cliente opcional y etiquetas."
     AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy."

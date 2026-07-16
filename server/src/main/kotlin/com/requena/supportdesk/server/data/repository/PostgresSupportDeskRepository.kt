@@ -29,6 +29,7 @@ import com.requena.supportdesk.server.domain.model.ServerTicketEventSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -541,6 +542,65 @@ class PostgresSupportDeskRepository(
                     openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
                     monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
                 )
+            }
+        }
+    }
+
+    override fun updateClientCredentials(
+        clientId: String,
+        request: UpdateClientCredentialsRequest,
+        ownerAdminId: String?,
+    ) {
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId, ownerAdminId)
+            val email = request.email.trim()
+            val existingClientUserId = findClientUserId(connection, clientId)
+            if (isEmailAssignedToAnotherUser(connection, email, existingClientUserId)) {
+                throw ServerConflictException("Email is already used by another account")
+            }
+            val passwordHash = PasswordHasher.hash(request.password)
+            val clientUserId = if (existingClientUserId == null) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO users (client_id, name, email, password_hash, role, is_active)
+                    SELECT id, contact_name, ?, ?, 'CLIENT', TRUE
+                    FROM clients
+                    WHERE id::text = ?
+                    RETURNING id::text AS user_id
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, email)
+                    statement.setString(2, passwordHash)
+                    statement.setString(3, clientId)
+                    statement.executeQuery().use { resultSet ->
+                        if (!resultSet.next()) {
+                            throw ServerNotFoundException("Client not found")
+                        }
+                        resultSet.getString("user_id")
+                    }
+                }
+            } else {
+                connection.prepareStatement(
+                    """
+                    UPDATE users
+                    SET email = ?, password_hash = ?, is_active = TRUE, updated_at = NOW()
+                    WHERE id::text = ?
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, email)
+                    statement.setString(2, passwordHash)
+                    statement.setString(3, existingClientUserId)
+                    if (statement.executeUpdate() != 1) {
+                        throw ServerNotFoundException("Client not found")
+                    }
+                }
+                existingClientUserId
+            }
+            connection.prepareStatement(
+                "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id::text = ? AND revoked_at IS NULL",
+            ).use { statement ->
+                statement.setString(1, clientUserId)
+                statement.executeUpdate()
             }
         }
     }
@@ -1637,6 +1697,26 @@ class PostgresSupportDeskRepository(
                 resultSet.next()
                 resultSet.getInt("monthly_minutes")
             }
+        }
+
+    private fun findClientUserId(connection: Connection, clientId: String): String? =
+        connection.prepareStatement(
+            "SELECT id::text AS user_id FROM users WHERE client_id::text = ? AND role = 'CLIENT' LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("user_id") else null
+            }
+        }
+
+    private fun isEmailAssignedToAnotherUser(connection: Connection, email: String, currentUserId: String?): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM users WHERE email = ? AND (? IS NULL OR id::text <> ?) LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, email)
+            statement.setString(2, currentUserId)
+            statement.setString(3, currentUserId)
+            statement.executeQuery().use { it.next() }
         }
 
     private fun requireClientExists(connection: Connection, clientId: String, ownerAdminId: String? = null) {

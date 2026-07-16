@@ -39,3 +39,9 @@ data class UpdateClientRequestDto(
     val serviceTier: String,
     val preferredContactChannel: String,
 )
+
+@Serializable
+data class UpdateClientCredentialsRequestDto(
+    val email: String,
+    val password: String,
+)

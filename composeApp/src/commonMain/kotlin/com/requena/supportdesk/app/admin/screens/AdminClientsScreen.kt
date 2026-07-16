@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,9 +49,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.EllipsisVertical
+import com.composables.icons.lucide.Eye
+import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Search
@@ -88,6 +94,7 @@ enum class ClientTab(val label: String) {
     ETIQUETAS("Etiquetas"),
     TICKETS("Tickets"),
     FACTURAS("Facturas"),
+    CREDENCIALES("Credenciales"),
     NOTAS("Notas"),
 }
 
@@ -156,8 +163,12 @@ fun AdminClientsScreen(
                             tickets = ticketsState.allTickets,
                             currentAdminId = currentAdminId,
                             currentAdminName = currentAdminName,
+                            isLoading = state.isLoading,
                             onEvent = onEvent,
                             onEditClient = { editingClient = selectedClient },
+                            onUpdateCredentials = { clientId, email, password ->
+                                onEvent(ClientsUiEvent.UpdateClientCredentials(clientId, email, password))
+                            },
                             onNavigateToInvoices = onNavigateToInvoices,
                             onNavigateToLabels = onNavigateToLabels,
                             modifier = m,
@@ -386,8 +397,10 @@ private fun ClientDetailPanel(
     tickets: List<Ticket>,
     currentAdminId: String,
     currentAdminName: String,
+    isLoading: Boolean,
     onEvent: (ClientsUiEvent) -> Unit,
     onEditClient: () -> Unit,
+    onUpdateCredentials: (clientId: String, email: String, password: String) -> Unit,
     onNavigateToInvoices: (clientId: String) -> Unit,
     onNavigateToLabels: () -> Unit,
     modifier: Modifier = Modifier,
@@ -442,6 +455,11 @@ private fun ClientDetailPanel(
                 ClientTab.ETIQUETAS -> ClientTagsTab(tags = derivedTags, onNavigateToLabels = onNavigateToLabels)
                 ClientTab.TICKETS -> ClientTicketsTab(tickets = clientTickets)
                 ClientTab.FACTURAS -> ClientInvoicesTab(client = client, onGenerate = { onNavigateToInvoices(client.id) })
+                ClientTab.CREDENCIALES -> ClientCredentialsTab(
+                    client = client,
+                    isLoading = isLoading,
+                    onSave = { email, password -> onUpdateCredentials(client.id, email, password) },
+                )
                 ClientTab.NOTAS -> ClientNotesTab(
                     client = client,
                     currentAdminId = currentAdminId,
@@ -577,9 +595,10 @@ private fun QuickInfoItem(label: String, value: String, modifier: Modifier = Mod
 @Composable
 private fun ClientTabs(selected: ClientTab, onSelect: (ClientTab) -> Unit) {
     val spacing = SupportDeskThemeTokens.spacing
-    Row(
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         ClientTab.entries.forEach { tab ->
             val isSelected = tab == selected
@@ -817,6 +836,68 @@ private fun ClientInvoicesTab(client: Client, onGenerate: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         PrimaryButton(text = "Generar factura para ${client.companyName}", onClick = onGenerate)
+    }
+}
+
+@Composable
+private fun ClientCredentialsTab(
+    client: Client,
+    isLoading: Boolean,
+    onSave: (email: String, password: String) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    var email by rememberSaveable(client.id) { mutableStateOf(client.email) }
+    var password by remember(client.id) { mutableStateOf("") }
+    var passwordVisible by remember(client.id) { mutableStateOf(false) }
+    val canSave = email.isNotBlank() && email.contains("@") && password.length >= 8 && !isLoading
+
+    SupportDeskFormCard(title = "Credenciales de acceso") {
+        Text(
+            "Define o reemplaza el acceso del cliente al portal. La clave no se muestra ni se guarda en esta ficha.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("Correo de acceso") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Clave de acceso") },
+            singleLine = true,
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Lucide.EyeOff else Lucide.Eye,
+                        contentDescription = if (passwordVisible) "Ocultar clave" else "Mostrar clave",
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Usa una clave de al menos 8 caracteres.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PrimaryButton(
+            text = "Guardar credenciales",
+            enabled = canSave,
+            isLoading = isLoading,
+            fullWidth = true,
+            onClick = {
+                onSave(email.trim(), password)
+                password = ""
+                passwordVisible = false
+            },
+        )
     }
 }
 
