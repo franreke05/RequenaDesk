@@ -47,6 +47,9 @@ Publish the server release that includes SBS credential regeneration and the fin
 - Confirmed the application route and its server tests use `POST /admin/clients/{id}/credentials/regenerate`; no local Ktor process is listening on port `8080` and no local backend URL is configured.
 - `./gradlew.bat :server:compileKotlin --no-daemon` (passed after V6 CRM route implementation).
 - `./gradlew.bat :server:test --no-daemon` (passed; includes embedded PostgreSQL applying V6 and exercising contacts/activities).
+- `./gradlew.bat :server:test :shared:jvmTest :composeApp:compileKotlinJvm :server:installDist --no-daemon` (passed; distribution generated under `server/build/install/server`).
+- Published `2aeed84` to `origin/main`.
 
 ## Failures / blockers
 - The currently contacted backend returns 404 because it is an older deployment. The source route is present and covered by passing server tests, but this workspace has no server configuration, SSH target or CI deployment automation to restart the public process directly.
+- The public endpoint still returned HTTP 404 after the Git push. The project has no local Ktor listener on port `8080` and no `.github` deployment workflow; a terminal/session on the actual server is required to run the updated artifact.
