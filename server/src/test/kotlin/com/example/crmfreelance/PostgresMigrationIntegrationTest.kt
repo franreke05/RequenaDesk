@@ -20,6 +20,7 @@ import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -29,6 +30,10 @@ class PostgresMigrationIntegrationTest {
         EmbeddedPostgres.start().use { postgres ->
             postgres.postgresDatabase.connection.use { connection ->
                 connection.createStatement().use { it.execute("CREATE TABLE legacy_schema_marker (id integer)") }
+                connection.createStatement().use {
+                    it.execute("CREATE ROLE anon NOLOGIN")
+                    it.execute("CREATE ROLE authenticated NOLOGIN")
+                }
             }
             val dataSource = PostgresSupportDeskDataSource(
                 DatabaseSettings(
@@ -40,8 +45,29 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(6, dataSource.migrate())
+                assertEquals(7, dataSource.migrate())
                 assertTrue(dataSource.isReady())
+                listOf(
+                    "clients",
+                    "users",
+                    "refresh_tokens",
+                    "tickets",
+                    "ticket_messages",
+                    "internal_comments",
+                    "attachments",
+                    "ticket_events",
+                    "notification_devices",
+                    "task_labels",
+                    "tasks",
+                    "time_logs",
+                    "client_component_entitlements",
+                    "client_contacts",
+                    "client_activities",
+                ).forEach { table ->
+                    assertTrue(dataSource.hasRowLevelSecurity(table), "RLS is not enabled for $table")
+                }
+                assertFalse(dataSource.hasTablePrivilege("anon", "clients", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("authenticated", "clients", "SELECT"))
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
                     adminPassword = ADMIN_PASSWORD,
@@ -220,6 +246,26 @@ class PostgresMigrationIntegrationTest {
         requireNotNull(Regex(""""$fieldName":"([^"]+)"""").find(body)?.groupValues?.get(1)) {
             "Missing field $fieldName in response"
         }
+
+    private fun PostgresSupportDeskDataSource.hasRowLevelSecurity(table: String): Boolean = withConnection { connection ->
+        connection.prepareStatement("SELECT relrowsecurity FROM pg_class WHERE oid = ?::regclass").use { statement ->
+            statement.setString(1, "public.$table")
+            statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
+        }
+    }
+
+    private fun PostgresSupportDeskDataSource.hasTablePrivilege(
+        role: String,
+        table: String,
+        privilege: String,
+    ): Boolean = withConnection { connection ->
+        connection.prepareStatement("SELECT has_table_privilege(?, ?::regclass, ?)").use { statement ->
+            statement.setString(1, role)
+            statement.setString(2, "public.$table")
+            statement.setString(3, privilege)
+            statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
+        }
+    }
 
     private companion object {
         const val ADMIN_PASSWORD = "IntegrationAdminPassword1"

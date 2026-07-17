@@ -27,5 +27,8 @@ Deleting a factura requires confirmation, validates the selected file remains in
 ## 2026-07-17 - SBS regeneration requires the current backend deployment
 The desktop client calls `POST /admin/clients/{id}/credentials/regenerate`. A 404 is not a credential-display failure: it means the backend serving the request has not been updated with the route (or the client points to the wrong server). Do not fall back to locally generated credentials, because the server must hash the code and revoke the old refresh sessions atomically.
 
-## 2026-07-17 - V6 closes this CRM database delivery
-V6 adds internal client contacts and follow-up activities, while dedicated `/client/*` routes provide a safe portal read model. Contacts, activities and ticket internal comments remain admin-only; no further database migration is planned in this delivery.
+## 2026-07-17 - V6 closes the CRM feature schema delivery
+V6 adds internal client contacts and follow-up activities, while dedicated `/client/*` routes provide a safe portal read model. Contacts, activities and ticket internal comments remain admin-only.
+
+## 2026-07-17 - V7 establishes the Supabase public-schema security baseline
+The explicit security request reopens migrations solely for security. V7 enables RLS on every live application table and removes direct `anon`, `authenticated` and `PUBLIC` access to public tables, views, sequences and functions. The app uses its own Ktor JWT authentication rather than Supabase Auth, so it intentionally defines no browser-facing RLS policies; all application access remains through Ktor's backend database role.

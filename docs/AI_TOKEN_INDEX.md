@@ -23,7 +23,9 @@
 | `server/.../routes/ClientRoutes.kt` | Client identity scope and admin provisioning | Adding members, entitlements or portal access |
 | `server/.../db/migration/V1__supportdesk_schema.sql` | Current client/users/tickets/tasks schema | Adding client CRM or module schema |
 | `server/.../db/migration/V5__client_component_entitlements.sql` | Client-scoped Service and SLA entitlement | Adding or migrating product modules |
-| `server/.../db/migration/V6__client_crm_contacts_and_activities.sql` | Final CRM schema migration: contacts and internal follow-ups | Maintaining the client CRM data model |
+| `server/.../db/migration/V6__client_crm_contacts_and_activities.sql` | Final CRM feature migration: contacts and internal follow-ups | Maintaining the client CRM data model |
+| `server/.../db/migration/V7__secure_public_schema_with_rls.sql` | RLS and public-role revocation baseline | Changing Supabase public-schema security or auth architecture |
+| `server/.../plugins/RequestSecurity.kt` | IP-based Ktor limits for authentication and credential operations | Changing exposed-route abuse protections |
 | `server/.../routes/ClientCrmRoutes.kt` | Admin-only contact and activity CRUD | Extending CRM operations for a client |
 | `server/.../routes/ClientPortalRoutes.kt` | Sanitized, identity-scoped client read API | Connecting the customer portal without admin routes |
 | `shared/.../core/model/ClientPortalComponent.kt` | Supported client add-on enum and display copy | Adding a new contracted component |

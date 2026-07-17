@@ -5,6 +5,7 @@ import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.plugins.SensitiveOperationRateLimit
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.clientCredentialsJson
 import com.requena.supportdesk.server.utils.clientJson
@@ -26,6 +27,7 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import io.ktor.server.plugins.ratelimit.rateLimit
 
 fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
@@ -78,38 +80,40 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                 ),
             )
         }
-        post("/clients/{clientId}/credentials") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val clientId = call.parameters["clientId"].orEmpty()
-            val request = call.receiveOrDefault(UpdateClientCredentialsRequest())
-            if (
-                clientId.isBlank() ||
-                request.email.isBlank() ||
-                !request.email.contains("@") ||
-                request.password.length < 8
-            ) {
-                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid client credentials payload"))
+        rateLimit(SensitiveOperationRateLimit) {
+            post("/clients/{clientId}/credentials") {
+                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+                val clientId = call.parameters["clientId"].orEmpty()
+                val request = call.receiveOrDefault(UpdateClientCredentialsRequest())
+                if (
+                    clientId.isBlank() ||
+                    request.email.isBlank() ||
+                    !request.email.contains("@") ||
+                    request.password.length < 8
+                ) {
+                    return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid client credentials payload"))
+                }
+                service.updatedClientCredentials(clientId, request, ownerAdminId)
+                call.respondJson(
+                    body = successResponse(
+                        "/admin/clients/$clientId/credentials",
+                        messageJson("Client credentials updated"),
+                    ),
+                )
             }
-            service.updatedClientCredentials(clientId, request, ownerAdminId)
-            call.respondJson(
-                body = successResponse(
-                    "/admin/clients/$clientId/credentials",
-                    messageJson("Client credentials updated"),
-                ),
-            )
-        }
-        post("/clients/{clientId}/credentials/regenerate") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val clientId = call.parameters["clientId"].orEmpty()
-            if (clientId.isBlank()) {
-                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
+            post("/clients/{clientId}/credentials/regenerate") {
+                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+                val clientId = call.parameters["clientId"].orEmpty()
+                if (clientId.isBlank()) {
+                    return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
+                }
+                call.respondJson(
+                    body = successResponse(
+                        "/admin/clients/$clientId/credentials/regenerate",
+                        clientCredentialsJson(service.regeneratedClientCredentials(clientId, ownerAdminId)),
+                    ),
+                )
             }
-            call.respondJson(
-                body = successResponse(
-                    "/admin/clients/$clientId/credentials/regenerate",
-                    clientCredentialsJson(service.regeneratedClientCredentials(clientId, ownerAdminId)),
-                ),
-            )
         }
         put("/clients/{clientId}/components") {
             val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@put

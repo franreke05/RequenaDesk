@@ -7,6 +7,7 @@ import com.requena.supportdesk.server.config.ServerEnvironment
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.plugins.configureMonitoring
+import com.requena.supportdesk.server.plugins.configureRequestSecurity
 import com.requena.supportdesk.server.plugins.configureSerialization
 import com.requena.supportdesk.server.routes.attachmentRoutes
 import com.requena.supportdesk.server.routes.authRoutes
@@ -36,6 +37,7 @@ fun Application.configureSupportDeskModule(
     repositoryOverride: SupportDeskRepository? = null,
 ) {
     configureSerialization()
+    configureRequestSecurity()
     configureMonitoring()
 
     val serverEnvironment = ServerEnvironment.load()

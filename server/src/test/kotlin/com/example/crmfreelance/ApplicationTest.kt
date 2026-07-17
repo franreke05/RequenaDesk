@@ -376,6 +376,36 @@ class ApplicationTest {
     }
 
     @Test
+    fun testLoginRouteDoesNotAcceptCredentialsInTheUrl() = testApplication {
+        application { testModule() }
+
+        val response = client.post(
+            "/auth/login?email=admin%40orykai.dev&password=UnitTestAdminPassword1",
+        )
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+    }
+
+    @Test
+    fun testLoginRouteIsRateLimited() = testApplication {
+        application { testModule() }
+
+        repeat(8) {
+            val response = client.post("/auth/login") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"email":"admin@orykai.dev","password":"incorrect"}""")
+            }
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+        val blockedResponse = client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"admin@orykai.dev","password":"incorrect"}""")
+        }
+        assertEquals(HttpStatusCode.TooManyRequests, blockedResponse.status)
+    }
+
+    @Test
     fun testClientsRouteIncludesNewFields() = testApplication {
         application { testModule() }
 

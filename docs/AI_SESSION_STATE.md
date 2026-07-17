@@ -1,7 +1,7 @@
 # AI Session State
 
 ## Current task
-Publish the server release that includes SBS credential regeneration and the final CRM client-route migration.
+Publish the server release that includes SBS credential regeneration, final CRM client routes and the V7 RLS security baseline.
 
 ## Files touched this session
 - `docs/product/CLIENT_CRM_UX_AI_STRATEGY.md`
@@ -19,6 +19,7 @@ Publish the server release that includes SBS credential regeneration and the fin
 - `composeApp/.../AdminClientsScreen.kt` and `ClientsViewModel.kt`
 - `server/.../ClientCrmRoutes.kt`, `ClientPortalRoutes.kt`, CRM repository/models, API JSON and Ktor registration
 - `server/.../V6__client_crm_contacts_and_activities.sql` and server migration/API tests
+- `server/.../V7__secure_public_schema_with_rls.sql`, request rate limiting and proxy security headers
 
 ## Decisions made
 - The first paid module is `SERVICE_SLA`; entitlement activation is manual in the admin client screen.
@@ -30,13 +31,14 @@ Publish the server release that includes SBS credential regeneration and the fin
 - The credential tab no longer accepts a manually chosen password. It regenerates a code after confirmation and revokes refresh sessions. Changing a client email also synchronizes the linked portal login email.
 - Invoice deletion remains desktop-local: the UI confirms the action, the storage boundary validates the filename remains inside the invoice folder, deletes that one PDF and refreshes the library.
 - Regenerated SBS credentials appear both in the global one-time dialog and directly in the selected client's Credenciales tab; the success notice also includes the code as a fallback.
-- V6 is the last planned database migration for this delivery. It stores admin-only client contacts and follow-up activities; portal read routes deliberately omit those internal CRM records and ticket internal comments.
+- V6 is the last planned CRM feature migration. V7 is a later, explicitly requested security-only migration: it enables RLS on every live table and blocks direct Supabase API access because the product authenticates through Ktor rather than Supabase Auth.
+- Login and refresh are limited to 8 requests per minute per originating IP; admin credential change/regeneration is limited to 5 requests per 10 minutes per originating IP. Credentials are not accepted through URL query parameters.
 
 ## Pending work
 - Add the next commercial module after validating Service and SLA usage (recommended: Roadmap and approvals).
 - Define client members/roles, recurring billing and the approved AI provider/data policy.
 - Decide later whether to remove the legacy, admin-only manual credentials endpoint after any external API consumers have migrated to regeneration.
-- Deploy/restart the current Ktor server process after publishing. The active public backend is healthy but the project has no remote deployment connection or CI configuration in this workspace.
+- Deploy/restart the current Ktor server process after publishing. The active public backend is healthy but the project has no remote deployment connection or CI configuration in this workspace. The restart is required to run V7 on the production Supabase database and to expose the SBS regenerate route.
 
 ## Commands run
 - Applied local `.claude` project-context, Ktor and Compose state skills.
@@ -48,6 +50,7 @@ Publish the server release that includes SBS credential regeneration and the fin
 - `./gradlew.bat :server:compileKotlin --no-daemon` (passed after V6 CRM route implementation).
 - `./gradlew.bat :server:test --no-daemon` (passed; includes embedded PostgreSQL applying V6 and exercising contacts/activities).
 - `./gradlew.bat :server:test :shared:jvmTest :composeApp:compileKotlinJvm :server:installDist --no-daemon` (passed; distribution generated under `server/build/install/server`).
+- `./gradlew.bat :server:test :server:installDist --no-daemon` (passed after V7; embedded PostgreSQL verifies RLS for all 15 live tables and denies direct `anon`/`authenticated` table access).
 - Published `2aeed84` to `origin/main`.
 
 ## Failures / blockers

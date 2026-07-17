@@ -42,6 +42,7 @@ graph TD
 - Client isolation: request identity carries `clientId`; ticket, task and time-log routes derive client scope from identity for client users. Dedicated `/client/profile`, `/client/tickets`, `/client/tasks`, `/client/time-logs` and `/client/overview` routes are scoped to that identity and omit ticket internal comments.
 - Client modules: `ClientPortalComponent` currently exposes `SERVICE_SLA`. Its entitlement is stored in `client_component_entitlements`, changed only by an admin at `PUT /admin/clients/{id}/components`, and returned in the normal client payload.
 - CRM continuity: V6 adds admin-only client contacts and follow-up activities. They are managed under `/admin/clients/{id}/contacts` and `/admin/clients/{id}/activities`; they must never be exposed in the client portal without a separate product decision.
+- Database security: V7 enables PostgreSQL RLS for every live `public` table and revokes Supabase Data API roles (`anon` and `authenticated`) plus `PUBLIC` from direct schema objects. Ktor owns authentication and database access, so no Supabase Auth RLS policy is defined.
 - Theme: Compose design-system tokens under `composeApp/.../designsystem`.
 - Errors: feature ViewModels map failures to state and `ShowMessage` effects.
 
@@ -53,4 +54,4 @@ graph TD
 - Portal access codes must be treated as credentials: never retain a reusable plaintext code in PostgreSQL or expose it after generation.
 - CRM modules are not billing by themselves: entitlement/catalog persistence belongs on the server, while recurring collection needs a separately approved billing domain. Do not repurpose local invoice PDFs as subscriptions.
 - The current first commercial vertical is manual activation of Service and SLA. Priority/VIP existing accounts are backfilled by migration V5; do not use service tier as the future source of truth for all modules.
-- V6 is the agreed final database migration for this CRM delivery. Future portal enhancements should reuse the established API/read models unless the product scope is explicitly reopened.
+- V6 is the final CRM feature migration. V7 is the explicitly authorized security-only migration; future portal enhancements should reuse the established API/read models unless the product scope is explicitly reopened.

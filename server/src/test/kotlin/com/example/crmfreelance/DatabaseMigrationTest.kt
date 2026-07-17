@@ -44,6 +44,17 @@ class DatabaseMigrationTest {
         assertTrue(migration.contains("client_activities_type_check"))
     }
 
+    @Test
+    fun securityMigrationEnablesRlsAndRemovesDirectPublicAccess() {
+        val migration = migrationText("db/migration/V7__secure_public_schema_with_rls.sql")
+
+        assertTrue(migration.contains("ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY"))
+        assertTrue(migration.contains("ALTER TABLE public.client_activities ENABLE ROW LEVEL SECURITY"))
+        assertTrue(migration.contains("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM PUBLIC"))
+        assertTrue(migration.contains("'anon', 'authenticated'"))
+        assertTrue(migration.contains("REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC"))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"
