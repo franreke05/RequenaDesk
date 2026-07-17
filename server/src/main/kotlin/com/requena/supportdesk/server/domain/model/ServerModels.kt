@@ -138,6 +138,64 @@ data class ServerClientActivitySnapshot(
     val updatedAt: String,
 )
 
+data class ServerProductCatalogSnapshot(
+    val key: String,
+    val name: String,
+    val shortDescription: String,
+    val category: String,
+    val iconKey: String,
+    val monthlyPriceCents: Long,
+    val currency: String,
+    val isRequestable: Boolean,
+    val isAvailable: Boolean,
+    val capabilities: List<String>,
+)
+
+data class ServerClientProductSubscriptionSnapshot(
+    val productKey: String,
+    val status: String,
+    val monthlyPriceCents: Long,
+    val currency: String,
+    val startsOn: String,
+    val endsOn: String? = null,
+)
+
+data class ServerClientProgramRequestSnapshot(
+    val id: String,
+    val clientId: String,
+    val clientCompanyName: String,
+    val productKey: String,
+    val status: String,
+    val customerNote: String? = null,
+    val adminNote: String? = null,
+    val requestedByName: String,
+    val requestedAt: String,
+    val decidedAt: String? = null,
+    val quotedMonthlyPriceCents: Long? = null,
+    val currency: String,
+)
+
+data class ServerClientProgramsSnapshot(
+    val catalog: List<ServerProductCatalogSnapshot>,
+    val subscriptions: List<ServerClientProductSubscriptionSnapshot>,
+    val requests: List<ServerClientProgramRequestSnapshot>,
+)
+
+data class ServerBillingPreviewLineSnapshot(
+    val productKey: String,
+    val name: String,
+    val monthlyPriceCents: Long,
+    val currency: String,
+)
+
+data class ServerClientBillingPreviewSnapshot(
+    val clientId: String,
+    val period: String,
+    val lines: List<ServerBillingPreviewLineSnapshot>,
+    val totalMonthlyPriceCents: Long,
+    val currency: String,
+)
+
 data class ServerDashboardSnapshot(
     val openTickets: Int,
     val pendingClientTickets: Int,

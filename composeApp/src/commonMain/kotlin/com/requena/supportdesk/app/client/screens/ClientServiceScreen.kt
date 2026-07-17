@@ -33,14 +33,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.monthAbbrev
 import com.requena.supportdesk.app.client.monthLabel
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
-import com.requena.supportdesk.designsystem.components.cards.MetricCard
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
+import com.requena.supportdesk.app.client.components.ClientPortalMetric as MetricCard
+import com.requena.supportdesk.app.client.components.ClientPortalSectionCard as SectionCard
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
@@ -118,14 +119,10 @@ fun ClientServiceScreen(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(spacing.xl),
         verticalArrangement = Arrangement.spacedBy(spacing.xl),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Mi Servicio", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Resumen de soporte · ${monthLabel(today)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ClientPortalPageHeader(
+            title = "Mi servicio",
+            subtitle = "Resumen de soporte · ${monthLabel(today)}",
+        )
 
         if (!isEnabled) {
             SectionCard(

@@ -1,6 +1,7 @@
 package com.requena.supportdesk.server.domain.repository
 
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -17,6 +18,9 @@ import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
 import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
+import com.requena.supportdesk.server.domain.model.ServerClientProgramsSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
@@ -30,6 +34,8 @@ import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
+import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
+import com.requena.supportdesk.server.domain.model.RejectClientProgramRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -55,6 +61,30 @@ interface SupportDeskRepository {
     fun updateClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null)
     fun regenerateClientCredentials(clientId: String, ownerAdminId: String? = null): ServerClientAccessCredentials
     fun updateClientComponents(clientId: String, request: UpdateClientComponentsRequest, ownerAdminId: String? = null): ServerClientSnapshot
+    fun getClientPrograms(clientId: String): ServerClientProgramsSnapshot
+    fun createClientProgramRequests(
+        clientId: String,
+        requestedByUserId: String,
+        request: CreateClientProgramRequestsRequest,
+    ): List<ServerClientProgramRequestSnapshot>
+    fun getClientProgramRequests(ownerAdminId: String, status: String? = null): List<ServerClientProgramRequestSnapshot>
+    fun approveClientProgramRequest(
+        requestId: String,
+        request: ApproveClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot
+    fun rejectClientProgramRequest(
+        requestId: String,
+        request: RejectClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot
+    fun getClientBillingPreview(
+        clientId: String,
+        period: String,
+        ownerAdminId: String,
+    ): ServerClientBillingPreviewSnapshot
     fun deleteClient(clientId: String, ownerAdminId: String? = null)
     fun getClientContacts(clientId: String, ownerAdminId: String? = null): List<ServerClientContactSnapshot>
     fun createClientContact(clientId: String, request: CreateClientContactRequest, ownerAdminId: String? = null): ServerClientContactSnapshot

@@ -57,6 +57,8 @@ import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEven
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
+import com.requena.supportdesk.features.programs.presentation.event.ProgramsUiEvent
+import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiState
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
@@ -99,6 +101,11 @@ fun AdminWorkspaceApp() {
         module.ticketsViewModel.state.collectAsState().value
     } else {
         TicketsUiState()
+    }
+    val programsState = if (currentUser != null) {
+        module.programsViewModel.state.collectAsState().value
+    } else {
+        ProgramsUiState()
     }
 
     DisposableEffect(module) {
@@ -166,6 +173,11 @@ fun AdminWorkspaceApp() {
 
         module.clientsViewModel.onEvent(ClientsUiEvent.Load)
         module.ticketsViewModel.onEvent(TicketsUiEvent.Load)
+        if (currentUser.role == com.requena.supportdesk.core.model.UserRole.CLIENT) {
+            module.programsViewModel.onEvent(ProgramsUiEvent.RefreshClientPrograms)
+        } else {
+            module.programsViewModel.onEvent(ProgramsUiEvent.RefreshAdminRequests)
+        }
 
         module.tasksViewModel.onEvent(TasksUiEvent.SelectTask(null))
         module.tasksViewModel.onEvent(TasksUiEvent.SelectCategory(null))
@@ -201,6 +213,14 @@ fun AdminWorkspaceApp() {
                 onSignOut = { module.authViewModel.onEvent(com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent.Logout) },
                 tasksState = tasksState,
                 onTasksEvent = module.tasksViewModel::onEvent,
+                programsState = programsState,
+                onProgramsEvent = module.programsViewModel::onEvent,
+                businessInvoicingViewModel = module.businessInvoicingViewModel,
+                businessAccountingViewModel = module.businessAccountingViewModel,
+                operationsViewModel = module.operationsViewModel,
+                businessCustomersViewModel = module.businessCustomersViewModel,
+                businessCatalogViewModel = module.businessCatalogViewModel,
+                businessQuotesViewModel = module.businessQuotesViewModel,
                 clientId = currentUser.clientId,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -279,6 +299,7 @@ fun AdminWorkspaceApp() {
                         tasksState = tasksState,
                         invoicesState = invoicesState,
                         ticketsState = ticketsState,
+                        programsState = programsState,
                         module = module,
                         modifier = Modifier.weight(1f),
                     )
@@ -301,6 +322,7 @@ fun AdminWorkspaceApp() {
                                 tasksState = tasksState,
                                 invoicesState = invoicesState,
                                 ticketsState = ticketsState,
+                                programsState = programsState,
                                 module = module,
                                 modifier = Modifier.weight(1f),
                             )
@@ -315,6 +337,7 @@ fun AdminWorkspaceApp() {
                             tasksState = tasksState,
                             invoicesState = invoicesState,
                             ticketsState = ticketsState,
+                            programsState = programsState,
                             module = module,
                             modifier = Modifier.weight(1f),
                         )
@@ -340,6 +363,7 @@ private fun AdminContentArea(
     tasksState: com.requena.supportdesk.features.tasks.presentation.state.TasksUiState,
     invoicesState: InvoicesUiState,
     ticketsState: TicketsUiState,
+    programsState: ProgramsUiState,
     module: AdminAppModule,
     modifier: Modifier = Modifier,
 ) {
@@ -451,9 +475,11 @@ private fun AdminContentArea(
                 state = clientsState,
                 tasksState = tasksState,
                 ticketsState = ticketsState,
+                programsState = programsState,
                 currentAdminId = module.authViewModel.state.value.authenticatedUser?.id.orEmpty(),
                 currentAdminName = module.authViewModel.state.value.authenticatedUser?.name.orEmpty(),
                 onEvent = module.clientsViewModel::onEvent,
+                onProgramsEvent = module.programsViewModel::onEvent,
                 onNavigateToInvoices = { clientId -> onNavigate(AppDestination.Invoices(preselectedClientId = clientId)) },
                 onNavigateToLabels = { onNavigate(AppDestination.Labels) },
                 modifier = Modifier.fillMaxSize(),
@@ -490,6 +516,10 @@ private fun AdminContentArea(
                 clients = clientsState.clients,
                 tasksState = tasksState,
                 state = invoicesState,
+                programBillingPreview = programsState.billingPreview,
+                onLoadProgramBillingPreview = { clientId, period ->
+                    module.programsViewModel.onEvent(ProgramsUiEvent.LoadBillingPreview(clientId, period))
+                },
                 onEvent = module.invoicesViewModel::onEvent,
                 preselectedClientId = destination.preselectedClientId,
                 modifier = Modifier.fillMaxSize(),

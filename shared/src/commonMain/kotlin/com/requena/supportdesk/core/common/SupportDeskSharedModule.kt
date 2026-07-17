@@ -9,6 +9,18 @@ import com.requena.supportdesk.features.auth.domain.usecase.ClearSessionUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.LoginUseCase
 import com.requena.supportdesk.features.auth.domain.usecase.RestoreSessionUseCase
 import com.requena.supportdesk.features.auth.presentation.viewmodel.AuthViewModel
+import com.requena.supportdesk.features.business.finance.data.datasource.RemoteBusinessFinanceDataSource
+import com.requena.supportdesk.features.business.finance.data.repository.BusinessFinanceRepositoryImpl
+import com.requena.supportdesk.features.business.finance.presentation.BusinessAccountingViewModel
+import com.requena.supportdesk.features.business.finance.presentation.BusinessInvoicingViewModel
+import com.requena.supportdesk.features.business.operations.BusinessOperationsRepositoryImpl
+import com.requena.supportdesk.features.business.operations.OperationsViewModel
+import com.requena.supportdesk.features.business.operations.RemoteBusinessOperationsDataSource
+import com.requena.supportdesk.features.business.sales.data.datasource.RemoteBusinessSalesDataSource
+import com.requena.supportdesk.features.business.sales.data.repository.BusinessSalesRepositoryImpl
+import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
+import com.requena.supportdesk.features.business.sales.presentation.BusinessCustomersViewModel
+import com.requena.supportdesk.features.business.sales.presentation.BusinessQuotesViewModel
 import com.requena.supportdesk.features.clients.data.datasource.RemoteClientsDataSource
 import com.requena.supportdesk.features.clients.data.repository.ClientsRepositoryImpl
 import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCase
@@ -26,6 +38,15 @@ import com.requena.supportdesk.features.notifications.data.datasource.RemoteNoti
 import com.requena.supportdesk.features.notifications.data.repository.NotificationsRepositoryImpl
 import com.requena.supportdesk.features.notifications.domain.usecase.RegisterDeviceUseCase
 import com.requena.supportdesk.features.notifications.presentation.viewmodel.NotificationsViewModel
+import com.requena.supportdesk.features.programs.data.datasource.RemoteProgramsDataSource
+import com.requena.supportdesk.features.programs.data.repository.ProgramsRepositoryImpl
+import com.requena.supportdesk.features.programs.domain.usecase.ApproveProgramRequestUseCase
+import com.requena.supportdesk.features.programs.domain.usecase.GetAdminProgramRequestsUseCase
+import com.requena.supportdesk.features.programs.domain.usecase.GetClientProgramBillingPreviewUseCase
+import com.requena.supportdesk.features.programs.domain.usecase.GetClientProgramsUseCase
+import com.requena.supportdesk.features.programs.domain.usecase.RejectProgramRequestUseCase
+import com.requena.supportdesk.features.programs.domain.usecase.RequestProgramsUseCase
+import com.requena.supportdesk.features.programs.presentation.viewmodel.ProgramsViewModel
 import com.requena.supportdesk.features.tasks.data.datasource.RemoteTasksDataSource
 import com.requena.supportdesk.features.tasks.data.repository.TasksRepositoryImpl
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskLabelUseCase
@@ -63,6 +84,10 @@ object SupportDeskSharedModule {
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
     private val dashboardRepository = DashboardRepositoryImpl(RemoteDashboardDataSource(httpClient))
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
+    private val programsRepository = ProgramsRepositoryImpl(RemoteProgramsDataSource(httpClient))
+    private val businessFinanceRepository = BusinessFinanceRepositoryImpl(RemoteBusinessFinanceDataSource(httpClient))
+    private val businessOperationsRepository = BusinessOperationsRepositoryImpl(RemoteBusinessOperationsDataSource(httpClient))
+    private val businessSalesRepository = BusinessSalesRepositoryImpl(RemoteBusinessSalesDataSource(httpClient))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
@@ -91,6 +116,12 @@ object SupportDeskSharedModule {
     private val createTimeLogUseCase = CreateTimeLogUseCase(tasksRepository)
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
+    private val getClientProgramsUseCase = GetClientProgramsUseCase(programsRepository)
+    private val requestProgramsUseCase = RequestProgramsUseCase(programsRepository)
+    private val getAdminProgramRequestsUseCase = GetAdminProgramRequestsUseCase(programsRepository)
+    private val approveProgramRequestUseCase = ApproveProgramRequestUseCase(programsRepository)
+    private val rejectProgramRequestUseCase = RejectProgramRequestUseCase(programsRepository)
+    private val getClientProgramBillingPreviewUseCase = GetClientProgramBillingPreviewUseCase(programsRepository)
 
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
@@ -119,6 +150,33 @@ object SupportDeskSharedModule {
     fun createDashboardViewModel(): DashboardViewModel = DashboardViewModel(getDashboardSummaryUseCase)
 
     fun createNotificationsViewModel(): NotificationsViewModel = NotificationsViewModel(registerDeviceUseCase)
+
+    fun createProgramsViewModel(): ProgramsViewModel = ProgramsViewModel(
+        getClientProgramsUseCase = getClientProgramsUseCase,
+        requestProgramsUseCase = requestProgramsUseCase,
+        getAdminProgramRequestsUseCase = getAdminProgramRequestsUseCase,
+        approveProgramRequestUseCase = approveProgramRequestUseCase,
+        rejectProgramRequestUseCase = rejectProgramRequestUseCase,
+        getBillingPreviewUseCase = getClientProgramBillingPreviewUseCase,
+    )
+
+    fun createBusinessInvoicingViewModel(): BusinessInvoicingViewModel =
+        BusinessInvoicingViewModel(businessFinanceRepository)
+
+    fun createBusinessAccountingViewModel(): BusinessAccountingViewModel =
+        BusinessAccountingViewModel(businessFinanceRepository)
+
+    fun createOperationsViewModel(): OperationsViewModel =
+        OperationsViewModel(businessOperationsRepository)
+
+    fun createBusinessCustomersViewModel(): BusinessCustomersViewModel =
+        BusinessCustomersViewModel(businessSalesRepository)
+
+    fun createBusinessCatalogViewModel(): BusinessCatalogViewModel =
+        BusinessCatalogViewModel(businessSalesRepository)
+
+    fun createBusinessQuotesViewModel(): BusinessQuotesViewModel =
+        BusinessQuotesViewModel(businessSalesRepository)
 
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
         invoicePdfStorage = createInvoicePdfStorage(),

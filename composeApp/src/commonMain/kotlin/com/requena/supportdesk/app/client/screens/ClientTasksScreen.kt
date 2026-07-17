@@ -38,10 +38,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.ClientDailyTaskLimit
 import com.requena.supportdesk.app.client.ClientNotice
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
+import com.requena.supportdesk.app.client.components.ClientPortalSectionCard as SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
@@ -85,14 +86,10 @@ fun ClientTasksScreen(
             .padding(spacing.xl),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Mis tareas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Maximo $ClientDailyTaskLimit tareas nuevas por dia. Solo para uso personal.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ClientPortalPageHeader(
+            title = "Mis tareas",
+            subtitle = "Máximo $ClientDailyTaskLimit tareas nuevas por día. Solo para uso personal.",
+        )
 
         SectionCard(
             modifier = Modifier.fillMaxWidth(),

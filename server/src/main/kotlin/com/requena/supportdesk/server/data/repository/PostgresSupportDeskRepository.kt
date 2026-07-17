@@ -2,6 +2,7 @@ package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -18,6 +19,12 @@ import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
 import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
+import com.requena.supportdesk.server.domain.model.ServerClientProgramsSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProductSubscriptionSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot
+import com.requena.supportdesk.server.domain.model.ServerBillingPreviewLineSnapshot
+import com.requena.supportdesk.server.domain.model.ServerProductCatalogSnapshot
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
@@ -39,6 +46,8 @@ import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
+import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
+import com.requena.supportdesk.server.domain.model.RejectClientProgramRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -53,6 +62,7 @@ import java.util.UUID
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
@@ -774,6 +784,7 @@ class PostgresSupportDeskRepository(
                     statement.executeBatch()
                 }
             }
+            syncLegacyServiceSubscription(connection, clientId, components.contains("SERVICE_SLA"), ownerAdminId)
             val snapshot = clientSnapshot(connection, clientId, ownerAdminId)
             connection.commit()
             snapshot
@@ -783,6 +794,266 @@ class PostgresSupportDeskRepository(
         } finally {
             connection.autoCommit = previousAutoCommit
         }
+    }
+
+    override fun getClientPrograms(clientId: String): ServerClientProgramsSnapshot =
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId)
+            ServerClientProgramsSnapshot(
+                catalog = productCatalog(connection),
+                subscriptions = clientProductSubscriptions(connection, clientId),
+                requests = clientProgramRequests(connection, clientId = clientId),
+            )
+        }
+
+    override fun createClientProgramRequests(
+        clientId: String,
+        requestedByUserId: String,
+        request: CreateClientProgramRequestsRequest,
+    ): List<ServerClientProgramRequestSnapshot> = dataSource.withConnection { connection ->
+        val keys = request.productKeys
+            .map { it.trim().uppercase() }
+            .filter(String::isNotBlank)
+            .distinct()
+        if (keys.isEmpty()) throw ServerValidationException("At least one program is required")
+        requireActiveClientPortalUser(connection, clientId, requestedByUserId)
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val createdIds = keys.map { productKey ->
+                val product = productCatalogItem(connection, productKey)
+                    ?: throw ServerNotFoundException("Program is not available")
+                if (!product.isAvailable || !product.isRequestable) {
+                    throw ServerConflictException("Program is not available for requests")
+                }
+                if (hasActiveProductSubscription(connection, clientId, productKey)) {
+                    throw ServerConflictException("Program is already active")
+                }
+                if (hasPendingProgramRequest(connection, clientId, productKey)) {
+                    throw ServerConflictException("Program request is already pending")
+                }
+                connection.prepareStatement(
+                    """
+                    INSERT INTO client_program_requests (client_id, product_key, requested_by_user_id, customer_note)
+                    VALUES (CAST(? AS uuid), ?, CAST(? AS uuid), ?)
+                    ON CONFLICT (client_id, product_key) WHERE status = 'REQUESTED' DO NOTHING
+                    RETURNING id::text
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, clientId)
+                    statement.setString(2, productKey)
+                    statement.setString(3, requestedByUserId)
+                    statement.setString(4, request.customerNote.trim().takeIf(String::isNotBlank))
+                    statement.executeQuery().use { resultSet ->
+                        if (!resultSet.next()) throw ServerConflictException("Program request is already pending")
+                        resultSet.getString(1)
+                    }
+                }
+            }
+            createdIds.forEach { requestId ->
+                val created = clientProgramRequest(connection, requestId)
+                    ?: throw ServerNotFoundException("Program request not found")
+                recordSubscriptionEvent(
+                    connection = connection,
+                    clientId = created.clientId,
+                    productKey = created.productKey,
+                    requestId = created.id,
+                    actorUserId = requestedByUserId,
+                    action = "REQUESTED",
+                    previousStatus = null,
+                    newStatus = "REQUESTED",
+                    monthlyPriceCents = null,
+                )
+            }
+            val created = createdIds.map { requestId ->
+                requireNotNull(clientProgramRequest(connection, requestId))
+            }
+            connection.commit()
+            created
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun getClientProgramRequests(
+        ownerAdminId: String,
+        status: String?,
+    ): List<ServerClientProgramRequestSnapshot> = dataSource.withConnection { connection ->
+        clientProgramRequests(connection, ownerAdminId = ownerAdminId, status = status)
+    }
+
+    override fun approveClientProgramRequest(
+        requestId: String,
+        request: ApproveClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot = dataSource.withConnection { connection ->
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val pending = clientProgramRequestForOwner(connection, requestId, ownerAdminId, lockForUpdate = true)
+                ?: throw ServerNotFoundException("Program request not found")
+            if (pending.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
+            val previousSubscriptionStatus = clientProductSubscriptionStatus(connection, pending.clientId, pending.productKey)
+            connection.prepareStatement(
+                """
+                UPDATE client_program_requests
+                SET status = 'APPROVED',
+                    admin_note = ?,
+                    quoted_monthly_price_cents = ?,
+                    decided_at = NOW(),
+                    decided_by_user_id = CAST(? AS uuid)
+                WHERE id = CAST(? AS uuid)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.adminNote?.trim()?.takeIf(String::isNotBlank))
+                statement.setLong(2, 0L)
+                statement.setString(3, reviewedByUserId)
+                statement.setString(4, requestId)
+                check(statement.executeUpdate() == 1) { "Program request was not updated" }
+            }
+            connection.prepareStatement(
+                """
+                INSERT INTO client_product_subscriptions (
+                    client_id, product_key, status, monthly_price_cents, currency, starts_on,
+                    ends_on, approved_by_user_id, approved_at
+                ) VALUES (CAST(? AS uuid), ?, 'ACTIVE', ?, 'EUR', CURRENT_DATE, NULL, CAST(? AS uuid), NOW())
+                ON CONFLICT (client_id, product_key) DO UPDATE
+                SET status = 'ACTIVE',
+                    monthly_price_cents = EXCLUDED.monthly_price_cents,
+                    currency = 'EUR',
+                    starts_on = EXCLUDED.starts_on,
+                    ends_on = NULL,
+                    approved_by_user_id = EXCLUDED.approved_by_user_id,
+                    approved_at = EXCLUDED.approved_at
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, pending.clientId)
+                statement.setString(2, pending.productKey)
+                statement.setLong(3, 0L)
+                statement.setString(4, reviewedByUserId)
+                statement.executeUpdate()
+            }
+            recordSubscriptionEvent(
+                connection = connection,
+                clientId = pending.clientId,
+                productKey = pending.productKey,
+                requestId = pending.id,
+                actorUserId = reviewedByUserId,
+                action = "APPROVED",
+                previousStatus = previousSubscriptionStatus,
+                newStatus = "ACTIVE",
+                monthlyPriceCents = 0L,
+            )
+            val approved = requireNotNull(clientProgramRequest(connection, requestId))
+            connection.commit()
+            approved
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun rejectClientProgramRequest(
+        requestId: String,
+        request: RejectClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot = dataSource.withConnection { connection ->
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val pending = clientProgramRequestForOwner(connection, requestId, ownerAdminId, lockForUpdate = true)
+                ?: throw ServerNotFoundException("Program request not found")
+            if (pending.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
+            connection.prepareStatement(
+                """
+                UPDATE client_program_requests
+                SET status = 'REJECTED',
+                    admin_note = ?,
+                    decided_at = NOW(),
+                    decided_by_user_id = CAST(? AS uuid)
+                WHERE id = CAST(? AS uuid)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.adminNote?.trim()?.takeIf(String::isNotBlank))
+                statement.setString(2, reviewedByUserId)
+                statement.setString(3, requestId)
+                check(statement.executeUpdate() == 1) { "Program request was not updated" }
+            }
+            recordSubscriptionEvent(
+                connection = connection,
+                clientId = pending.clientId,
+                productKey = pending.productKey,
+                requestId = pending.id,
+                actorUserId = reviewedByUserId,
+                action = "REJECTED",
+                previousStatus = "REQUESTED",
+                newStatus = "REJECTED",
+                monthlyPriceCents = null,
+            )
+            val rejected = requireNotNull(clientProgramRequest(connection, requestId))
+            connection.commit()
+            rejected
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun getClientBillingPreview(
+        clientId: String,
+        period: String,
+        ownerAdminId: String,
+    ): ServerClientBillingPreviewSnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val firstDay = LocalDate.parse("$period-01")
+        val lastDay = firstDay.plusMonths(1).minusDays(1)
+        val lines = connection.prepareStatement(
+            """
+            SELECT subscription.product_key, catalog.name, subscription.monthly_price_cents, subscription.currency
+            FROM client_product_subscriptions subscription
+            JOIN product_catalog catalog ON catalog.product_key = subscription.product_key
+            WHERE subscription.client_id = CAST(? AS uuid)
+              AND subscription.status = 'ACTIVE'
+              AND subscription.monthly_price_cents > 0
+              AND subscription.starts_on <= ?
+              AND (subscription.ends_on IS NULL OR subscription.ends_on >= ?)
+            ORDER BY subscription.product_key
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setObject(2, lastDay)
+            statement.setObject(3, firstDay)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerBillingPreviewLineSnapshot(
+                                productKey = resultSet.getString("product_key"),
+                                name = resultSet.getString("name"),
+                                monthlyPriceCents = resultSet.getLong("monthly_price_cents"),
+                                currency = resultSet.getString("currency"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        ServerClientBillingPreviewSnapshot(
+            clientId = clientId,
+            period = period,
+            lines = lines,
+            totalMonthlyPriceCents = lines.sumOf { it.monthlyPriceCents },
+            currency = "EUR",
+        )
     }
 
     override fun deleteClient(clientId: String, ownerAdminId: String?) {
@@ -2353,6 +2624,305 @@ class PostgresSupportDeskRepository(
                 resultSet.getInt("tasks_count")
             }
         }
+
+    private fun productCatalog(connection: Connection): List<ServerProductCatalogSnapshot> =
+        connection.prepareStatement(
+            """
+            SELECT product_key, name, short_description, category, icon_key, monthly_price_cents,
+                   currency, is_requestable, is_available,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(capabilities)), ARRAY[]::text[]) AS capabilities
+            FROM product_catalog
+            ORDER BY sort_order, product_key
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(productCatalogSnapshot(resultSet))
+                }
+            }
+        }
+
+    private fun productCatalogItem(connection: Connection, productKey: String): ServerProductCatalogSnapshot? =
+        connection.prepareStatement(
+            """
+            SELECT product_key, name, short_description, category, icon_key, monthly_price_cents,
+                   currency, is_requestable, is_available,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(capabilities)), ARRAY[]::text[]) AS capabilities
+            FROM product_catalog
+            WHERE product_key = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, productKey)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) productCatalogSnapshot(resultSet) else null
+            }
+        }
+
+    private fun productCatalogSnapshot(resultSet: ResultSet) = ServerProductCatalogSnapshot(
+        key = resultSet.getString("product_key"),
+        name = resultSet.getString("name"),
+        shortDescription = resultSet.getString("short_description"),
+        category = resultSet.getString("category"),
+        iconKey = resultSet.getString("icon_key"),
+        monthlyPriceCents = resultSet.getLong("monthly_price_cents"),
+        currency = resultSet.getString("currency"),
+        isRequestable = resultSet.getBoolean("is_requestable"),
+        isAvailable = resultSet.getBoolean("is_available"),
+        capabilities = resultSet.textArray("capabilities"),
+    )
+
+    private fun clientProductSubscriptions(
+        connection: Connection,
+        clientId: String,
+    ): List<ServerClientProductSubscriptionSnapshot> = connection.prepareStatement(
+        """
+        SELECT product_key, status, monthly_price_cents, currency, starts_on, ends_on
+        FROM client_product_subscriptions
+        WHERE client_id = CAST(? AS uuid)
+        ORDER BY product_key
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, clientId)
+        statement.executeQuery().use { resultSet ->
+            buildList {
+                while (resultSet.next()) add(clientProductSubscriptionSnapshot(resultSet))
+            }
+        }
+    }
+
+    private fun clientProductSubscriptionSnapshot(resultSet: ResultSet) = ServerClientProductSubscriptionSnapshot(
+        productKey = resultSet.getString("product_key"),
+        status = resultSet.getString("status"),
+        monthlyPriceCents = resultSet.getLong("monthly_price_cents"),
+        currency = resultSet.getString("currency"),
+        startsOn = resultSet.getObject("starts_on", LocalDate::class.java).toString(),
+        endsOn = resultSet.getObject("ends_on", LocalDate::class.java)?.toString(),
+    )
+
+    private fun clientProgramRequests(
+        connection: Connection,
+        clientId: String? = null,
+        ownerAdminId: String? = null,
+        status: String? = null,
+    ): List<ServerClientProgramRequestSnapshot> = connection.prepareStatement(
+        """
+        SELECT request.id::text, request.client_id::text, client.company_name, request.product_key,
+               request.status, request.customer_note, request.admin_note,
+               requester.name AS requested_by_name, request.requested_at, request.decided_at,
+               request.quoted_monthly_price_cents, request.currency
+        FROM client_program_requests request
+        JOIN clients client ON client.id = request.client_id
+        JOIN users requester ON requester.id = request.requested_by_user_id
+        WHERE (? IS NULL OR request.client_id = CAST(? AS uuid))
+          AND (? IS NULL OR client.owner_admin_id = CAST(? AS uuid))
+          AND (? IS NULL OR request.status = ?)
+        ORDER BY request.requested_at DESC, request.id DESC
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, clientId)
+        statement.setString(2, clientId)
+        statement.setString(3, ownerAdminId)
+        statement.setString(4, ownerAdminId)
+        statement.setString(5, status)
+        statement.setString(6, status)
+        statement.executeQuery().use { resultSet ->
+            buildList {
+                while (resultSet.next()) add(clientProgramRequestSnapshot(resultSet))
+            }
+        }
+    }
+
+    private fun clientProgramRequest(
+        connection: Connection,
+        requestId: String,
+    ): ServerClientProgramRequestSnapshot? = connection.prepareStatement(
+        """
+        SELECT request.id::text, request.client_id::text, client.company_name, request.product_key,
+               request.status, request.customer_note, request.admin_note,
+               requester.name AS requested_by_name, request.requested_at, request.decided_at,
+               request.quoted_monthly_price_cents, request.currency
+        FROM client_program_requests request
+        JOIN clients client ON client.id = request.client_id
+        JOIN users requester ON requester.id = request.requested_by_user_id
+        WHERE request.id = CAST(? AS uuid)
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, requestId)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) clientProgramRequestSnapshot(resultSet) else null
+        }
+    }
+
+    private fun clientProgramRequestForOwner(
+        connection: Connection,
+        requestId: String,
+        ownerAdminId: String,
+        lockForUpdate: Boolean,
+    ): ServerClientProgramRequestSnapshot? = connection.prepareStatement(
+        """
+        SELECT request.id::text, request.client_id::text, client.company_name, request.product_key,
+               request.status, request.customer_note, request.admin_note,
+               requester.name AS requested_by_name, request.requested_at, request.decided_at,
+               request.quoted_monthly_price_cents, request.currency
+        FROM client_program_requests request
+        JOIN clients client ON client.id = request.client_id
+        JOIN users requester ON requester.id = request.requested_by_user_id
+        WHERE request.id = CAST(? AS uuid)
+          AND client.owner_admin_id = CAST(? AS uuid)
+        ${if (lockForUpdate) "FOR UPDATE OF request" else ""}
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, requestId)
+        statement.setString(2, ownerAdminId)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) clientProgramRequestSnapshot(resultSet) else null
+        }
+    }
+
+    private fun clientProgramRequestSnapshot(resultSet: ResultSet) = ServerClientProgramRequestSnapshot(
+        id = resultSet.getString("id"),
+        clientId = resultSet.getString("client_id"),
+        clientCompanyName = resultSet.getString("company_name"),
+        productKey = resultSet.getString("product_key"),
+        status = resultSet.getString("status"),
+        customerNote = resultSet.getString("customer_note"),
+        adminNote = resultSet.getString("admin_note"),
+        requestedByName = resultSet.getString("requested_by_name"),
+        requestedAt = formatTimestamp(resultSet.getObject("requested_at")),
+        decidedAt = resultSet.getObject("decided_at")?.let(::formatTimestamp),
+        quotedMonthlyPriceCents = resultSet.getLong("quoted_monthly_price_cents").takeUnless { resultSet.wasNull() },
+        currency = resultSet.getString("currency"),
+    )
+
+    private fun requireActiveClientPortalUser(connection: Connection, clientId: String, userId: String) {
+        val exists = connection.prepareStatement(
+            """
+            SELECT 1
+            FROM clients client
+            JOIN users portal_user ON portal_user.client_id = client.id
+            WHERE client.id = CAST(? AS uuid)
+              AND client.account_status = 'ACTIVE'
+              AND portal_user.id = CAST(? AS uuid)
+              AND portal_user.role = 'CLIENT'
+              AND portal_user.is_active = TRUE
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, userId)
+            statement.executeQuery().use { it.next() }
+        }
+        if (!exists) throw ServerNotFoundException("Active client portal account not found")
+    }
+
+    private fun hasActiveProductSubscription(connection: Connection, clientId: String, productKey: String): Boolean =
+        connection.prepareStatement(
+            """
+            SELECT 1
+            FROM client_product_subscriptions
+            WHERE client_id = CAST(? AS uuid) AND product_key = ? AND status = 'ACTIVE'
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, productKey)
+            statement.executeQuery().use { it.next() }
+        }
+
+    private fun hasPendingProgramRequest(connection: Connection, clientId: String, productKey: String): Boolean =
+        connection.prepareStatement(
+            """
+            SELECT 1
+            FROM client_program_requests
+            WHERE client_id = CAST(? AS uuid) AND product_key = ? AND status = 'REQUESTED'
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, productKey)
+            statement.executeQuery().use { it.next() }
+        }
+
+    private fun clientProductSubscriptionStatus(connection: Connection, clientId: String, productKey: String): String? =
+        connection.prepareStatement(
+            """
+            SELECT status FROM client_product_subscriptions
+            WHERE client_id = CAST(? AS uuid) AND product_key = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, productKey)
+            statement.executeQuery().use { resultSet -> if (resultSet.next()) resultSet.getString("status") else null }
+        }
+
+    private fun syncLegacyServiceSubscription(
+        connection: Connection,
+        clientId: String,
+        isEnabled: Boolean,
+        ownerAdminId: String?,
+    ) {
+        if (isEnabled) {
+            connection.prepareStatement(
+                """
+                INSERT INTO client_product_subscriptions (
+                    client_id, product_key, status, monthly_price_cents, currency,
+                    starts_on, ends_on, approved_by_user_id, approved_at
+                ) VALUES (CAST(? AS uuid), 'SERVICE_SLA', 'ACTIVE', 0, 'EUR', CURRENT_DATE, NULL, CAST(? AS uuid), NOW())
+                ON CONFLICT (client_id, product_key) DO UPDATE
+                SET status = 'ACTIVE', ends_on = NULL,
+                    approved_by_user_id = COALESCE(EXCLUDED.approved_by_user_id, client_product_subscriptions.approved_by_user_id),
+                    approved_at = NOW()
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.setString(2, ownerAdminId)
+                statement.executeUpdate()
+            }
+        } else {
+            connection.prepareStatement(
+                """
+                UPDATE client_product_subscriptions
+                SET status = 'CANCELLED', ends_on = CURRENT_DATE
+                WHERE client_id = CAST(? AS uuid) AND product_key = 'SERVICE_SLA' AND status <> 'CANCELLED'
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun recordSubscriptionEvent(
+        connection: Connection,
+        clientId: String,
+        productKey: String,
+        requestId: String?,
+        actorUserId: String?,
+        action: String,
+        previousStatus: String?,
+        newStatus: String,
+        monthlyPriceCents: Long?,
+    ) {
+        connection.prepareStatement(
+            """
+            INSERT INTO client_subscription_events (
+                client_id, product_key, request_id, actor_user_id, action,
+                previous_status, new_status, monthly_price_cents, currency
+            ) VALUES (
+                CAST(? AS uuid), ?, CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?, ?, 'EUR'
+            )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, productKey)
+            statement.setString(3, requestId)
+            statement.setString(4, actorUserId)
+            statement.setString(5, action)
+            statement.setString(6, previousStatus)
+            statement.setString(7, newStatus)
+            if (monthlyPriceCents == null) statement.setNull(8, java.sql.Types.BIGINT) else statement.setLong(8, monthlyPriceCents)
+            statement.executeUpdate()
+        }
+    }
 
     private fun normalizeHex(raw: String): String {
         val trimmed = raw.trim().removePrefix("#").uppercase()

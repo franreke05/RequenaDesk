@@ -2,6 +2,7 @@ package com.example.crmfreelance
 
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.repository.InMemorySupportDeskRepository
+import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
@@ -12,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class SupportDeskServiceTest {
     private val tokenService = SupportDeskTokenService(
@@ -69,5 +71,17 @@ class SupportDeskServiceTest {
 
         assertEquals("user-admin", device.userId)
         assertEquals("ANDROID", device.platform)
+    }
+
+    @Test
+    fun programApprovalRejectsAnyChargeDuringFreeBeta() {
+        assertFailsWith<com.requena.supportdesk.server.domain.model.ServerValidationException> {
+            service.approvedClientProgramRequest(
+                requestId = "missing-request",
+                request = ApproveClientProgramRequest(monthlyPriceCents = 1),
+                reviewedByUserId = "user-admin",
+                ownerAdminId = "user-admin",
+            )
+        }
     }
 }

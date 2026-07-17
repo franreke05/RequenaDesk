@@ -45,7 +45,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(7, dataSource.migrate())
+                assertEquals(12, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",
@@ -63,11 +63,51 @@ class PostgresMigrationIntegrationTest {
                     "client_component_entitlements",
                     "client_contacts",
                     "client_activities",
+                    "product_catalog",
+                    "client_product_subscriptions",
+                    "client_program_requests",
+                    "client_subscription_events",
+                    "business_counterparties",
+                    "business_issuer_profiles",
+                    "business_finance_categories",
+                    "business_sales_documents",
+                    "business_sales_document_lines",
+                    "business_sales_document_events",
+                    "business_finance_entries",
+                    "business_finance_entry_events",
+                    "business_file_attachments",
+                    "business_finance_entry_attachments",
+                    "business_booking_services",
+                    "business_booking_resources",
+                    "business_availability_rules",
+                    "business_availability_exceptions",
+                    "business_appointments",
+                    "business_document_folders",
+                    "business_documents",
+                    "business_document_versions",
+                    "business_document_confirmation_requests",
+                    "business_document_confirmations",
+                    "business_operations_audit_events",
+                    "business_sales_customers",
+                    "business_sales_contacts",
+                    "business_catalog_items",
+                    "business_stock_movements",
+                    "business_sales_document_counters",
+                    "business_sales_quotes",
+                    "business_sales_quote_lines",
+                    "business_sales_sales",
+                    "business_sales_sale_lines",
+                    "business_sales_audit_events",
                 ).forEach { table ->
                     assertTrue(dataSource.hasRowLevelSecurity(table), "RLS is not enabled for $table")
                 }
                 assertFalse(dataSource.hasTablePrivilege("anon", "clients", "SELECT"))
                 assertFalse(dataSource.hasTablePrivilege("authenticated", "clients", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("anon", "product_catalog", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("authenticated", "client_program_requests", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("anon", "business_finance_entries", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("authenticated", "business_appointments", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("anon", "business_sales_quotes", "SELECT"))
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
                     adminPassword = ADMIN_PASSWORD,
@@ -151,6 +191,36 @@ class PostgresMigrationIntegrationTest {
                     }
                     assertEquals(HttpStatusCode.OK, componentsResponse.status)
                     assertTrue(componentsResponse.bodyAsText().contains("\"SERVICE_SLA\""))
+
+                    val portalLogin = client.post("/auth/login") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"email":"integration@example.com","password":"$regeneratedAccessCode"}""")
+                    }
+                    assertEquals(HttpStatusCode.OK, portalLogin.status)
+                    val portalAccessToken = extractField(portalLogin.bodyAsText(), "accessToken")
+                    val programRequest = client.post("/client/program-requests") {
+                        header(HttpHeaders.Authorization, "Bearer $portalAccessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Integration program request"}""")
+                    }
+                    assertEquals(HttpStatusCode.Created, programRequest.status)
+                    val programRequestId = extractField(programRequest.bodyAsText(), "id")
+
+                    val programApproval = client.post("/admin/program-requests/$programRequestId/approve") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"monthlyPriceCents":0,"adminNote":"Integration approval"}""")
+                    }
+                    assertEquals(HttpStatusCode.OK, programApproval.status)
+                    assertTrue(programApproval.bodyAsText().contains("APPROVED"))
+
+                    val billingPreview = client.get(
+                        "/admin/clients/$clientId/billing-preview?period=${java.time.YearMonth.now()}",
+                    ) {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, billingPreview.status)
+                    assertTrue(billingPreview.bodyAsText().contains("\"totalMonthlyPriceCents\":0"))
 
                     val contactResponse = client.post("/admin/clients/$clientId/contacts") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")

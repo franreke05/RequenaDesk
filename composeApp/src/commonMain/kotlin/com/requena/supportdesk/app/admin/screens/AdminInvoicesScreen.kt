@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.ClientProgramBillingPreview
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.core.utils.toFixedString
@@ -53,6 +55,8 @@ fun AdminInvoicesScreen(
     tasksState: TasksUiState,
     state: InvoicesUiState,
     onEvent: (InvoicesUiEvent) -> Unit,
+    programBillingPreview: ClientProgramBillingPreview? = null,
+    onLoadProgramBillingPreview: (clientId: String, period: String) -> Unit = { _, _ -> },
     preselectedClientId: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -77,6 +81,8 @@ fun AdminInvoicesScreen(
                 tasksState = tasksState,
                 state = state,
                 preselectedClientId = preselectedClientId,
+                programBillingPreview = programBillingPreview,
+                onLoadProgramBillingPreview = onLoadProgramBillingPreview,
                 onCancel = { showInvoiceForm = false },
                 onGenerate = { input -> onEvent(InvoicesUiEvent.GenerateInvoice(input)) },
             )
@@ -200,6 +206,8 @@ private fun InvoiceForm(
     tasksState: TasksUiState,
     state: InvoicesUiState,
     preselectedClientId: String?,
+    programBillingPreview: ClientProgramBillingPreview?,
+    onLoadProgramBillingPreview: (clientId: String, period: String) -> Unit,
     onCancel: () -> Unit,
     onGenerate: (CreateInvoiceInput) -> Unit,
 ) {
@@ -216,6 +224,19 @@ private fun InvoiceForm(
     var notes by remember { mutableStateOf("") }
 
     val selectedClient = clients.firstOrNull { it.id == selectedClientId }
+    val programBillingPeriod = issuedAt.take(7).takeIf { it.length == 7 }
+    val programPreviewForSelection = programBillingPreview
+        ?.takeIf { it.clientId == selectedClientId && it.period == programBillingPeriod }
+    val programLines = programPreviewForSelection?.lines.orEmpty()
+    val programLinesAlreadyAdded = programLines.isNotEmpty() && programLines.all { line ->
+        activities.any { activity -> activity.detail == programInvoiceDetail(line.productKey, programBillingPeriod) }
+    }
+
+    LaunchedEffect(selectedClientId, programBillingPeriod) {
+        if (selectedClientId.isNotBlank() && programBillingPeriod != null) {
+            onLoadProgramBillingPreview(selectedClientId, programBillingPeriod)
+        }
+    }
     val clientTasks = tasksState.tasks.filter { it.clientId == selectedClientId }
     val selectedTasks = clientTasks.filter { it.id in selectedTaskIds }
     val availableTasks = clientTasks.filter { it.id !in selectedTaskIds }
@@ -328,6 +349,59 @@ private fun InvoiceForm(
                         },
                         fullWidth = true,
                     )
+                }
+            }
+
+            if (selectedClient != null) {
+                SectionCard(
+                    title = "Cuotas de programas",
+                    subtitle = "Importa las suscripciones activas como actividades de este PDF local.",
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        when {
+                            programPreviewForSelection == null -> Text(
+                                "Cargando suscripciones activas…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            programLines.isEmpty() -> Text(
+                                "Este cliente no tiene programas activos para este periodo.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            else -> {
+                                programLines.forEach { line ->
+                                    Text(
+                                        "${line.name}: ${formatProgramEuro(line.monthlyPriceCents)} / mes",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                SecondaryButton(
+                                    text = if (programLinesAlreadyAdded) {
+                                        "Cuotas de programas añadidas"
+                                    } else {
+                                        "Añadir cuotas de programas"
+                                    },
+                                    enabled = !programLinesAlreadyAdded,
+                                    onClick = {
+                                        programLines.forEach { line ->
+                                            activities += InvoiceActivityDraft(
+                                                id = nextActivityId,
+                                                description = "Cuota mensual · ${line.name}",
+                                                detail = programInvoiceDetail(line.productKey, programBillingPeriod),
+                                                quantity = "1",
+                                                unitPrice = centsToInvoiceInput(line.monthlyPriceCents),
+                                            )
+                                            nextActivityId += 1
+                                        }
+                                    },
+                                    fullWidth = true,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -617,6 +691,13 @@ private fun taskSelectorLabel(
 }
 
 private fun formatEuro(value: Double): String = "${value.toFixedString(2).replace('.', ',')} EUR"
+
+private fun formatProgramEuro(cents: Long): String = "${cents / 100},${(cents % 100).toString().padStart(2, '0')} €"
+
+private fun centsToInvoiceInput(cents: Long): String = "${cents / 100}.${(cents % 100).toString().padStart(2, '0')}"
+
+private fun programInvoiceDetail(productKey: String, period: String?): String =
+    "Programa $productKey · cuota ${period.orEmpty()}"
 
 private fun String.toInvoiceDecimalOrNull(): Double? = trim().replace(',', '.').toDoubleOrNull()
 

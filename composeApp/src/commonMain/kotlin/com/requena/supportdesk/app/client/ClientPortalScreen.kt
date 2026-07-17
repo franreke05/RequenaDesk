@@ -9,7 +9,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,17 +37,22 @@ import com.requena.supportdesk.app.client.screens.ClientActivityScreen
 import com.requena.supportdesk.app.client.screens.ClientBoardScreen
 import com.requena.supportdesk.app.client.screens.ClientHomeScreen
 import com.requena.supportdesk.app.client.screens.ClientNewTicketScreen
+import com.requena.supportdesk.app.client.screens.ClientProgramsScreen
+import com.requena.supportdesk.app.client.screens.ClientSettingsScreen
 import com.requena.supportdesk.app.client.screens.ClientServiceScreen
 import com.requena.supportdesk.app.client.screens.ClientTasksScreen
 import com.requena.supportdesk.app.client.screens.ClientTicketsScreen
 import com.requena.supportdesk.app.client.screens.ClientWorkScreen
+import com.requena.supportdesk.app.client.screens.business.ClientBusinessProgramWorkspace
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.ClientPortalComponent
+import com.requena.supportdesk.core.model.ClientProgramSubscriptionStatus
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
+import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
@@ -61,6 +64,14 @@ import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
+import com.requena.supportdesk.features.programs.presentation.event.ProgramsUiEvent
+import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiState
+import com.requena.supportdesk.features.business.finance.presentation.BusinessAccountingViewModel
+import com.requena.supportdesk.features.business.finance.presentation.BusinessInvoicingViewModel
+import com.requena.supportdesk.features.business.operations.OperationsViewModel
+import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
+import com.requena.supportdesk.features.business.sales.presentation.BusinessCustomersViewModel
+import com.requena.supportdesk.features.business.sales.presentation.BusinessQuotesViewModel
 import kotlinx.coroutines.delay
 import com.composables.icons.lucide.Activity
 import com.composables.icons.lucide.Columns3
@@ -70,12 +81,13 @@ import com.composables.icons.lucide.House
 import com.composables.icons.lucide.ListTodo
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Ticket
+import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.UserRound
 
 const val ClientDailyUrgentLimit = 3
 const val ClientDailyTaskLimit = 5
 
-enum class ClientDestination { HOME, WORK, NEW_TICKET, SERVICE, ACCOUNT, TICKETS, TASKS, BOARD, ACTIVITY }
+enum class ClientDestination { HOME, WORK, PROGRAMS, BUSINESS_PROGRAM, ACCOUNT, SETTINGS, NEW_TICKET, SERVICE, TICKETS, TASKS, BOARD, ACTIVITY }
 
 data class ClientActivityItem(
     val ticketSubject: String,
@@ -92,9 +104,9 @@ enum class ClientActivityType { CREATED, STATUS_CHANGE, TIME_LOGGED, RESOLVED, C
 private val clientNavItems = listOf(
     NavigationItemSpec(ClientDestination.HOME, "Inicio", "Vista general", Lucide.House),
     NavigationItemSpec(ClientDestination.WORK, "Trabajo", "Tareas y solicitudes", Lucide.ListTodo),
-    NavigationItemSpec(ClientDestination.NEW_TICKET, "Solicitar", "Pedir ayuda", Lucide.Plus),
-    NavigationItemSpec(ClientDestination.SERVICE, "Servicio", "Soporte y SLA", Lucide.Headphones),
+    NavigationItemSpec(ClientDestination.PROGRAMS, "Programas", "Utilidades para tu equipo", Lucide.Columns3),
     NavigationItemSpec(ClientDestination.ACCOUNT, "Cuenta", "Plan y acceso", Lucide.UserRound),
+    NavigationItemSpec(ClientDestination.SETTINGS, "Ajustes", "Privacidad y suscripción", Lucide.Settings),
 )
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -217,6 +229,14 @@ fun ClientPortalScreen(
     onSignOut: () -> Unit,
     tasksState: TasksUiState = TasksUiState(),
     onTasksEvent: (TasksUiEvent) -> Unit = {},
+    programsState: ProgramsUiState = ProgramsUiState(),
+    onProgramsEvent: (ProgramsUiEvent) -> Unit = {},
+    businessInvoicingViewModel: BusinessInvoicingViewModel? = null,
+    businessAccountingViewModel: BusinessAccountingViewModel? = null,
+    operationsViewModel: OperationsViewModel? = null,
+    businessCustomersViewModel: BusinessCustomersViewModel? = null,
+    businessCatalogViewModel: BusinessCatalogViewModel? = null,
+    businessQuotesViewModel: BusinessQuotesViewModel? = null,
     clientId: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -253,17 +273,15 @@ fun ClientPortalScreen(
         }
     }
     var destination by remember { mutableStateOf(ClientDestination.HOME) }
+    var activeBusinessProgramKey by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(clientId) {
         onTasksEvent(TasksUiEvent.SelectDashboardClient(clientId))
     }
     val portalTickets = state.allTickets.ifEmpty { state.tickets }
     val clientTasks = tasksState.dashboardClientTasks
-    val todayTaskCount = remember(clientTasks, today) {
-        clientTasks.count { (it.dueDate ?: it.createdAt.take(10)) == today }
-    }
-    val todayTasksDone = remember(clientTasks, today) {
-        clientTasks.count { it.completed && (it.dueDate ?: it.createdAt.take(10)) == today }
+    val todayTasks = remember(clientTasks, today) {
+        clientTasks.filter { (it.dueDate ?: it.createdAt.take(10)) == today }
     }
 
     val todayUrgentCount = remember(portalTickets, today) {
@@ -315,13 +333,14 @@ fun ClientPortalScreen(
                     allTickets = portalTickets,
                     openCount = openCount,
                     monthlyMinutes = monthlyMinutes,
-                    todayUrgentCount = todayUrgentCount,
-                    todayTaskCount = todayTaskCount,
-                    todayTasksDone = todayTasksDone,
+                    todayTasks = todayTasks,
                     recentTickets = portalTickets.sortedByDescending { it.updatedAt }.take(3),
                     isLoading = state.isLoading,
                     errorMessage = state.errorMessage,
                     hasServiceSla = hasServiceSla,
+                    activeProgramCount = programsState.overview.subscriptions.count {
+                        it.status == ClientProgramSubscriptionStatus.ACTIVE
+                    },
                     onNavigate = { destination = it },
                 )
                 ClientDestination.WORK -> ClientWorkScreen(
@@ -329,6 +348,41 @@ fun ClientPortalScreen(
                     tasks = clientTasks,
                     onNavigate = { destination = it },
                 )
+                ClientDestination.PROGRAMS -> ClientProgramsScreen(
+                    state = programsState,
+                    onEvent = onProgramsEvent,
+                    onOpenProgram = { programKey ->
+                        activeBusinessProgramKey = programKey
+                        destination = ClientDestination.BUSINESS_PROGRAM
+                    },
+                )
+                ClientDestination.BUSINESS_PROGRAM -> {
+                    val key = activeBusinessProgramKey
+                    if (
+                        key != null &&
+                        businessInvoicingViewModel != null &&
+                        businessAccountingViewModel != null &&
+                        operationsViewModel != null &&
+                        businessCustomersViewModel != null &&
+                        businessCatalogViewModel != null &&
+                        businessQuotesViewModel != null
+                    ) {
+                        ClientBusinessProgramWorkspace(
+                            programKey = key,
+                            invoicingViewModel = businessInvoicingViewModel,
+                            accountingViewModel = businessAccountingViewModel,
+                            operationsViewModel = operationsViewModel,
+                            customersViewModel = businessCustomersViewModel,
+                            catalogViewModel = businessCatalogViewModel,
+                            quotesViewModel = businessQuotesViewModel,
+                            onBack = { destination = ClientDestination.PROGRAMS },
+                        )
+                    } else {
+                        ClientProgramWorkspaceUnavailable(
+                            onBack = { destination = ClientDestination.PROGRAMS },
+                        )
+                    }
+                }
                 ClientDestination.NEW_TICKET -> ClientNewTicketScreen(
                     clientId = clientId,
                     urgentToday = todayUrgentCount,
@@ -379,6 +433,14 @@ fun ClientPortalScreen(
                     onRefresh = onRefresh,
                     onSignOut = onSignOut,
                 )
+                ClientDestination.SETTINGS -> ClientSettingsScreen(
+                    activeProgramCount = programsState.overview.subscriptions.count {
+                        it.status == ClientProgramSubscriptionStatus.ACTIVE
+                    },
+                    onManagePrograms = { destination = ClientDestination.PROGRAMS },
+                    onOpenAccount = { destination = ClientDestination.ACCOUNT },
+                    onContactSupport = { destination = ClientDestination.NEW_TICKET },
+                )
             }
         }
     }
@@ -393,6 +455,7 @@ fun ClientPortalScreen(
                 ClientCompactHeader(
                     companyName = displayCompany,
                     contactName = displayContact,
+                    onRequestHelp = { destination = ClientDestination.NEW_TICKET },
                     onRefresh = onRefresh,
                     onSignOut = onSignOut,
                 )
@@ -412,6 +475,12 @@ fun ClientPortalScreen(
                     onSelect = { destination = it },
                     footer = {
                         ThemeModeButton()
+                        PrimaryButton(
+                            text = "Solicitar ayuda",
+                            icon = Lucide.Plus,
+                            fullWidth = true,
+                            onClick = { destination = ClientDestination.NEW_TICKET },
+                        )
                         SecondaryButton(text = "Actualizar", onClick = onRefresh)
                         SecondaryButton(text = "Salir", onClick = onSignOut)
                     },
@@ -423,9 +492,27 @@ fun ClientPortalScreen(
 }
 
 @Composable
+private fun ClientProgramWorkspaceUnavailable(onBack: () -> Unit) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Column(
+        modifier = Modifier.fillMaxSize().padding(spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(spacing.md),
+    ) {
+        Text("El programa se está preparando", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Actualiza el portal o vuelve al catálogo para comprobar su estado.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SecondaryButton(text = "Volver a programas", onClick = onBack)
+    }
+}
+
+@Composable
 private fun ClientCompactHeader(
     companyName: String,
     contactName: String,
+    onRequestHelp: () -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -454,6 +541,12 @@ private fun ClientCompactHeader(
                 }
                 ThemeModeButton()
             }
+            PrimaryButton(
+                text = "Solicitar ayuda",
+                icon = Lucide.Plus,
+                fullWidth = true,
+                onClick = onRequestHelp,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -482,34 +575,38 @@ private fun ClientCompactNavigation(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = spacing.md, vertical = spacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         clientNavItems.forEach { item ->
             val isSelected = item.key == selected
             Surface(
-                modifier = Modifier.clickable { onSelect(item.key) },
+                modifier = Modifier.weight(1f).clickable { onSelect(item.key) },
                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                 ) {
                     item.icon?.let { icon ->
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally),
                             tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
                         text = item.title,
-                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                         color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 }
             }

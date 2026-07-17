@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.ClientActivityItem
 import com.requena.supportdesk.app.client.ClientActivityType
 import com.requena.supportdesk.app.client.isoDateMinus
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
@@ -80,14 +81,10 @@ fun ClientActivityScreen(activityItems: List<ClientActivityItem>) {
         modifier = Modifier.fillMaxSize().padding(spacing.xl),
         verticalArrangement = Arrangement.spacedBy(spacing.xl),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Actividad", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Historial de eventos de tus tickets",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ClientPortalPageHeader(
+            title = "Actividad",
+            subtitle = "Historial de eventos de tus tickets.",
+        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
             listOf(null to "Todo", "week" to "Esta semana", "month" to "Este mes").forEach { (key, label) ->

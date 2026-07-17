@@ -32,3 +32,6 @@ V6 adds internal client contacts and follow-up activities, while dedicated `/cli
 
 ## 2026-07-17 - V7 establishes the Supabase public-schema security baseline
 The explicit security request reopens migrations solely for security. V7 enables RLS on every live application table and removes direct `anon`, `authenticated` and `PUBLIC` access to public tables, views, sequences and functions. The app uses its own Ktor JWT authentication rather than Supabase Auth, so it intentionally defines no browser-facing RLS policies; all application access remains through Ktor's backend database role.
+
+## 2026-07-17 - Client programs use a server-authorized manual subscription flow
+V8 adds a catalog, client requests, subscriptions and audit events. The client can request a program but never sets the authoritative price or activates access. An administrator approves with an explicit EUR cents price, and the active monthly amount may be imported only as a suggested line into the existing local PDF invoice flow. This is not payment processing and does not persist invoices remotely.

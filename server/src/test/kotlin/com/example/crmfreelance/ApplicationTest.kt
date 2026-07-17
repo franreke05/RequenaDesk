@@ -18,6 +18,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -148,6 +149,126 @@ class ApplicationTest {
 
         val adminResponse = client.get("/client/profile") { bearer(client.accessToken()) }
         assertEquals(HttpStatusCode.Forbidden, adminResponse.status)
+    }
+
+    @Test
+    fun testClientCanRequestProgramsAndAdminCanApproveOrRejectThem() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+        val adminToken = client.accessToken()
+
+        val catalog = client.get("/client/programs") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.OK, catalog.status)
+        assertTrue(catalog.bodyAsText().contains("\"BUSINESS_QUOTES\""))
+        assertTrue(catalog.bodyAsText().contains("\"BUSINESS_INVOICING\""))
+
+        val requestResponse = client.post("/client/program-requests") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Necesitamos presupuestos compartidos"}""")
+        }
+        assertEquals(HttpStatusCode.Created, requestResponse.status)
+        val requestId = extractField(requestResponse.bodyAsText(), "id")
+        assertTrue(requestResponse.bodyAsText().contains("REQUESTED"))
+        assertTrue(!requestResponse.bodyAsText().contains("clientCompanyName"))
+
+        val queue = client.get("/admin/program-requests?status=REQUESTED") { bearer(adminToken) }
+        assertEquals(HttpStatusCode.OK, queue.status)
+        assertTrue(queue.bodyAsText().contains(requestId))
+        assertTrue(queue.bodyAsText().contains("clientCompanyName"))
+
+        val approval = client.post("/admin/program-requests/$requestId/approve") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"monthlyPriceCents":0,"adminNote":"Activado para la beta"}""")
+        }
+        assertEquals(HttpStatusCode.OK, approval.status)
+        assertTrue(approval.bodyAsText().contains("APPROVED"))
+        assertTrue(approval.bodyAsText().contains("0"))
+
+        val clientPrograms = client.get("/client/programs") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.OK, clientPrograms.status)
+        assertTrue(clientPrograms.bodyAsText().contains("\"productKey\":\"BUSINESS_QUOTES\""))
+        assertTrue(clientPrograms.bodyAsText().contains("\"status\":\"ACTIVE\""))
+
+        val billingPreview = client.get(
+            "/admin/clients/client-1/billing-preview?period=${YearMonth.now()}",
+        ) { bearer(adminToken) }
+        assertEquals(HttpStatusCode.OK, billingPreview.status)
+        assertTrue(billingPreview.bodyAsText().contains("\"totalMonthlyPriceCents\":0"))
+
+        val secondRequest = client.post("/client/program-requests") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Solicitud repetida"}""")
+        }
+        assertEquals(HttpStatusCode.Conflict, secondRequest.status)
+    }
+
+    @Test
+    fun testAdminCannotDecideAnotherAdminsProgramRequest() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+        val request = client.post("/client/program-requests") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Revisión de aislamiento"}""")
+        }
+        assertEquals(HttpStatusCode.Created, request.status)
+        val requestId = extractField(request.bodyAsText(), "id")
+
+        val otherAdminToken = client.accessToken(
+            email = "admin2@orykai.dev",
+            password = "UnitTestAdminPassword2",
+        )
+        val reject = client.post("/admin/program-requests/$requestId/reject") {
+            bearer(otherAdminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"adminNote":"No pertenece a esta cartera"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, reject.status)
+
+        val clientQueueAttempt = client.get("/admin/program-requests") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.Forbidden, clientQueueAttempt.status)
+    }
+
+    @Test
+    fun testProgramApprovalOnlyAllowsFreeBetaAuthorization() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+        val adminToken = client.accessToken()
+        val requestResponse = client.post("/client/program-requests") {
+            bearer(clientToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Necesitamos una plantilla"}""")
+        }
+        assertEquals(HttpStatusCode.Created, requestResponse.status)
+        val requestId = extractField(requestResponse.bodyAsText(), "id")
+
+        val chargedApproval = client.post("/admin/program-requests/$requestId/approve") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"monthlyPriceCents":1}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, chargedApproval.status)
+
+        val freeApproval = client.post("/admin/program-requests/$requestId/approve") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"monthlyPriceCents":0,"adminNote":"Autorizado para prueba"}""")
+        }
+        assertEquals(HttpStatusCode.OK, freeApproval.status)
+        assertTrue(freeApproval.bodyAsText().contains("APPROVED"))
+        assertTrue(freeApproval.bodyAsText().contains("\"quotedMonthlyPriceCents\":0"))
     }
 
     @Test

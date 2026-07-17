@@ -86,6 +86,8 @@ import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
+import com.requena.supportdesk.features.programs.presentation.event.ProgramsUiEvent
+import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiState
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
 
@@ -96,6 +98,7 @@ enum class ClientTab(val label: String) {
     TICKETS("Tickets"),
     FACTURAS("Facturas"),
     COMPONENTES("Componentes"),
+    PROGRAMAS("Programas"),
     CREDENCIALES("Credenciales"),
     NOTAS("Notas"),
 }
@@ -121,9 +124,11 @@ fun AdminClientsScreen(
     state: ClientsUiState,
     tasksState: TasksUiState,
     ticketsState: TicketsUiState,
+    programsState: ProgramsUiState,
     currentAdminId: String,
     currentAdminName: String,
     onEvent: (ClientsUiEvent) -> Unit,
+    onProgramsEvent: (ProgramsUiEvent) -> Unit,
     onNavigateToInvoices: (clientId: String) -> Unit,
     onNavigateToLabels: () -> Unit,
     modifier: Modifier = Modifier,
@@ -163,11 +168,13 @@ fun AdminClientsScreen(
                             tasks = tasksState.tasks,
                             categories = tasksState.categories,
                             tickets = ticketsState.allTickets,
+                            programsState = programsState,
                             currentAdminId = currentAdminId,
                             currentAdminName = currentAdminName,
                             isLoading = state.isLoading,
                             generatedCredentials = state.generatedCredentials,
                             onEvent = onEvent,
+                            onProgramsEvent = onProgramsEvent,
                             onEditClient = { editingClient = selectedClient },
                             onRegenerateCredentials = { clientId ->
                                 onEvent(ClientsUiEvent.RegenerateClientCredentials(clientId))
@@ -412,11 +419,13 @@ private fun ClientDetailPanel(
     tasks: List<WorkTask>,
     categories: List<TaskCategory>,
     tickets: List<Ticket>,
+    programsState: ProgramsUiState,
     currentAdminId: String,
     currentAdminName: String,
     isLoading: Boolean,
     generatedCredentials: ClientAccessCredentials?,
     onEvent: (ClientsUiEvent) -> Unit,
+    onProgramsEvent: (ProgramsUiEvent) -> Unit,
     onEditClient: () -> Unit,
     onRegenerateCredentials: (clientId: String) -> Unit,
     onUpdateComponents: (clientId: String, components: Set<ClientPortalComponent>) -> Unit,
@@ -478,6 +487,11 @@ private fun ClientDetailPanel(
                     client = client,
                     isLoading = isLoading,
                     onUpdate = { components -> onUpdateComponents(client.id, components) },
+                )
+                ClientTab.PROGRAMAS -> ClientProgramsAdministrationTab(
+                    client = client,
+                    state = programsState,
+                    onEvent = onProgramsEvent,
                 )
                 ClientTab.CREDENCIALES -> ClientCredentialsTab(
                     client = client,

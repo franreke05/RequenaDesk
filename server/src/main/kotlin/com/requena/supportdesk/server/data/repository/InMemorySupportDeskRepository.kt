@@ -3,6 +3,7 @@ package com.requena.supportdesk.server.data.repository
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.mapper.SupportDeskMapper
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.ServerConflictException
@@ -21,6 +22,12 @@ import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
 import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
+import com.requena.supportdesk.server.domain.model.ServerClientProgramsSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProductSubscriptionSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot
+import com.requena.supportdesk.server.domain.model.ServerBillingPreviewLineSnapshot
+import com.requena.supportdesk.server.domain.model.ServerProductCatalogSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
@@ -35,6 +42,8 @@ import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
+import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
+import com.requena.supportdesk.server.domain.model.RejectClientProgramRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -85,9 +94,29 @@ class InMemorySupportDeskRepository(
         "client-1" to "user-admin",
         "client-2" to "user-admin-2",
     )
+
+    private data class LocalProgramSubscription(
+        val clientId: String,
+        val snapshot: ServerClientProductSubscriptionSnapshot,
+    )
     private val clientComponents = mutableMapOf(
         "client-1" to mutableSetOf("SERVICE_SLA"),
     )
+    private val productCatalog = businessBetaCatalog()
+    private val programSubscriptions = mutableListOf(
+        LocalProgramSubscription(
+            clientId = "client-1",
+            snapshot = ServerClientProductSubscriptionSnapshot(
+                productKey = "SERVICE_SLA",
+                status = "ACTIVE",
+                monthlyPriceCents = 0,
+                currency = "EUR",
+                startsOn = "2026-01-01",
+            ),
+        ),
+    )
+    private val programRequests = mutableListOf<ServerClientProgramRequestSnapshot>()
+    private val subscriptionAudit = mutableListOf<String>()
     private val clientContacts = mutableListOf<ServerClientContactSnapshot>()
     private val clientActivities = mutableListOf<ServerClientActivitySnapshot>()
     private val labels = mutableListOf(
@@ -426,6 +455,8 @@ class InMemorySupportDeskRepository(
         }
         clientContacts.removeAll { it.clientId == clientId }
         clientActivities.removeAll { it.clientId == clientId }
+        programSubscriptions.removeAll { it.clientId == clientId }
+        programRequests.removeAll { it.clientId == clientId }
     }
 
     override fun getClientContacts(clientId: String, ownerAdminId: String?): List<ServerClientContactSnapshot> {
@@ -573,9 +604,148 @@ class InMemorySupportDeskRepository(
     ): ServerClientSnapshot {
         val index = requireClientIndex(clientId, ownerAdminId)
         clientComponents[clientId] = request.components.toMutableSet()
+        syncLegacyServiceSubscription(clientId, request.components.contains("SERVICE_SLA"))
         val updated = clients[index].copy(enabledComponents = request.components.distinct().sorted())
         clients[index] = updated
         return updated
+    }
+
+    override fun getClientPrograms(clientId: String): ServerClientProgramsSnapshot {
+        requireClientIndex(clientId)
+        return ServerClientProgramsSnapshot(
+            catalog = productCatalog.sortedBy { it.key },
+            subscriptions = programSubscriptions
+                .filter { it.clientId == clientId }
+                .map { it.snapshot }
+                .sortedBy { it.productKey },
+            requests = programRequests
+                .filter { it.clientId == clientId }
+                .sortedByDescending { it.requestedAt },
+        )
+    }
+
+    override fun createClientProgramRequests(
+        clientId: String,
+        requestedByUserId: String,
+        request: CreateClientProgramRequestsRequest,
+    ): List<ServerClientProgramRequestSnapshot> {
+        val clientIndex = requireClientIndex(clientId)
+        if (clients[clientIndex].accountStatus != "ACTIVE") {
+            throw ServerConflictException("Client account must be active to request a program")
+        }
+        val requester = adminAccounts.firstOrNull { it.userId == requestedByUserId && it.clientId == clientId }
+            ?: throw ServerNotFoundException("Client portal user not found")
+        val normalizedNote = request.customerNote.trim().takeIf(String::isNotBlank)
+        val now = Instant.now().toString()
+        return request.productKeys.map { rawKey ->
+            val productKey = rawKey.trim().uppercase()
+            val product = productCatalog.firstOrNull { it.key == productKey && it.isAvailable && it.isRequestable }
+                ?: throw ServerNotFoundException("Program is not available")
+            if (programSubscriptions.any { it.clientId == clientId && it.snapshot.productKey == product.key && it.snapshot.status == "ACTIVE" }) {
+                throw ServerConflictException("Program is already active")
+            }
+            if (programRequests.any { it.clientId == clientId && it.productKey == product.key && it.status == "REQUESTED" }) {
+                throw ServerConflictException("Program request is already pending")
+            }
+            ServerClientProgramRequestSnapshot(
+                id = "program-request-${programRequests.size + 1}",
+                clientId = clientId,
+                clientCompanyName = clients[clientIndex].companyName,
+                productKey = product.key,
+                status = "REQUESTED",
+                customerNote = normalizedNote,
+                requestedByName = requester.name,
+                requestedAt = now,
+                currency = "EUR",
+            ).also {
+                programRequests.add(it)
+                subscriptionAudit.add("REQUESTED:${it.id}")
+            }
+        }
+    }
+
+    override fun getClientProgramRequests(
+        ownerAdminId: String,
+        status: String?,
+    ): List<ServerClientProgramRequestSnapshot> = programRequests
+        .asSequence()
+        .filter { clientOwners[it.clientId] == ownerAdminId }
+        .filter { status == null || it.status == status }
+        .sortedBy { it.requestedAt }
+        .toList()
+
+    override fun approveClientProgramRequest(
+        requestId: String,
+        request: ApproveClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot {
+        val requestIndex = requireProgramRequestIndex(requestId, ownerAdminId)
+        val current = programRequests[requestIndex]
+        if (current.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
+        val now = Instant.now().toString()
+        val approved = current.copy(
+            status = "APPROVED",
+            adminNote = request.adminNote?.trim()?.takeIf(String::isNotBlank),
+            decidedAt = now,
+            quotedMonthlyPriceCents = 0,
+        )
+        programRequests[requestIndex] = approved
+        upsertProgramSubscription(
+            clientId = current.clientId,
+            productKey = current.productKey,
+            monthlyPriceCents = 0,
+            startsOn = now.take(10),
+        )
+        subscriptionAudit.add("APPROVED:$requestId:$reviewedByUserId")
+        return approved
+    }
+
+    override fun rejectClientProgramRequest(
+        requestId: String,
+        request: RejectClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ): ServerClientProgramRequestSnapshot {
+        val requestIndex = requireProgramRequestIndex(requestId, ownerAdminId)
+        val current = programRequests[requestIndex]
+        if (current.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
+        val rejected = current.copy(
+            status = "REJECTED",
+            adminNote = request.adminNote?.trim()?.takeIf(String::isNotBlank),
+            decidedAt = Instant.now().toString(),
+        )
+        programRequests[requestIndex] = rejected
+        subscriptionAudit.add("REJECTED:$requestId:$reviewedByUserId")
+        return rejected
+    }
+
+    override fun getClientBillingPreview(
+        clientId: String,
+        period: String,
+        ownerAdminId: String,
+    ): ServerClientBillingPreviewSnapshot {
+        requireClientIndex(clientId, ownerAdminId)
+        val lines = programSubscriptions
+            .filter { it.clientId == clientId && it.snapshot.status == "ACTIVE" && it.snapshot.monthlyPriceCents > 0 }
+            .mapNotNull { subscription ->
+                productCatalog.firstOrNull { it.key == subscription.snapshot.productKey }?.let { product ->
+                    ServerBillingPreviewLineSnapshot(
+                        productKey = product.key,
+                        name = product.name,
+                        monthlyPriceCents = subscription.snapshot.monthlyPriceCents,
+                        currency = "EUR",
+                    )
+                }
+            }
+            .sortedBy { it.productKey }
+        return ServerClientBillingPreviewSnapshot(
+            clientId = clientId,
+            period = period,
+            lines = lines,
+            totalMonthlyPriceCents = lines.sumOf { it.monthlyPriceCents },
+            currency = "EUR",
+        )
     }
 
     override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = labels
@@ -788,6 +958,49 @@ class InMemorySupportDeskRepository(
         }
     }
 
+    private fun requireProgramRequestIndex(requestId: String, ownerAdminId: String): Int =
+        programRequests.indexOfFirst { it.id == requestId && clientOwners[it.clientId] == ownerAdminId }
+            .takeIf { it >= 0 } ?: throw ServerNotFoundException("Program request not found")
+
+    private fun upsertProgramSubscription(
+        clientId: String,
+        productKey: String,
+        monthlyPriceCents: Long,
+        startsOn: String,
+    ) {
+        val index = programSubscriptions.indexOfFirst {
+            it.clientId == clientId && it.snapshot.productKey == productKey
+        }
+        val updated = LocalProgramSubscription(
+            clientId = clientId,
+            snapshot = ServerClientProductSubscriptionSnapshot(
+                productKey = productKey,
+                status = "ACTIVE",
+                monthlyPriceCents = monthlyPriceCents,
+                currency = "EUR",
+                startsOn = startsOn,
+            ),
+        )
+        if (index >= 0) programSubscriptions[index] = updated else programSubscriptions.add(updated)
+    }
+
+    private fun syncLegacyServiceSubscription(clientId: String, isEnabled: Boolean) {
+        val index = programSubscriptions.indexOfFirst {
+            it.clientId == clientId && it.snapshot.productKey == "SERVICE_SLA"
+        }
+        val current = programSubscriptions.getOrNull(index)?.snapshot
+        val updated = ServerClientProductSubscriptionSnapshot(
+            productKey = "SERVICE_SLA",
+            status = if (isEnabled) "ACTIVE" else "CANCELLED",
+            monthlyPriceCents = current?.monthlyPriceCents ?: 0,
+            currency = "EUR",
+            startsOn = current?.startsOn ?: Instant.now().toString().take(10),
+            endsOn = if (isEnabled) null else Instant.now().toString().take(10),
+        )
+        val value = LocalProgramSubscription(clientId, updated)
+        if (index >= 0) programSubscriptions[index] = value else programSubscriptions.add(value)
+    }
+
     private fun String?.normalizedOptionalText(): String? =
         this?.trim()?.takeIf(String::isNotBlank)
 
@@ -795,3 +1008,82 @@ class InMemorySupportDeskRepository(
         if (this == null) current else normalizedOptionalText()
 
 }
+
+private fun businessBetaCatalog(): List<ServerProductCatalogSnapshot> = listOf(
+    businessBetaProgram(
+        key = "BUSINESS_INVOICING",
+        name = "Facturación",
+        description = "Crea borradores y documentos comerciales durante la beta.",
+        category = "Finanzas",
+        iconKey = "receipt-text",
+        capabilities = listOf("invoice_drafts", "invoice_lines", "payment_status"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_ACCOUNTING",
+        name = "Contabilidad y gastos",
+        description = "Registra gastos, categorías y control interno de caja.",
+        category = "Finanzas",
+        iconKey = "landmark",
+        capabilities = listOf("expenses", "categories", "cash_summary"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_CUSTOMERS",
+        name = "Clientes y contactos",
+        description = "Centraliza empresas, contactos y notas comerciales.",
+        category = "Ventas",
+        iconKey = "users",
+        capabilities = listOf("companies", "contacts", "notes"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_QUOTES",
+        name = "Presupuestos y ventas",
+        description = "Prepara presupuestos con líneas y seguimiento.",
+        category = "Ventas",
+        iconKey = "file-text",
+        capabilities = listOf("quote_drafts", "quote_lines", "sales_pipeline"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_CATALOG",
+        name = "Productos, servicios y stock",
+        description = "Gestiona catálogo, precios y existencias básicas.",
+        category = "Operaciones",
+        iconKey = "package",
+        capabilities = listOf("products", "services", "stock_levels"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_BOOKINGS",
+        name = "Agenda y reservas",
+        description = "Organiza citas, reservas y disponibilidad.",
+        category = "Operaciones",
+        iconKey = "calendar-days",
+        capabilities = listOf("appointments", "availability", "booking_status"),
+    ),
+    businessBetaProgram(
+        key = "BUSINESS_DOCUMENTS",
+        name = "Documentos y firmas",
+        description = "Controla documentos, versiones y aceptaciones.",
+        category = "Operaciones",
+        iconKey = "file-signature",
+        capabilities = listOf("document_drafts", "versions", "signature_requests"),
+    ),
+)
+
+private fun businessBetaProgram(
+    key: String,
+    name: String,
+    description: String,
+    category: String,
+    iconKey: String,
+    capabilities: List<String>,
+) = ServerProductCatalogSnapshot(
+    key = key,
+    name = name,
+    shortDescription = description,
+    category = category,
+    iconKey = iconKey,
+    monthlyPriceCents = 0,
+    currency = "EUR",
+    isRequestable = true,
+    isAvailable = true,
+    capabilities = capabilities,
+)

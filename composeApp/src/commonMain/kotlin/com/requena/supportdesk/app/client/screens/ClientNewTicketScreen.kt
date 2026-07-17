@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.ClientDailyUrgentLimit
 import com.requena.supportdesk.app.client.ClientNotice
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
 import com.requena.supportdesk.core.model.SupportPlatform
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketPriority
@@ -55,7 +56,7 @@ import com.requena.supportdesk.designsystem.components.badges.TicketCategoryBadg
 import com.requena.supportdesk.designsystem.components.badges.TicketPriorityBadge
 import com.requena.supportdesk.designsystem.components.badges.TicketStatusBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
+import com.requena.supportdesk.app.client.components.ClientPortalSectionCard as SectionCard
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
@@ -96,14 +97,10 @@ fun ClientNewTicketScreen(
 
     // Shared form content — called in both wide (left col) and narrow (single col) layouts
     val formContent: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Nuevo ticket", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Máximo $ClientDailyUrgentLimit tickets urgentes por día.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ClientPortalPageHeader(
+            title = "Nuevo ticket",
+            subtitle = "Máximo $ClientDailyUrgentLimit tickets urgentes por día.",
+        )
         val rem = ClientDailyUrgentLimit - urgentToday
         SectionCard(
             modifier = Modifier.fillMaxWidth(),

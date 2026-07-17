@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.badges.SupportPlatformBadge
 import com.requena.supportdesk.designsystem.components.badges.TicketCategoryBadge
@@ -89,14 +90,10 @@ fun ClientBoardScreen(
             .padding(spacing.xl),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Tablero", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "${tickets.size} tickets · Vista kanban",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ClientPortalPageHeader(
+            title = "Tablero",
+            subtitle = "${tickets.size} tickets · Vista kanban.",
+        )
 
         when {
             isLoading && tickets.isEmpty() -> LoadingState(modifier = Modifier.fillMaxSize())

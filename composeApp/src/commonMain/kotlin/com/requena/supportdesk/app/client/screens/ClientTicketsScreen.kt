@@ -63,8 +63,8 @@ import com.requena.supportdesk.designsystem.components.badges.TicketCategoryBadg
 import com.requena.supportdesk.designsystem.components.badges.TicketPriorityBadge
 import com.requena.supportdesk.designsystem.components.badges.TicketStatusBadge
 import com.requena.supportdesk.designsystem.components.badges.WaitingOnBadge
-import com.requena.supportdesk.designsystem.components.cards.MetricCard
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
+import com.requena.supportdesk.app.client.components.ClientPortalMetric as MetricCard
+import com.requena.supportdesk.app.client.components.ClientPortalSectionCard as SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.components.inputs.FilterBar

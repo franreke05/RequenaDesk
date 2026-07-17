@@ -6,6 +6,12 @@ import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
 import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
+import com.requena.supportdesk.server.domain.model.ServerClientProgramsSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProductSubscriptionSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot
+import com.requena.supportdesk.server.domain.model.ServerProductCatalogSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot
+import com.requena.supportdesk.server.domain.model.ServerBillingPreviewLineSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
@@ -205,6 +211,90 @@ fun clientContactJson(contact: ServerClientContactSnapshot) = buildJsonObject {
 
 fun clientActivitiesJson(activities: List<ServerClientActivitySnapshot>) = buildJsonArray {
     activities.forEach { add(clientActivityJson(it)) }
+}
+
+fun clientProgramsJson(programs: ServerClientProgramsSnapshot) = buildJsonObject {
+    put("catalog", productCatalogJson(programs.catalog))
+    put("subscriptions", clientProductSubscriptionsJson(programs.subscriptions))
+    put("requests", clientProgramRequestsJson(programs.requests, includeAdminContext = false))
+}
+
+fun productCatalogJson(catalog: List<ServerProductCatalogSnapshot>) = buildJsonArray {
+    catalog.forEach { product ->
+        add(buildJsonObject {
+            put("key", product.key)
+            put("name", product.name)
+            put("shortDescription", product.shortDescription)
+            put("category", product.category)
+            put("iconKey", product.iconKey)
+            put("monthlyPriceCents", product.monthlyPriceCents)
+            put("currency", product.currency)
+            put("isRequestable", product.isRequestable)
+            put("isAvailable", product.isAvailable)
+            put("capabilities", buildJsonArray { product.capabilities.forEach { add(JsonPrimitive(it)) } })
+        })
+    }
+}
+
+fun clientProductSubscriptionsJson(subscriptions: List<ServerClientProductSubscriptionSnapshot>) = buildJsonArray {
+    subscriptions.forEach { subscription ->
+        add(buildJsonObject {
+            put("productKey", subscription.productKey)
+            put("status", subscription.status)
+            put("monthlyPriceCents", subscription.monthlyPriceCents)
+            put("currency", subscription.currency)
+            put("startsOn", subscription.startsOn)
+            put("endsOn", subscription.endsOn)
+        })
+    }
+}
+
+fun clientProgramRequestsJson(
+    requests: List<ServerClientProgramRequestSnapshot>,
+    includeAdminContext: Boolean,
+) = buildJsonArray {
+    requests.forEach { request ->
+        add(clientProgramRequestJson(request, includeAdminContext))
+    }
+}
+
+fun clientProgramRequestJson(
+    request: ServerClientProgramRequestSnapshot,
+    includeAdminContext: Boolean,
+) = buildJsonObject {
+    put("id", request.id)
+    put("productKey", request.productKey)
+    put("status", request.status)
+    put("customerNote", request.customerNote)
+    put("adminNote", request.adminNote)
+    put("requestedAt", request.requestedAt)
+    put("decidedAt", request.decidedAt)
+    put("quotedMonthlyPriceCents", request.quotedMonthlyPriceCents)
+    put("currency", request.currency)
+    if (includeAdminContext) {
+        put("clientId", request.clientId)
+        put("clientCompanyName", request.clientCompanyName)
+        put("requestedByName", request.requestedByName)
+    }
+}
+
+fun clientBillingPreviewJson(preview: ServerClientBillingPreviewSnapshot) = buildJsonObject {
+    put("clientId", preview.clientId)
+    put("period", preview.period)
+    put("lines", billingPreviewLinesJson(preview.lines))
+    put("totalMonthlyPriceCents", preview.totalMonthlyPriceCents)
+    put("currency", preview.currency)
+}
+
+private fun billingPreviewLinesJson(lines: List<ServerBillingPreviewLineSnapshot>) = buildJsonArray {
+    lines.forEach { line ->
+        add(buildJsonObject {
+            put("productKey", line.productKey)
+            put("name", line.name)
+            put("monthlyPriceCents", line.monthlyPriceCents)
+            put("currency", line.currency)
+        })
+    }
 }
 
 fun clientActivityJson(activity: ServerClientActivitySnapshot) = buildJsonObject {

@@ -1,6 +1,7 @@
 package com.requena.supportdesk.server.domain.service
 
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -18,6 +19,8 @@ import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
+import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
+import com.requena.supportdesk.server.domain.model.RejectClientProgramRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -27,6 +30,7 @@ import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 
 class SupportDeskService(
     private val repository: SupportDeskRepository,
@@ -110,6 +114,42 @@ class SupportDeskService(
 
     fun updatedClientComponents(clientId: String, request: UpdateClientComponentsRequest, ownerAdminId: String? = null) =
         repository.updateClientComponents(clientId, request, ownerAdminId)
+
+    fun clientPrograms(clientId: String) = repository.getClientPrograms(clientId)
+
+    fun createdClientProgramRequests(
+        clientId: String,
+        requestedByUserId: String,
+        request: CreateClientProgramRequestsRequest,
+    ) = repository.createClientProgramRequests(clientId, requestedByUserId, request)
+
+    fun clientProgramRequests(ownerAdminId: String, status: String? = null) =
+        repository.getClientProgramRequests(ownerAdminId, status)
+
+    fun approvedClientProgramRequest(
+        requestId: String,
+        request: ApproveClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ) : com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot {
+        if (request.monthlyPriceCents != 0L) {
+            throw ServerValidationException("Business programs are free during the beta")
+        }
+        return repository.approveClientProgramRequest(requestId, request, reviewedByUserId, ownerAdminId)
+    }
+
+    fun rejectedClientProgramRequest(
+        requestId: String,
+        request: RejectClientProgramRequest,
+        reviewedByUserId: String,
+        ownerAdminId: String,
+    ) = repository.rejectClientProgramRequest(requestId, request, reviewedByUserId, ownerAdminId)
+
+    fun clientBillingPreview(clientId: String, period: String, ownerAdminId: String) : com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot {
+        runCatching { YearMonth.parse(period) }
+            .getOrElse { throw ServerValidationException("Billing period must use YYYY-MM format") }
+        return repository.getClientBillingPreview(clientId, period, ownerAdminId)
+    }
 
     fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
 

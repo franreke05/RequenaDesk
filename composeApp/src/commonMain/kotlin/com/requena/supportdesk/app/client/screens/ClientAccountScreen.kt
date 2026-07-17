@@ -1,9 +1,9 @@
 package com.requena.supportdesk.app.client.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,22 +22,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.app.client.initials
-import com.requena.supportdesk.core.model.Ticket
-import com.requena.supportdesk.core.model.TicketStatus
+import com.requena.supportdesk.app.client.components.ClientPortalMetric
+import com.requena.supportdesk.app.client.components.ClientPortalPageHeader
+import com.requena.supportdesk.app.client.components.ClientPortalSectionTitle
+import com.requena.supportdesk.app.client.components.ClientPortalSurfaceCard
 import com.requena.supportdesk.core.model.Client
-import com.requena.supportdesk.core.model.displayName
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.Ticket
+import com.requena.supportdesk.core.model.displayName
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
-import com.requena.supportdesk.designsystem.components.cards.MetricCard
-import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 
-// ── MI CUENTA ─────────────────────────────────────────────────────────────────
-
+/** Settings-oriented account screen; operational work belongs in Inicio and Trabajo. */
 @Composable
 fun ClientAccountScreen(
     clientName: String,
@@ -50,169 +52,88 @@ fun ClientAccountScreen(
     onSignOut: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val allEntries = logs
-    val totalTickets = tickets.size
-    val resolvedTickets = remember(tickets) { tickets.count { it.status == TicketStatus.RESOLVED || it.status == TicketStatus.CLOSED } }
-    val totalMinutes = remember(allEntries) { allEntries.sumOf { it.minutes } }
     val thisMonthTickets = remember(tickets, today) { tickets.count { it.createdAt.take(7) == today.take(7) } }
-    val thisMonthMinutes = remember(allEntries, today) { allEntries.filter { it.workDate.take(7) == today.take(7) }.sumOf { it.minutes } }
-    val lastTicketDate = remember(tickets) { tickets.maxOfOrNull { it.updatedAt }?.take(10) ?: "—" }
+    val thisMonthMinutes = remember(logs, today) { logs.filter { it.workDate.take(7) == today.take(7) }.sumOf { it.minutes } }
     val initials = remember(clientName) { clientName.initials() }
+    val planName = when (client?.serviceTier?.name) {
+        "PRIORITY" -> "Plan prioritario"
+        "VIP" -> "Plan VIP"
+        else -> "Plan esencial"
+    }
+    val planDescription = when (client?.serviceTier?.name) {
+        "PRIORITY" -> "Atencion prioritaria para solicitudes y seguimiento."
+        "VIP" -> "Acompanamiento y soporte dedicado."
+        else -> "Seguimiento de solicitudes y trabajo compartido."
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-            Text("Mi Cuenta", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Perfil y acceso al portal",
+        ClientPortalPageHeader(
+            title = "Cuenta",
+            subtitle = "Perfil, configuracion del servicio y acceso al portal.",
+        )
+
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth >= SupportDeskBreakpoints.clientWide) {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    ProfileCard(clientName, contactName, client, initials, Modifier.weight(1.15f))
+                    PlanCard(planName, planDescription, client, Modifier.weight(1f))
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+                    ProfileCard(clientName, contactName, client, initials, Modifier.fillMaxWidth())
+                    PlanCard(planName, planDescription, client, Modifier.fillMaxWidth())
+                }
+            }
+        }
+
+        ClientPortalSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            ClientPortalSectionTitle("Preferencias del servicio", "Informacion que el equipo utiliza para atenderte.")
+            client?.let {
+                AccountDetailRow("Producto", it.productName)
+                AccountDetailRow("Correo", it.email)
+                AccountDetailRow("Canal preferido", it.preferredContactChannel.name)
+            } ?: Text(
+                "La informacion de la cuenta se actualizara al sincronizar el portal.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        SectionCard(title = "Perfil") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = initials,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    Text(
-                        text = clientName,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (contactName.isNotBlank()) {
-                        Text(
-                            text = contactName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        SupportDeskBadge(
-                            text = when (client?.accountStatus?.name) {
-                                "PAUSED" -> "Cuenta pausada"
-                                "INACTIVE" -> "Cuenta inactiva"
-                                else -> "Portal activo"
-                            },
-                            containerColor = SupportDeskThemeTokens.semanticColors.successContainer,
-                            contentColor = SupportDeskThemeTokens.semanticColors.success,
-                        )
-                        SupportDeskBadge(
-                            text = when (client?.serviceTier?.name) {
-                                "PRIORITY" -> "Plan prioritario"
-                                "VIP" -> "Plan VIP"
-                                else -> "Plan standard"
-                            },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                    }
-                }
-            }
-        }
-
-        SectionCard(title = "Estadísticas globales") {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    MetricCard(
-                        label = "Total tickets",
-                        value = totalTickets.toString(),
-                        supportingText = "desde el inicio",
-                        modifier = Modifier.weight(1f),
-                    )
-                    MetricCard(
-                        label = "Resueltos",
-                        value = resolvedTickets.toString(),
-                        supportingText = "cerrados o resueltos",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    MetricCard(
-                        label = "Horas de soporte",
-                        value = formatSupportDeskDuration(totalMinutes),
-                        supportingText = "tiempo total",
-                        modifier = Modifier.weight(1f),
-                    )
-                    MetricCard(
-                        label = "Activos",
-                        value = (totalTickets - resolvedTickets).toString(),
-                        supportingText = "tickets en curso",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-
-        SectionCard(title = "Plan de soporte", subtitle = "Configuracion actual de la cuenta") {
-            val tierName = when (client?.serviceTier?.name) {
-                "PRIORITY" -> "Prioritario"
-                "VIP" -> "VIP"
-                else -> "Standard"
-            }
-            val tierDescription = when (client?.serviceTier?.name) {
-                "PRIORITY" -> "Atencion prioritaria"
-                "VIP" -> "Soporte dedicado"
-                else -> "Soporte estandar"
-            }
-            ServiceTierCard(name = tierName, description = tierDescription, modifier = Modifier.fillMaxWidth())
-            client?.let {
-                AccountStatRow(label = "Producto", value = it.productName)
-                AccountStatRow(label = "Correo", value = it.email)
-                AccountStatRow(label = "Canal preferido", value = it.preferredContactChannel.name)
-            }
-        }
-
-        SectionCard(title = "Componentes del portal") {
+        ClientPortalSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            ClientPortalSectionTitle("Componentes habilitados", "Las utilidades adicionales se gestionan desde Programas.")
             val components = client?.enabledComponents.orEmpty().sortedBy { it.name }
             if (components.isEmpty()) {
                 Text(
                     "Tu portal incluye el seguimiento esencial de solicitudes y trabajo.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                components.forEach { component ->
-                    AccountStatRow(label = component.displayName(), value = "Activo")
-                }
+                components.forEach { component -> AccountDetailRow(component.displayName(), "Activo") }
             }
         }
 
-        SectionCard(title = "Resumen de actividad") {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                AccountStatRow(label = "Último ticket actualizado", value = lastTicketDate)
-                AccountStatRow(label = "Tickets este mes", value = thisMonthTickets.toString())
-                AccountStatRow(label = "Horas este mes", value = formatSupportDeskDuration(thisMonthMinutes))
+        ClientPortalSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            ClientPortalSectionTitle("Actividad de este mes", "Una referencia breve para tu seguimiento.")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                ClientPortalMetric("Solicitudes", thisMonthTickets.toString(), "creadas este mes", Modifier.weight(1f))
+                ClientPortalMetric("Soporte", formatSupportDeskDuration(thisMonthMinutes), "tiempo registrado", Modifier.weight(1f))
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            SecondaryButton(text = "Actualizar", onClick = onRefresh)
+            SecondaryButton(text = "Actualizar datos", onClick = onRefresh)
             Surface(
                 onClick = onSignOut,
                 color = SupportDeskThemeTokens.semanticColors.dangerContainer,
                 contentColor = SupportDeskThemeTokens.semanticColors.danger,
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
             ) {
                 Text(
-                    text = "Cerrar sesión",
+                    text = "Cerrar sesion",
                     modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -223,34 +144,74 @@ fun ClientAccountScreen(
 }
 
 @Composable
-private fun ServiceTierCard(name: String, description: String, modifier: Modifier = Modifier) {
+private fun ProfileCard(
+    clientName: String,
+    contactName: String,
+    client: Client?,
+    initials: String,
+    modifier: Modifier = Modifier,
+) {
     val spacing = SupportDeskThemeTokens.spacing
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(modifier = Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    ClientPortalSurfaceCard(modifier) {
+        ClientPortalSectionTitle("Perfil", "Identidad visible en el portal")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(initials, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(clientName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (contactName.isNotBlank()) {
+                    Text(contactName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
+        SupportDeskBadge(
+            text = when (client?.accountStatus?.name) {
+                "PAUSED" -> "Cuenta pausada"
+                "INACTIVE" -> "Cuenta inactiva"
+                else -> "Portal activo"
+            },
+            containerColor = SupportDeskThemeTokens.semanticColors.successContainer,
+            contentColor = SupportDeskThemeTokens.semanticColors.success,
+        )
     }
 }
 
 @Composable
-private fun AccountStatRow(label: String, value: String) {
+private fun PlanCard(
+    planName: String,
+    planDescription: String,
+    client: Client?,
+    modifier: Modifier = Modifier,
+) {
+    ClientPortalSurfaceCard(modifier) {
+        ClientPortalSectionTitle("Plan de soporte", "Configuracion actual de la cuenta")
+        Text(planName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(planDescription, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SupportDeskBadge(
+            text = client?.serviceTier?.name?.replaceFirstChar { it.titlecase() } ?: "Standard",
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun AccountDetailRow(label: String, value: String) {
     val spacing = SupportDeskThemeTokens.spacing
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = spacing.xxs),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

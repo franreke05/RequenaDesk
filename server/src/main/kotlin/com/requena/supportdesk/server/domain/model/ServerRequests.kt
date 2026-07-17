@@ -83,6 +83,23 @@ data class UpdateClientComponentsRequest(
 )
 
 @Serializable
+data class CreateClientProgramRequestsRequest(
+    val productKeys: List<String> = emptyList(),
+    val customerNote: String = "",
+)
+
+@Serializable
+data class ApproveClientProgramRequest(
+    val monthlyPriceCents: Long = 0,
+    val adminNote: String? = null,
+)
+
+@Serializable
+data class RejectClientProgramRequest(
+    val adminNote: String? = null,
+)
+
+@Serializable
 data class CreateClientContactRequest(
     val fullName: String = "",
     val email: String? = null,
