@@ -2,6 +2,10 @@ package com.requena.supportdesk.server.utils
 
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
+import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
@@ -16,6 +20,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -154,10 +159,78 @@ fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("email", client.email)
     put("accountStatus", client.accountStatus)
     put("serviceTier", client.serviceTier)
+    put("enabledComponents", buildJsonArray { client.enabledComponents.forEach { add(JsonPrimitive(it)) } })
     put("preferredContactChannel", client.preferredContactChannel)
     put("activeTicketCount", client.activeTicketCount)
     put("openTasksCount", client.openTasksCount)
     put("monthlyLoggedMinutes", client.monthlyLoggedMinutes)
+}
+
+fun clientTicketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {
+    tickets.forEach { add(clientTicketJson(it)) }
+}
+
+fun clientTicketJson(ticket: ServerTicketSnapshot) = buildJsonObject {
+    ticketJson(ticket).forEach { (key, value) ->
+        if (key != "internalComments") put(key, value)
+    }
+}
+
+fun clientProvisioningJson(provisioning: ServerClientProvisioning) = buildJsonObject {
+    clientJson(provisioning.client).forEach { (key, value) -> put(key, value) }
+    put("generatedAccessCode", provisioning.credentials.accessCode)
+}
+
+fun clientCredentialsJson(credentials: ServerClientAccessCredentials) = buildJsonObject {
+    put("clientId", credentials.clientId)
+    put("email", credentials.email)
+    put("accessCode", credentials.accessCode)
+}
+
+fun clientContactsJson(contacts: List<ServerClientContactSnapshot>) = buildJsonArray {
+    contacts.forEach { add(clientContactJson(it)) }
+}
+
+fun clientContactJson(contact: ServerClientContactSnapshot) = buildJsonObject {
+    put("id", contact.id)
+    put("clientId", contact.clientId)
+    put("fullName", contact.fullName)
+    put("email", contact.email)
+    put("phone", contact.phone)
+    put("role", contact.role)
+    put("isPrimary", contact.isPrimary)
+    put("createdAt", contact.createdAt)
+    put("updatedAt", contact.updatedAt)
+}
+
+fun clientActivitiesJson(activities: List<ServerClientActivitySnapshot>) = buildJsonArray {
+    activities.forEach { add(clientActivityJson(it)) }
+}
+
+fun clientActivityJson(activity: ServerClientActivitySnapshot) = buildJsonObject {
+    put("id", activity.id)
+    put("clientId", activity.clientId)
+    put("contactId", activity.contactId)
+    put("type", activity.type)
+    put("subject", activity.subject)
+    put("details", activity.details)
+    put("dueDate", activity.dueDate)
+    put("completedAt", activity.completedAt)
+    put("createdByName", activity.createdByName)
+    put("createdAt", activity.createdAt)
+    put("updatedAt", activity.updatedAt)
+}
+
+fun clientPortalOverviewJson(
+    client: ServerClientSnapshot,
+    tickets: List<ServerTicketSnapshot>,
+    tasks: List<ServerTaskSnapshot>,
+    timeLogs: List<ServerTimeLogSnapshot>,
+) = buildJsonObject {
+    put("client", clientJson(client))
+    put("tickets", clientTicketsJson(tickets))
+    put("tasks", tasksJson(tasks))
+    put("timeLogs", timeLogsJson(timeLogs))
 }
 
 fun dashboardJson(dashboard: ServerDashboardSnapshot) = buildJsonObject {

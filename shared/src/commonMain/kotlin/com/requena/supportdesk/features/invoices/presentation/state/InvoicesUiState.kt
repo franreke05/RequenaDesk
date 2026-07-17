@@ -6,5 +6,6 @@ data class InvoicesUiState(
     val savedInvoices: List<InvoicePdfFile> = emptyList(),
     val isLoadingSavedInvoices: Boolean = false,
     val isGenerating: Boolean = false,
+    val deletingInvoiceFileName: String? = null,
     val errorMessage: String? = null,
 )

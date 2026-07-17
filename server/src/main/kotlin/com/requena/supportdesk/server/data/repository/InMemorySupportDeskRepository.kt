@@ -3,6 +3,8 @@ package com.requena.supportdesk.server.data.repository
 import com.requena.supportdesk.server.data.datasource.InMemorySupportDeskDataSource
 import com.requena.supportdesk.server.data.mapper.SupportDeskMapper
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
@@ -15,6 +17,10 @@ import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
+import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
@@ -25,7 +31,10 @@ import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -33,6 +42,7 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
+import com.requena.supportdesk.server.security.ClientAccessCodeGenerator
 import java.time.Instant
 
 class InMemorySupportDeskRepository(
@@ -75,6 +85,11 @@ class InMemorySupportDeskRepository(
         "client-1" to "user-admin",
         "client-2" to "user-admin-2",
     )
+    private val clientComponents = mutableMapOf(
+        "client-1" to mutableSetOf("SERVICE_SLA"),
+    )
+    private val clientContacts = mutableListOf<ServerClientContactSnapshot>()
+    private val clientActivities = mutableListOf<ServerClientActivitySnapshot>()
     private val labels = mutableListOf(
         ServerTaskLabelSnapshot("label-1", "user-admin", "Hoy", "#6B7A5B", 1),
         ServerTaskLabelSnapshot("label-2", "user-admin-2", "Seguimiento", "#A67C52", 1),
@@ -267,12 +282,13 @@ class InMemorySupportDeskRepository(
         .filter { ownerAdminId == null || clientOwners[it.id] == ownerAdminId }
         .map { client ->
         client.copy(
+            enabledComponents = clientComponents[client.id]?.sorted().orEmpty(),
             openTasksCount = tasks.count { it.clientId == client.id && !it.completed },
             monthlyLoggedMinutes = timeLogs.filter { it.clientId == client.id }.sumOf { it.minutes },
         )
     }
 
-    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot {
+    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientProvisioning {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
         val created = ServerClientSnapshot(
             id = "client-created-${clients.size + 1}",
@@ -290,7 +306,22 @@ class InMemorySupportDeskRepository(
         )
         clients.add(0, created)
         clientOwners[created.id] = resolvedOwnerAdminId
-        return created
+        clientComponents[created.id] = mutableSetOf()
+        val accessCode = ClientAccessCodeGenerator.generate()
+        adminAccounts.add(
+            LocalAdminAccount(
+                userId = "user-client-${created.id}",
+                name = created.contactName,
+                email = created.email,
+                password = accessCode,
+                role = "CLIENT",
+                clientId = created.id,
+            ),
+        )
+        return ServerClientProvisioning(
+            client = created,
+            credentials = ServerClientAccessCredentials(created.id, created.email, accessCode),
+        )
     }
 
     override fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String?): ServerClientSnapshot {
@@ -306,7 +337,17 @@ class InMemorySupportDeskRepository(
             preferredContactChannel = request.preferredContactChannel ?: current.preferredContactChannel,
         )
         clients[index] = updated
-        return updated
+        val accountIndex = adminAccounts.indexOfFirst { account ->
+            account.role == "CLIENT" && account.clientId == clientId
+        }
+        if (accountIndex >= 0 && (request.email != null || request.contactName != null)) {
+            val account = adminAccounts[accountIndex]
+            adminAccounts[accountIndex] = account.copy(
+                name = if (request.contactName.isNullOrBlank()) account.name else updated.contactName,
+                email = if (request.email.isNullOrBlank()) account.email else updated.email,
+            )
+        }
+        return updated.copy(enabledComponents = clientComponents[clientId]?.sorted().orEmpty())
     }
 
     override fun updateClientCredentials(
@@ -342,6 +383,33 @@ class InMemorySupportDeskRepository(
         refreshTokens.entries.removeAll { it.value == updatedAccount.userId }
     }
 
+    override fun regenerateClientCredentials(
+        clientId: String,
+        ownerAdminId: String?,
+    ): ServerClientAccessCredentials {
+        val clientIndex = requireClientIndex(clientId, ownerAdminId)
+        val client = clients[clientIndex]
+        val accessCode = ClientAccessCodeGenerator.generate()
+        val existingIndex = adminAccounts.indexOfFirst { account ->
+            account.role == "CLIENT" && account.clientId == clientId
+        }
+        val account = LocalAdminAccount(
+            userId = if (existingIndex >= 0) adminAccounts[existingIndex].userId else "user-client-$clientId",
+            name = client.contactName,
+            email = client.email,
+            password = accessCode,
+            role = "CLIENT",
+            clientId = clientId,
+        )
+        if (existingIndex >= 0) {
+            adminAccounts[existingIndex] = account
+        } else {
+            adminAccounts.add(account)
+        }
+        refreshTokens.entries.removeAll { it.value == account.userId }
+        return ServerClientAccessCredentials(clientId, client.email, accessCode)
+    }
+
     override fun deleteClient(clientId: String, ownerAdminId: String?) {
         val index = requireClientIndex(clientId, ownerAdminId)
         val client = clients[index]
@@ -356,6 +424,158 @@ class InMemorySupportDeskRepository(
         timeLogs.replaceAll { log ->
             if (log.clientId == clientId) log.copy(clientId = null) else log
         }
+        clientContacts.removeAll { it.clientId == clientId }
+        clientActivities.removeAll { it.clientId == clientId }
+    }
+
+    override fun getClientContacts(clientId: String, ownerAdminId: String?): List<ServerClientContactSnapshot> {
+        requireClientIndex(clientId, ownerAdminId)
+        return clientContacts.filter { it.clientId == clientId }
+            .sortedWith(compareByDescending<ServerClientContactSnapshot> { it.isPrimary }.thenBy { it.fullName })
+    }
+
+    override fun createClientContact(
+        clientId: String,
+        request: CreateClientContactRequest,
+        ownerAdminId: String?,
+    ): ServerClientContactSnapshot {
+        requireClientIndex(clientId, ownerAdminId)
+        if (request.isPrimary) {
+            clientContacts.replaceAll { contact ->
+                if (contact.clientId == clientId && contact.isPrimary) contact.copy(isPrimary = false, updatedAt = Instant.now().toString()) else contact
+            }
+        }
+        val now = Instant.now().toString()
+        return ServerClientContactSnapshot(
+            id = "contact-${clientContacts.size + 1}",
+            clientId = clientId,
+            fullName = request.fullName.trim(),
+            email = request.email.normalizedOptionalText(),
+            phone = request.phone.normalizedOptionalText(),
+            role = request.role.normalizedOptionalText(),
+            isPrimary = request.isPrimary,
+            createdAt = now,
+            updatedAt = now,
+        ).also(clientContacts::add)
+    }
+
+    override fun updateClientContact(
+        clientId: String,
+        contactId: String,
+        request: UpdateClientContactRequest,
+        ownerAdminId: String?,
+    ): ServerClientContactSnapshot {
+        requireClientIndex(clientId, ownerAdminId)
+        val index = clientContacts.indexOfFirst { it.id == contactId && it.clientId == clientId }
+            .takeIf { it >= 0 } ?: throw ServerNotFoundException("Client contact not found")
+        if (request.isPrimary == true) {
+            clientContacts.replaceAll { contact ->
+                if (contact.clientId == clientId && contact.id != contactId && contact.isPrimary) {
+                    contact.copy(isPrimary = false, updatedAt = Instant.now().toString())
+                } else {
+                    contact
+                }
+            }
+        }
+        val current = clientContacts[index]
+        return current.copy(
+            fullName = request.fullName?.trim()?.takeIf(String::isNotBlank) ?: current.fullName,
+            email = request.email.updatedOptionalText(current.email),
+            phone = request.phone.updatedOptionalText(current.phone),
+            role = request.role.updatedOptionalText(current.role),
+            isPrimary = request.isPrimary ?: current.isPrimary,
+            updatedAt = Instant.now().toString(),
+        ).also { clientContacts[index] = it }
+    }
+
+    override fun deleteClientContact(clientId: String, contactId: String, ownerAdminId: String?) {
+        requireClientIndex(clientId, ownerAdminId)
+        if (!clientContacts.removeIf { it.id == contactId && it.clientId == clientId }) {
+            throw ServerNotFoundException("Client contact not found")
+        }
+        clientActivities.replaceAll { activity ->
+            if (activity.clientId == clientId && activity.contactId == contactId) activity.copy(contactId = null) else activity
+        }
+    }
+
+    override fun getClientActivities(clientId: String, ownerAdminId: String?): List<ServerClientActivitySnapshot> {
+        requireClientIndex(clientId, ownerAdminId)
+        return clientActivities.filter { it.clientId == clientId }
+            .sortedWith(compareBy<ServerClientActivitySnapshot> { it.completedAt != null }.thenByDescending { it.createdAt })
+    }
+
+    override fun createClientActivity(
+        clientId: String,
+        request: CreateClientActivityRequest,
+        createdById: String,
+        ownerAdminId: String?,
+    ): ServerClientActivitySnapshot {
+        requireClientIndex(clientId, ownerAdminId)
+        val contactId = request.contactId?.trim()?.takeIf(String::isNotBlank)
+        if (contactId != null && clientContacts.none { it.id == contactId && it.clientId == clientId }) {
+            throw ServerNotFoundException("Client contact not found")
+        }
+        val now = Instant.now().toString()
+        return ServerClientActivitySnapshot(
+            id = "activity-${clientActivities.size + 1}",
+            clientId = clientId,
+            contactId = contactId,
+            type = request.type,
+            subject = request.subject.trim(),
+            details = request.details.normalizedOptionalText(),
+            dueDate = request.dueDate.normalizedOptionalText(),
+            createdByName = adminAccounts.firstOrNull { it.userId == createdById }?.name ?: "Administrador",
+            createdAt = now,
+            updatedAt = now,
+        ).also(clientActivities::add)
+    }
+
+    override fun updateClientActivity(
+        clientId: String,
+        activityId: String,
+        request: UpdateClientActivityRequest,
+        ownerAdminId: String?,
+    ): ServerClientActivitySnapshot {
+        requireClientIndex(clientId, ownerAdminId)
+        val index = clientActivities.indexOfFirst { it.id == activityId && it.clientId == clientId }
+            .takeIf { it >= 0 } ?: throw ServerNotFoundException("Client activity not found")
+        val contactId = request.contactId.updatedOptionalText(clientActivities[index].contactId)
+        if (contactId != null && clientContacts.none { it.id == contactId && it.clientId == clientId }) {
+            throw ServerNotFoundException("Client contact not found")
+        }
+        val current = clientActivities[index]
+        return current.copy(
+            contactId = contactId,
+            type = request.type?.trim()?.takeIf(String::isNotBlank) ?: current.type,
+            subject = request.subject?.trim()?.takeIf(String::isNotBlank) ?: current.subject,
+            details = request.details.updatedOptionalText(current.details),
+            dueDate = request.dueDate.updatedOptionalText(current.dueDate),
+            completedAt = when (request.completed) {
+                true -> current.completedAt ?: Instant.now().toString()
+                false -> null
+                null -> current.completedAt
+            },
+            updatedAt = Instant.now().toString(),
+        ).also { clientActivities[index] = it }
+    }
+
+    override fun deleteClientActivity(clientId: String, activityId: String, ownerAdminId: String?) {
+        requireClientIndex(clientId, ownerAdminId)
+        if (!clientActivities.removeIf { it.id == activityId && it.clientId == clientId }) {
+            throw ServerNotFoundException("Client activity not found")
+        }
+    }
+
+    override fun updateClientComponents(
+        clientId: String,
+        request: UpdateClientComponentsRequest,
+        ownerAdminId: String?,
+    ): ServerClientSnapshot {
+        val index = requireClientIndex(clientId, ownerAdminId)
+        clientComponents[clientId] = request.components.toMutableSet()
+        val updated = clients[index].copy(enabledComponents = request.components.distinct().sorted())
+        clients[index] = updated
+        return updated
     }
 
     override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = labels
@@ -567,5 +787,11 @@ class InMemorySupportDeskRepository(
             throw ServerNotFoundException("Task not found")
         }
     }
+
+    private fun String?.normalizedOptionalText(): String? =
+        this?.trim()?.takeIf(String::isNotBlank)
+
+    private fun String?.updatedOptionalText(current: String?): String? =
+        if (this == null) current else normalizedOptionalText()
 
 }

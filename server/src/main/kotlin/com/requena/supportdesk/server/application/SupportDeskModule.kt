@@ -11,6 +11,8 @@ import com.requena.supportdesk.server.plugins.configureSerialization
 import com.requena.supportdesk.server.routes.attachmentRoutes
 import com.requena.supportdesk.server.routes.authRoutes
 import com.requena.supportdesk.server.routes.clientRoutes
+import com.requena.supportdesk.server.routes.clientCrmRoutes
+import com.requena.supportdesk.server.routes.clientPortalRoutes
 import com.requena.supportdesk.server.routes.dashboardRoutes
 import com.requena.supportdesk.server.routes.deviceRoutes
 import com.requena.supportdesk.server.routes.labelRoutes
@@ -88,6 +90,8 @@ fun Application.configureSupportDeskModule(
         ticketRoutes(service, tokenService)
         attachmentRoutes(service, tokenService)
         clientRoutes(service, tokenService)
+        clientCrmRoutes(service, tokenService)
+        clientPortalRoutes(service, tokenService)
         labelRoutes(service, tokenService)
         taskRoutes(service, tokenService)
         timeLogRoutes(service, tokenService)

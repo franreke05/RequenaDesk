@@ -2,6 +2,7 @@ package com.requena.supportdesk.features.clients.data.mapper
 
 import com.requena.supportdesk.core.model.ClientAccountStatus
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.ClientPortalComponent
 import com.requena.supportdesk.core.model.ClientServiceTier
 import com.requena.supportdesk.core.model.PreferredContactChannel
 import com.requena.supportdesk.features.clients.data.dto.ClientDto
@@ -15,6 +16,9 @@ object ClientsMapper {
         email = dto.email,
         accountStatus = ClientAccountStatus.valueOf(dto.accountStatus),
         serviceTier = ClientServiceTier.valueOf(dto.serviceTier),
+        enabledComponents = dto.enabledComponents.mapNotNull { component ->
+            runCatching { ClientPortalComponent.valueOf(component) }.getOrNull()
+        }.toSet(),
         preferredContactChannel = PreferredContactChannel.valueOf(dto.preferredContactChannel),
         activeTicketCount = dto.activeTicketCount,
     )

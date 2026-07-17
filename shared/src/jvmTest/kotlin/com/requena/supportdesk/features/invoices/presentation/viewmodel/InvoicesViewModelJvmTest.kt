@@ -3,6 +3,7 @@ package com.requena.supportdesk.features.invoices.presentation.viewmodel
 import com.requena.supportdesk.features.invoices.data.storage.InvoicePdfStorage
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceItemKind
 import com.requena.supportdesk.features.invoices.domain.model.InvoicePdfFile
 import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
@@ -42,6 +43,29 @@ class InvoicesViewModelJvmTest {
         }
     }
 
+    @Test
+    fun deleteEventRemovesTheLocalInvoiceAndRefreshesTheLibrary() = runBlocking {
+        val storage = RecordingInvoicePdfStorage().apply { savedInput = testInvoice() }
+        val viewModel = InvoicesViewModel(storage)
+
+        try {
+            viewModel.onEvent(InvoicesUiEvent.DeleteSavedInvoice(storage.savedInvoice.fileName))
+
+            val completedState = withTimeout(TEST_TIMEOUT_MILLIS) {
+                viewModel.state.first { state ->
+                    storage.deletedFileName == storage.savedInvoice.fileName &&
+                        state.deletingInvoiceFileName == null &&
+                        state.savedInvoices.isEmpty()
+                }
+            }
+
+            assertEquals(storage.savedInvoice.fileName, storage.deletedFileName)
+            assertTrue(completedState.savedInvoices.isEmpty())
+        } finally {
+            viewModel.clear()
+        }
+    }
+
     private class RecordingInvoicePdfStorage : InvoicePdfStorage {
         val savedInvoice = InvoicePdfFile(
             fileName = "FAC-2026-TEST_Cliente.pdf",
@@ -55,9 +79,12 @@ class InvoicesViewModelJvmTest {
         @Volatile
         var listCalls: Int = 0
 
+        @Volatile
+        var deletedFileName: String? = null
+
         override suspend fun listSavedInvoices(): List<InvoicePdfFile> {
             listCalls += 1
-            return if (savedInput == null) emptyList() else listOf(savedInvoice)
+            return if (savedInput == null || deletedFileName != null) emptyList() else listOf(savedInvoice)
         }
 
         override suspend fun saveInvoice(input: CreateInvoiceInput): InvoicePdfFile {
@@ -66,6 +93,11 @@ class InvoicesViewModelJvmTest {
         }
 
         override suspend fun openSavedInvoice(fileName: String) = Unit
+
+        override suspend fun deleteSavedInvoice(fileName: String) {
+            check(fileName == savedInvoice.fileName)
+            deletedFileName = fileName
+        }
     }
 
     private fun testInvoice() = CreateInvoiceInput(
@@ -77,7 +109,13 @@ class InvoicesViewModelJvmTest {
         taxPercent = 21.0,
         items = listOf(
             CreateInvoiceItemInput("Tarea uno", quantity = 2.0, unitPrice = 30.0, sortOrder = 0),
-            CreateInvoiceItemInput("Tarea dos", quantity = 1.0, unitPrice = 45.0, sortOrder = 1),
+            CreateInvoiceItemInput(
+                description = "Actividad",
+                quantity = 1.5,
+                unitPrice = 45.0,
+                sortOrder = 1,
+                kind = InvoiceItemKind.ACTIVITY,
+            ),
         ),
     )
 

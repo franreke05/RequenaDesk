@@ -119,6 +119,100 @@ class ApplicationTest {
     }
 
     @Test
+    fun testDedicatedClientPortalRoutesAreScopedAndHideInternalComments() = testApplication {
+        application { testModule() }
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+
+        val profile = client.get("/client/profile") { bearer(clientToken) }
+        val tickets = client.get("/client/tickets") { bearer(clientToken) }
+        val tasks = client.get("/client/tasks") { bearer(clientToken) }
+        val logs = client.get("/client/time-logs") { bearer(clientToken) }
+        val overview = client.get("/client/overview") { bearer(clientToken) }
+
+        assertEquals(HttpStatusCode.OK, profile.status)
+        assertEquals(HttpStatusCode.OK, tickets.status)
+        assertEquals(HttpStatusCode.OK, tasks.status)
+        assertEquals(HttpStatusCode.OK, logs.status)
+        assertEquals(HttpStatusCode.OK, overview.status)
+        assertTrue(profile.bodyAsText().contains("client-1"))
+        assertTrue(tickets.bodyAsText().contains("ticket-1"))
+        assertTrue(!tickets.bodyAsText().contains("ticket-2"))
+        assertTrue(!tickets.bodyAsText().contains("internalComments"))
+        assertTrue(tasks.bodyAsText().contains("task-1"))
+        assertTrue(!tasks.bodyAsText().contains("task-2"))
+        assertTrue(logs.bodyAsText().contains("time-log-1"))
+        assertTrue(overview.bodyAsText().contains("timeLogs"))
+
+        val adminResponse = client.get("/client/profile") { bearer(client.accessToken()) }
+        assertEquals(HttpStatusCode.Forbidden, adminResponse.status)
+    }
+
+    @Test
+    fun testAdminCanManageClientCrmContactsAndActivities() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+
+        val contactResponse = client.post("/admin/clients/client-1/contacts") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "fullName":"Marta Northwind",
+                  "email":"marta@northwind.dev",
+                  "phone":"+34 600 000 000",
+                  "role":"Operaciones",
+                  "isPrimary":true
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, contactResponse.status)
+        val contactId = extractField(contactResponse.bodyAsText(), "id")
+
+        val activityResponse = client.post("/admin/clients/client-1/activities") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "type":"FOLLOW_UP",
+                  "subject":"Confirmar la proxima revision",
+                  "contactId":"$contactId"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, activityResponse.status)
+        val activityId = extractField(activityResponse.bodyAsText(), "id")
+
+        val completedResponse = client.patch("/admin/clients/client-1/activities/$activityId") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"completed":true}""")
+        }
+        assertEquals(HttpStatusCode.OK, completedResponse.status)
+        assertTrue(completedResponse.bodyAsText().contains("completedAt"))
+
+        val contactsResponse = client.get("/admin/clients/client-1/contacts") { bearer(adminToken) }
+        val activitiesResponse = client.get("/admin/clients/client-1/activities") { bearer(adminToken) }
+        assertEquals(HttpStatusCode.OK, contactsResponse.status)
+        assertEquals(HttpStatusCode.OK, activitiesResponse.status)
+        assertTrue(contactsResponse.bodyAsText().contains("Marta Northwind"))
+        assertTrue(activitiesResponse.bodyAsText().contains("Confirmar la proxima revision"))
+
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+        val forbiddenClientRequest = client.get("/admin/clients/client-1/activities") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.Forbidden, forbiddenClientRequest.status)
+    }
+
+    @Test
     fun testAdminCanConfigureClientCredentialsForPortalLogin() = testApplication {
         application { testModule() }
 
@@ -152,6 +246,58 @@ class ApplicationTest {
         val clientsResponse = client.get("/admin/clients") { bearer(clientToken) }
         assertEquals(HttpStatusCode.OK, clientsResponse.status)
         assertTrue(clientsResponse.bodyAsText().contains("client-1"))
+    }
+
+    @Test
+    fun testClientProvisioningGeneratesAndRegeneratesAnSbsAccessCode() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val portalEmail = "portal.generated@example.dev"
+
+        val createResponse = client.post("/admin/clients") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "companyName":"Generated Portal Client",
+                  "productName":"Portal",
+                  "contactName":"Portal Contact",
+                  "email":"$portalEmail",
+                  "accountStatus":"ACTIVE",
+                  "serviceTier":"STANDARD",
+                  "preferredContactChannel":"TICKET"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createdBody = createResponse.bodyAsText()
+        val clientId = extractField(createdBody, "id")
+        val initialCode = extractField(createdBody, "generatedAccessCode")
+        assertTrue(initialCode.matches(Regex("SBS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}")))
+        assertEquals(HttpStatusCode.OK, client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"$portalEmail","password":"$initialCode"}""")
+        }.status)
+
+        val regenerateResponse = client.post("/admin/clients/$clientId/credentials/regenerate") {
+            bearer(adminToken)
+        }
+        assertEquals(HttpStatusCode.OK, regenerateResponse.status)
+        val regeneratedCode = extractField(regenerateResponse.bodyAsText(), "accessCode")
+        assertTrue(regeneratedCode != initialCode)
+
+        assertEquals(HttpStatusCode.Unauthorized, client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"$portalEmail","password":"$initialCode"}""")
+        }.status)
+        assertEquals(HttpStatusCode.OK, client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email":"$portalEmail","password":"$regeneratedCode"}""")
+        }.status)
+        assertTrue(!client.get("/admin/clients") { bearer(adminToken) }.bodyAsText().contains(regeneratedCode))
     }
 
     @Test

@@ -6,3 +6,11 @@
 # supportdesk.baseUrl=https://crm.example.com
 
 supportdesk.baseUrl=https://your-public-ktor-backend.example.com
+
+# Optional local-only issuer data for desktop invoice PDFs. These values are
+# embedded in the generated PDF but are never sent to Ktor or stored in a database.
+# invoice.issuer.name=OryKai software
+# invoice.issuer.taxId=00000000X
+# invoice.issuer.addressLine1=Calle ejemplo 1
+# invoice.issuer.addressLine2=04000 Almeria, Espana
+# invoice.issuer.phone=600000000

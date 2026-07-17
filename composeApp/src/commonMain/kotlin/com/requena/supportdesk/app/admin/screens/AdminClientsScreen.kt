@@ -10,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,11 +26,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,21 +49,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.EllipsisVertical
-import com.composables.icons.lucide.Eye
-import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Search
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.features.clients.domain.model.ClientAccessCredentials
 import com.requena.supportdesk.core.model.ClientAccountStatus
 import com.requena.supportdesk.core.model.ClientNote
+import com.requena.supportdesk.core.model.ClientPortalComponent
 import com.requena.supportdesk.core.model.ClientServiceTier
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.Ticket
@@ -81,6 +80,8 @@ import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.core.model.description
+import com.requena.supportdesk.core.model.displayName
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
@@ -94,6 +95,7 @@ enum class ClientTab(val label: String) {
     ETIQUETAS("Etiquetas"),
     TICKETS("Tickets"),
     FACTURAS("Facturas"),
+    COMPONENTES("Componentes"),
     CREDENCIALES("Credenciales"),
     NOTAS("Notas"),
 }
@@ -164,10 +166,14 @@ fun AdminClientsScreen(
                             currentAdminId = currentAdminId,
                             currentAdminName = currentAdminName,
                             isLoading = state.isLoading,
+                            generatedCredentials = state.generatedCredentials,
                             onEvent = onEvent,
                             onEditClient = { editingClient = selectedClient },
-                            onUpdateCredentials = { clientId, email, password ->
-                                onEvent(ClientsUiEvent.UpdateClientCredentials(clientId, email, password))
+                            onRegenerateCredentials = { clientId ->
+                                onEvent(ClientsUiEvent.RegenerateClientCredentials(clientId))
+                            },
+                            onUpdateComponents = { clientId, components ->
+                                onEvent(ClientsUiEvent.UpdateClientComponents(clientId, components))
                             },
                             onNavigateToInvoices = onNavigateToInvoices,
                             onNavigateToLabels = onNavigateToLabels,
@@ -204,6 +210,17 @@ fun AdminClientsScreen(
             isLoading = state.isLoading,
             onDismiss = { editingClient = null },
             onEvent = onEvent,
+        )
+    }
+    state.generatedCredentials?.let { credentials ->
+        ConfirmDialog(
+            visible = true,
+            title = "Acceso generado",
+            message = "Correo de acceso: ${credentials.email}\n\nClave SBS: ${credentials.accessCode}\n\nGuárdala o compártela por un canal seguro. Por seguridad, no volverá a mostrarse.",
+            confirmText = "He anotado la clave",
+            dismissText = "Cerrar",
+            onConfirm = { onEvent(ClientsUiEvent.DismissGeneratedCredentials) },
+            onDismiss = { onEvent(ClientsUiEvent.DismissGeneratedCredentials) },
         )
     }
 }
@@ -398,9 +415,11 @@ private fun ClientDetailPanel(
     currentAdminId: String,
     currentAdminName: String,
     isLoading: Boolean,
+    generatedCredentials: ClientAccessCredentials?,
     onEvent: (ClientsUiEvent) -> Unit,
     onEditClient: () -> Unit,
-    onUpdateCredentials: (clientId: String, email: String, password: String) -> Unit,
+    onRegenerateCredentials: (clientId: String) -> Unit,
+    onUpdateComponents: (clientId: String, components: Set<ClientPortalComponent>) -> Unit,
     onNavigateToInvoices: (clientId: String) -> Unit,
     onNavigateToLabels: () -> Unit,
     modifier: Modifier = Modifier,
@@ -455,10 +474,17 @@ private fun ClientDetailPanel(
                 ClientTab.ETIQUETAS -> ClientTagsTab(tags = derivedTags, onNavigateToLabels = onNavigateToLabels)
                 ClientTab.TICKETS -> ClientTicketsTab(tickets = clientTickets)
                 ClientTab.FACTURAS -> ClientInvoicesTab(client = client, onGenerate = { onNavigateToInvoices(client.id) })
+                ClientTab.COMPONENTES -> ClientComponentsTab(
+                    client = client,
+                    isLoading = isLoading,
+                    onUpdate = { components -> onUpdateComponents(client.id, components) },
+                )
                 ClientTab.CREDENCIALES -> ClientCredentialsTab(
                     client = client,
                     isLoading = isLoading,
-                    onSave = { email, password -> onUpdateCredentials(client.id, email, password) },
+                    generatedCredentials = generatedCredentials,
+                    onRegenerate = { onRegenerateCredentials(client.id) },
+                    onDismissGeneratedCredentials = { onEvent(ClientsUiEvent.DismissGeneratedCredentials) },
                 )
                 ClientTab.NOTAS -> ClientNotesTab(
                     client = client,
@@ -840,65 +866,128 @@ private fun ClientInvoicesTab(client: Client, onGenerate: () -> Unit) {
 }
 
 @Composable
-private fun ClientCredentialsTab(
+private fun ClientComponentsTab(
     client: Client,
     isLoading: Boolean,
-    onSave: (email: String, password: String) -> Unit,
+    onUpdate: (Set<ClientPortalComponent>) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    var email by rememberSaveable(client.id) { mutableStateOf(client.email) }
-    var password by remember(client.id) { mutableStateOf("") }
-    var passwordVisible by remember(client.id) { mutableStateOf(false) }
-    val canSave = email.isNotBlank() && email.contains("@") && password.length >= 8 && !isLoading
-
-    SupportDeskFormCard(title = "Credenciales de acceso") {
+    SupportDeskFormCard(title = "Componentes contratados") {
         Text(
-            "Define o reemplaza el acceso del cliente al portal. La clave no se muestra ni se guarda en esta ficha.",
+            "Activa solo los módulos incluidos en el acuerdo del cliente. El portal reflejará el cambio al actualizarse.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Correo de acceso") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Clave de acceso") },
-            singleLine = true,
-            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                    Icon(
-                        imageVector = if (passwordVisible) Lucide.EyeOff else Lucide.Eye,
-                        contentDescription = if (passwordVisible) "Ocultar clave" else "Mostrar clave",
+        ClientPortalComponent.entries.forEach { component ->
+            val enabled = component in client.enabledComponents
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = enabled,
+                        enabled = !isLoading,
+                        role = Role.Checkbox,
+                    ) { checked ->
+                        val updated = if (checked) client.enabledComponents + component else client.enabledComponents - component
+                        onUpdate(updated)
+                    },
+                shape = RoundedCornerShape(8.dp),
+                color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(spacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = enabled,
+                        enabled = !isLoading,
+                        onCheckedChange = null,
                     )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(component.displayName(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            component.description(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClientCredentialsTab(
+    client: Client,
+    isLoading: Boolean,
+    generatedCredentials: ClientAccessCredentials?,
+    onRegenerate: () -> Unit,
+    onDismissGeneratedCredentials: () -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    var confirmRegeneration by rememberSaveable(client.id) { mutableStateOf(false) }
+
+    generatedCredentials
+        ?.takeIf { it.clientId == client.id }
+        ?.let { credentials ->
+            SupportDeskFormCard(title = "Nueva clave SBS") {
+                Text(
+                    "Compártela con ${credentials.email} por un canal seguro. Esta es la única vez que se mostrará.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    credentials.accessCode,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                PrimaryButton(
+                    text = "He anotado la clave",
+                    fullWidth = true,
+                    onClick = onDismissGeneratedCredentials,
+                )
+            }
+        }
+
+    SupportDeskFormCard(title = "Credenciales de acceso") {
+        Text(
+            "La aplicación genera una clave SBS automáticamente. La base de datos guarda solo su hash, nunca la clave legible.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "Usa una clave de al menos 8 caracteres.",
+            "Correo de acceso: ${client.email}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            "Al regenerarla, la clave anterior deja de servir y se cierran sus sesiones renovables.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         PrimaryButton(
-            text = "Guardar credenciales",
-            enabled = canSave,
+            text = "Regenerar clave SBS",
+            enabled = !isLoading,
             isLoading = isLoading,
             fullWidth = true,
-            onClick = {
-                onSave(email.trim(), password)
-                password = ""
-                passwordVisible = false
-            },
+            onClick = { confirmRegeneration = true },
         )
     }
+    ConfirmDialog(
+        visible = confirmRegeneration,
+        title = "Regenerar clave de acceso",
+        message = "La clave SBS actual dejará de funcionar. La nueva clave se mostrará una sola vez.",
+        confirmText = "Regenerar",
+        dismissText = "Cancelar",
+        onConfirm = {
+            confirmRegeneration = false
+            onRegenerate()
+        },
+        onDismiss = { confirmRegeneration = false },
+    )
 }
 
 @Composable

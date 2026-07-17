@@ -34,6 +34,16 @@ class DatabaseMigrationTest {
         assertTrue(sequenceRemoval.contains("DROP SEQUENCE IF EXISTS invoice_number_seq"))
     }
 
+    @Test
+    fun clientCrmMigrationCreatesContactsAndActivities() {
+        val migration = migrationText("db/migration/V6__client_crm_contacts_and_activities.sql")
+
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS client_contacts"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS client_activities"))
+        assertTrue(migration.contains("client_contacts_primary_per_client_idx"))
+        assertTrue(migration.contains("client_activities_type_check"))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

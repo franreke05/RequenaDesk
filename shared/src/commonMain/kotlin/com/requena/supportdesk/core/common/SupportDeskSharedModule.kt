@@ -15,7 +15,8 @@ import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCa
 import com.requena.supportdesk.features.clients.domain.usecase.DeleteClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.GetClientsUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientUseCase
-import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientCredentialsUseCase
+import com.requena.supportdesk.features.clients.domain.usecase.RegenerateClientCredentialsUseCase
+import com.requena.supportdesk.features.clients.domain.usecase.UpdateClientComponentsUseCase
 import com.requena.supportdesk.features.clients.presentation.viewmodel.ClientsViewModel
 import com.requena.supportdesk.features.dashboard.data.datasource.RemoteDashboardDataSource
 import com.requena.supportdesk.features.dashboard.data.repository.DashboardRepositoryImpl
@@ -75,7 +76,8 @@ object SupportDeskSharedModule {
     private val getClientsUseCase = GetClientsUseCase(clientsRepository)
     private val createClientUseCase = CreateClientUseCase(clientsRepository)
     private val updateClientUseCase = UpdateClientUseCase(clientsRepository)
-    private val updateClientCredentialsUseCase = UpdateClientCredentialsUseCase(clientsRepository)
+    private val regenerateClientCredentialsUseCase = RegenerateClientCredentialsUseCase(clientsRepository)
+    private val updateClientComponentsUseCase = UpdateClientComponentsUseCase(clientsRepository)
     private val deleteClientUseCase = DeleteClientUseCase(clientsRepository)
     private val getTaskLabelsUseCase = GetTaskLabelsUseCase(tasksRepository)
     private val getTasksUseCase = GetTasksUseCase(tasksRepository)
@@ -109,7 +111,8 @@ object SupportDeskSharedModule {
         getClientsUseCase = getClientsUseCase,
         createClientUseCase = createClientUseCase,
         updateClientUseCase = updateClientUseCase,
-        updateClientCredentialsUseCase = updateClientCredentialsUseCase,
+        regenerateClientCredentialsUseCase = regenerateClientCredentialsUseCase,
+        updateClientComponentsUseCase = updateClientComponentsUseCase,
         deleteClientUseCase = deleteClientUseCase,
     )
 

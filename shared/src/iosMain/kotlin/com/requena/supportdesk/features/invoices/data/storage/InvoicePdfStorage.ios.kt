@@ -14,4 +14,8 @@ private object UnsupportedInvoicePdfStorage : InvoicePdfStorage {
     override suspend fun openSavedInvoice(fileName: String) {
         error("La biblioteca de facturas locales esta disponible en la aplicacion de escritorio.")
     }
+
+    override suspend fun deleteSavedInvoice(fileName: String) {
+        error("La biblioteca de facturas locales esta disponible en la aplicacion de escritorio.")
+    }
 }

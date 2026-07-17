@@ -42,8 +42,10 @@ import com.requena.supportdesk.app.client.screens.ClientNewTicketScreen
 import com.requena.supportdesk.app.client.screens.ClientServiceScreen
 import com.requena.supportdesk.app.client.screens.ClientTasksScreen
 import com.requena.supportdesk.app.client.screens.ClientTicketsScreen
+import com.requena.supportdesk.app.client.screens.ClientWorkScreen
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.ClientPortalComponent
 import com.requena.supportdesk.core.model.TicketPriority
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.time.currentIsoDate
@@ -73,7 +75,7 @@ import com.composables.icons.lucide.UserRound
 const val ClientDailyUrgentLimit = 3
 const val ClientDailyTaskLimit = 5
 
-enum class ClientDestination { HOME, NEW_TICKET, TICKETS, TASKS, BOARD, SERVICE, ACTIVITY, ACCOUNT }
+enum class ClientDestination { HOME, WORK, NEW_TICKET, SERVICE, ACCOUNT, TICKETS, TASKS, BOARD, ACTIVITY }
 
 data class ClientActivityItem(
     val ticketSubject: String,
@@ -89,13 +91,10 @@ enum class ClientActivityType { CREATED, STATUS_CHANGE, TIME_LOGGED, RESOLVED, C
 
 private val clientNavItems = listOf(
     NavigationItemSpec(ClientDestination.HOME, "Inicio", "Vista general", Lucide.House),
-    NavigationItemSpec(ClientDestination.NEW_TICKET, "Nuevo ticket", "Abrir soporte", Lucide.Plus),
-    NavigationItemSpec(ClientDestination.TICKETS, "Tickets", "Historial", Lucide.Ticket),
-    NavigationItemSpec(ClientDestination.TASKS, "Tareas", "Lista diaria", Lucide.ListTodo),
-    NavigationItemSpec(ClientDestination.BOARD, "Tablero", "Vista kanban", Lucide.Columns3),
-    NavigationItemSpec(ClientDestination.SERVICE, "Mi Servicio", "Resumen de soporte", Lucide.Headphones),
-    NavigationItemSpec(ClientDestination.ACTIVITY, "Actividad", "Historial de eventos", Lucide.Activity),
-    NavigationItemSpec(ClientDestination.ACCOUNT, "Mi Cuenta", "Perfil y acceso", Lucide.UserRound),
+    NavigationItemSpec(ClientDestination.WORK, "Trabajo", "Tareas y solicitudes", Lucide.ListTodo),
+    NavigationItemSpec(ClientDestination.NEW_TICKET, "Solicitar", "Pedir ayuda", Lucide.Plus),
+    NavigationItemSpec(ClientDestination.SERVICE, "Servicio", "Soporte y SLA", Lucide.Headphones),
+    NavigationItemSpec(ClientDestination.ACCOUNT, "Cuenta", "Plan y acceso", Lucide.UserRound),
 )
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -271,7 +270,7 @@ fun ClientPortalScreen(
         portalTickets.count { it.createdAt.take(10) == today && it.priority == TicketPriority.URGENT }
     }
     val visibleEntries = remember(tasksState.logs, clientId) {
-        tasksState.logs.filter { clientId == null || it.clientId == clientId }
+        tasksState.logs.filter { it.clientId == clientId }
     }
     val openCount = remember(portalTickets) { portalTickets.count { it.status != TicketStatus.CLOSED } }
     val monthlyMinutes = remember(visibleEntries, today) {
@@ -292,6 +291,7 @@ fun ClientPortalScreen(
     // Empresa (company name) es el campo principal; clientName es el nombre de contacto
     val displayCompany = companyName.ifBlank { clientName }
     val displayContact = if (companyName.isNotBlank() && clientName.isNotBlank() && clientName != companyName) clientName else ""
+    val hasServiceSla = client?.hasComponent(ClientPortalComponent.SERVICE_SLA) == true
 
     val portalContent: @Composable (Modifier) -> Unit = { contentModifier ->
         AnimatedContent(
@@ -321,6 +321,12 @@ fun ClientPortalScreen(
                     recentTickets = portalTickets.sortedByDescending { it.updatedAt }.take(3),
                     isLoading = state.isLoading,
                     errorMessage = state.errorMessage,
+                    hasServiceSla = hasServiceSla,
+                    onNavigate = { destination = it },
+                )
+                ClientDestination.WORK -> ClientWorkScreen(
+                    tickets = portalTickets,
+                    tasks = clientTasks,
                     onNavigate = { destination = it },
                 )
                 ClientDestination.NEW_TICKET -> ClientNewTicketScreen(
@@ -357,6 +363,8 @@ fun ClientPortalScreen(
                     logs = visibleEntries,
                     today = today,
                     lastMonthMinutes = lastMonthMinutes,
+                    isEnabled = hasServiceSla,
+                    onRequestActivation = { destination = ClientDestination.NEW_TICKET },
                 )
                 ClientDestination.ACTIVITY -> ClientActivityScreen(
                     activityItems = allActivityItems,

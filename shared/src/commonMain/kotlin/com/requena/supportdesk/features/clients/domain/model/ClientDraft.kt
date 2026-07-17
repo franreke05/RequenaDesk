@@ -18,3 +18,14 @@ data class ClientCredentialsDraft(
     val email: String,
     val password: String,
 )
+
+data class ClientAccessCredentials(
+    val clientId: String,
+    val email: String,
+    val accessCode: String,
+)
+
+data class ClientProvisioningResult(
+    val client: com.requena.supportdesk.core.model.Client,
+    val credentials: ClientAccessCredentials,
+)

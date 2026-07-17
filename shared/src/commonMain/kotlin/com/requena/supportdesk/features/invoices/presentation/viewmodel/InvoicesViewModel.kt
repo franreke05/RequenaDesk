@@ -32,6 +32,7 @@ class InvoicesViewModel(
         when (event) {
             InvoicesUiEvent.RefreshSavedInvoices -> refreshSavedInvoices()
             is InvoicesUiEvent.OpenSavedInvoice -> openSavedInvoice(event.fileName)
+            is InvoicesUiEvent.DeleteSavedInvoice -> deleteSavedInvoice(event.fileName)
             is InvoicesUiEvent.GenerateInvoice -> generateInvoice(event)
         }
     }
@@ -87,6 +88,32 @@ class InvoicesViewModel(
             } catch (error: Throwable) {
                 val message = error.message ?: "No se pudo abrir la factura."
                 _state.update { it.copy(errorMessage = message) }
+                _effects.send(InvoicesUiEffect.ShowMessage(message))
+            }
+        }
+    }
+
+    private fun deleteSavedInvoice(fileName: String) {
+        if (state.value.deletingInvoiceFileName != null) return
+        launch {
+            _state.update { it.copy(deletingInvoiceFileName = fileName, errorMessage = null) }
+            try {
+                invoicePdfStorage.deleteSavedInvoice(fileName)
+                val savedInvoices = invoicePdfStorage.listSavedInvoices()
+                _state.update {
+                    it.copy(
+                        deletingInvoiceFileName = null,
+                        savedInvoices = savedInvoices,
+                    )
+                }
+                _effects.send(InvoicesUiEffect.ShowMessage("Factura borrada de la biblioteca local."))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val detail = error.message?.takeIf { it.isNotBlank() }
+                val message = detail?.let { "No se pudo borrar la factura local: $it" }
+                    ?: "No se pudo borrar la factura local."
+                _state.update { it.copy(deletingInvoiceFileName = null, errorMessage = message) }
                 _effects.send(InvoicesUiEffect.ShowMessage(message))
             }
         }

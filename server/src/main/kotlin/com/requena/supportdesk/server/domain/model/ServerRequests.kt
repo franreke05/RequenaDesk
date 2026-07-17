@@ -78,6 +78,48 @@ data class UpdateClientCredentialsRequest(
 )
 
 @Serializable
+data class UpdateClientComponentsRequest(
+    val components: List<String> = emptyList(),
+)
+
+@Serializable
+data class CreateClientContactRequest(
+    val fullName: String = "",
+    val email: String? = null,
+    val phone: String? = null,
+    val role: String? = null,
+    val isPrimary: Boolean = false,
+)
+
+@Serializable
+data class UpdateClientContactRequest(
+    val fullName: String? = null,
+    val email: String? = null,
+    val phone: String? = null,
+    val role: String? = null,
+    val isPrimary: Boolean? = null,
+)
+
+@Serializable
+data class CreateClientActivityRequest(
+    val type: String = "NOTE",
+    val subject: String = "",
+    val details: String? = null,
+    val contactId: String? = null,
+    val dueDate: String? = null,
+)
+
+@Serializable
+data class UpdateClientActivityRequest(
+    val type: String? = null,
+    val subject: String? = null,
+    val details: String? = null,
+    val contactId: String? = null,
+    val dueDate: String? = null,
+    val completed: Boolean? = null,
+)
+
+@Serializable
 data class CreateTaskLabelRequest(
     val ownerAdminId: String = "",
     val name: String = "",

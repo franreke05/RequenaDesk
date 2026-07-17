@@ -2,6 +2,7 @@ package com.requena.supportdesk.features.clients.presentation.event
 
 import com.requena.supportdesk.core.model.ClientAccountStatus
 import com.requena.supportdesk.core.model.ClientServiceTier
+import com.requena.supportdesk.core.model.ClientPortalComponent
 import com.requena.supportdesk.core.model.PreferredContactChannel
 
 sealed interface ClientsUiEvent {
@@ -27,10 +28,11 @@ sealed interface ClientsUiEvent {
         val serviceTier: ClientServiceTier,
         val preferredContactChannel: PreferredContactChannel,
     ) : ClientsUiEvent
-    data class UpdateClientCredentials(
+    data class RegenerateClientCredentials(val clientId: String) : ClientsUiEvent
+    object DismissGeneratedCredentials : ClientsUiEvent
+    data class UpdateClientComponents(
         val clientId: String,
-        val email: String,
-        val password: String,
+        val components: Set<ClientPortalComponent>,
     ) : ClientsUiEvent
     data class DeleteClient(val clientId: String) : ClientsUiEvent
     data class AddClientNote(

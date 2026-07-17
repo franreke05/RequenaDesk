@@ -12,10 +12,19 @@ data class ClientDto(
     val productName: String = "",
     val accountStatus: String = "ACTIVE",
     val serviceTier: String = "STANDARD",
+    val enabledComponents: List<String> = emptyList(),
     val preferredContactChannel: String = "TICKET",
     val activeTicketCount: Int = 0,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+    val generatedAccessCode: String? = null,
+)
+
+@Serializable
+data class ClientAccessCredentialsDto(
+    val clientId: String,
+    val email: String,
+    val accessCode: String,
 )
 
 @Serializable
@@ -44,4 +53,9 @@ data class UpdateClientRequestDto(
 data class UpdateClientCredentialsRequestDto(
     val email: String,
     val password: String,
+)
+
+@Serializable
+data class UpdateClientComponentsRequestDto(
+    val components: List<String>,
 )

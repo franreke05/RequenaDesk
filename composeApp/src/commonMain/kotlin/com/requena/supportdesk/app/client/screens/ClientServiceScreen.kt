@@ -41,6 +41,7 @@ import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.cards.MetricCard
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
+import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
@@ -53,6 +54,8 @@ fun ClientServiceScreen(
     logs: List<TaskLog>,
     today: String,
     lastMonthMinutes: Int,
+    isEnabled: Boolean,
+    onRequestActivation: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val semantic = SupportDeskThemeTokens.semanticColors
@@ -122,6 +125,21 @@ fun ClientServiceScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (!isEnabled) {
+            SectionCard(
+                title = "Servicio y SLA no esta activo",
+                subtitle = "Este componente anade seguimiento de consumo y una vista de soporte para tu equipo.",
+            ) {
+                Text(
+                    "Puedes pedir informacion al equipo sin perder el contexto de tu cuenta.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SecondaryButton(text = "Solicitar informacion", onClick = onRequestActivation)
+            }
+            return@Column
         }
 
         SectionCard(

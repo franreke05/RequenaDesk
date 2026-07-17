@@ -2,6 +2,8 @@ package com.requena.supportdesk.server.data.repository
 
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
@@ -12,6 +14,10 @@ import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientAccessCredentials
+import com.requena.supportdesk.server.domain.model.ServerClientActivitySnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientContactSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientProvisioning
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
@@ -29,7 +35,10 @@ import com.requena.supportdesk.server.domain.model.ServerTicketEventSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -37,6 +46,7 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
+import com.requena.supportdesk.server.security.ClientAccessCodeGenerator
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.util.UUID
@@ -396,6 +406,15 @@ class PostgresSupportDeskRepository(
                 c.email::text AS email,
                 c.account_status,
                 c.service_tier,
+                COALESCE(
+                    ARRAY(
+                        SELECT cce.component_key
+                        FROM client_component_entitlements cce
+                        WHERE cce.client_id = c.id
+                        ORDER BY cce.component_key
+                    ),
+                    ARRAY[]::varchar[]
+                ) AS enabled_components,
                 c.preferred_contact_channel,
                 (
                     SELECT COUNT(*)::integer
@@ -442,6 +461,7 @@ class PostgresSupportDeskRepository(
                                 email = resultSet.getString("email"),
                                 accountStatus = resultSet.getString("account_status"),
                                 serviceTier = resultSet.getString("service_tier"),
+                                enabledComponents = resultSet.textArray("enabled_components"),
                                 preferredContactChannel = resultSet.getString("preferred_contact_channel"),
                                 activeTicketCount = resultSet.getInt("active_ticket_count"),
                                 openTasksCount = resultSet.getInt("open_tasks_count"),
@@ -454,42 +474,74 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientSnapshot = dataSource.withConnection { connection ->
+    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientProvisioning = dataSource.withConnection { connection ->
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
-        connection.prepareStatement(
-            """
-            INSERT INTO clients (
-                owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
-            )
-            VALUES (CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
-            """.trimIndent(),
-        ).use { statement ->
-            statement.setString(1, resolvedOwnerAdminId)
-            statement.setString(2, request.companyName)
-            statement.setString(3, request.productName)
-            statement.setString(4, request.contactName)
-            statement.setString(5, request.email)
-            statement.setString(6, request.accountStatus)
-            statement.setString(7, request.serviceTier)
-            statement.setString(8, request.preferredContactChannel)
-            statement.executeQuery().use { resultSet ->
-                resultSet.next()
-                ServerClientSnapshot(
-                    id = resultSet.getString("id"),
-                    ownerAdminId = resultSet.getString("owner_admin_id"),
-                    companyName = resultSet.getString("company_name"),
-                    productName = resultSet.getString("product_name"),
-                    contactName = resultSet.getString("contact_name"),
-                    email = resultSet.getString("email"),
-                    accountStatus = resultSet.getString("account_status"),
-                    serviceTier = resultSet.getString("service_tier"),
-                    preferredContactChannel = resultSet.getString("preferred_contact_channel"),
-                    activeTicketCount = 0,
-                    openTasksCount = 0,
-                    monthlyLoggedMinutes = 0,
-                )
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val email = request.email.trim()
+            if (isEmailAssignedToAnotherUser(connection, email, currentUserId = null)) {
+                throw ServerConflictException("Email is already used by another account")
             }
+            val client = connection.prepareStatement(
+                """
+                INSERT INTO clients (
+                    owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+                )
+                VALUES (CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, resolvedOwnerAdminId)
+                statement.setString(2, request.companyName)
+                statement.setString(3, request.productName)
+                statement.setString(4, request.contactName)
+                statement.setString(5, email)
+                statement.setString(6, request.accountStatus)
+                statement.setString(7, request.serviceTier)
+                statement.setString(8, request.preferredContactChannel)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    ServerClientSnapshot(
+                        id = resultSet.getString("id"),
+                        ownerAdminId = resultSet.getString("owner_admin_id"),
+                        companyName = resultSet.getString("company_name"),
+                        productName = resultSet.getString("product_name"),
+                        contactName = resultSet.getString("contact_name"),
+                        email = resultSet.getString("email"),
+                        accountStatus = resultSet.getString("account_status"),
+                        serviceTier = resultSet.getString("service_tier"),
+                        enabledComponents = emptyList(),
+                        preferredContactChannel = resultSet.getString("preferred_contact_channel"),
+                        activeTicketCount = 0,
+                        openTasksCount = 0,
+                        monthlyLoggedMinutes = 0,
+                    )
+                }
+            }
+            val accessCode = ClientAccessCodeGenerator.generate()
+            connection.prepareStatement(
+                """
+                INSERT INTO users (client_id, name, email, password_hash, role, is_active)
+                VALUES (CAST(? AS uuid), ?, ?, ?, 'CLIENT', TRUE)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, client.id)
+                statement.setString(2, client.contactName)
+                statement.setString(3, email)
+                statement.setString(4, PasswordHasher.hash(accessCode))
+                statement.executeUpdate()
+            }
+            connection.commit()
+            ServerClientProvisioning(
+                client = client,
+                credentials = ServerClientAccessCredentials(client.id, email, accessCode),
+            )
+        } catch (throwable: Throwable) {
+            connection.rollback()
+            throw throwable
+        } finally {
+            connection.autoCommit = previousAutoCommit
         }
     }
 
@@ -499,7 +551,15 @@ class PostgresSupportDeskRepository(
         ownerAdminId: String?,
     ): ServerClientSnapshot = dataSource.withConnection { connection ->
         requireClientExists(connection, clientId, ownerAdminId)
-        connection.prepareStatement(
+        val linkedClientUserId = findClientUserId(connection, clientId)
+        if (
+            linkedClientUserId != null &&
+            !request.email.isNullOrBlank() &&
+            isEmailAssignedToAnotherUser(connection, request.email.trim(), linkedClientUserId)
+        ) {
+            throw ServerConflictException("Email is already used by another account")
+        }
+        val updated = connection.prepareStatement(
             """
             UPDATE clients
             SET company_name = COALESCE(NULLIF(?, ''), company_name),
@@ -537,13 +597,32 @@ class PostgresSupportDeskRepository(
                     email = resultSet.getString("email"),
                     accountStatus = resultSet.getString("account_status"),
                     serviceTier = resultSet.getString("service_tier"),
+                    enabledComponents = emptyList(),
                     preferredContactChannel = resultSet.getString("preferred_contact_channel"),
-                    activeTicketCount = getActiveTicketCount(connection, clientId),
-                    openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
-                    monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+                    activeTicketCount = 0,
                 )
             }
         }
+        if (linkedClientUserId != null && (!request.email.isNullOrBlank() || !request.contactName.isNullOrBlank())) {
+            connection.prepareStatement(
+                """
+                UPDATE users
+                SET name = ?, email = COALESCE(NULLIF(?, ''), email), updated_at = NOW()
+                WHERE id::text = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, updated.contactName)
+                statement.setString(2, request.email?.trim())
+                statement.setString(3, linkedClientUserId)
+                statement.executeUpdate()
+            }
+        }
+        updated.copy(
+            enabledComponents = clientComponents(connection, clientId),
+            activeTicketCount = getActiveTicketCount(connection, clientId),
+            openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
+            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+        )
     }
 
     override fun updateClientCredentials(
@@ -605,6 +684,107 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    override fun regenerateClientCredentials(
+        clientId: String,
+        ownerAdminId: String?,
+    ): ServerClientAccessCredentials = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val client = clientSnapshot(connection, clientId, ownerAdminId)
+            val existingClientUserId = findClientUserId(connection, clientId)
+            if (isEmailAssignedToAnotherUser(connection, client.email, existingClientUserId)) {
+                throw ServerConflictException("Email is already used by another account")
+            }
+            val accessCode = ClientAccessCodeGenerator.generate()
+            val passwordHash = PasswordHasher.hash(accessCode)
+            val clientUserId = if (existingClientUserId == null) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO users (client_id, name, email, password_hash, role, is_active)
+                    VALUES (CAST(? AS uuid), ?, ?, ?, 'CLIENT', TRUE)
+                    RETURNING id::text AS user_id
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, clientId)
+                    statement.setString(2, client.contactName)
+                    statement.setString(3, client.email)
+                    statement.setString(4, passwordHash)
+                    statement.executeQuery().use { resultSet ->
+                        resultSet.next()
+                        resultSet.getString("user_id")
+                    }
+                }
+            } else {
+                connection.prepareStatement(
+                    """
+                    UPDATE users
+                    SET name = ?, email = ?, password_hash = ?, is_active = TRUE, updated_at = NOW()
+                    WHERE id::text = ?
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, client.contactName)
+                    statement.setString(2, client.email)
+                    statement.setString(3, passwordHash)
+                    statement.setString(4, existingClientUserId)
+                    if (statement.executeUpdate() != 1) throw ServerNotFoundException("Client not found")
+                }
+                existingClientUserId
+            }
+            revokeRefreshTokens(connection, clientUserId)
+            connection.commit()
+            ServerClientAccessCredentials(clientId, client.email, accessCode)
+        } catch (throwable: Throwable) {
+            connection.rollback()
+            throw throwable
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun updateClientComponents(
+        clientId: String,
+        request: UpdateClientComponentsRequest,
+        ownerAdminId: String?,
+    ): ServerClientSnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val components = request.components.distinct().sorted()
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            connection.prepareStatement(
+                "DELETE FROM client_component_entitlements WHERE client_id::text = ?",
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeUpdate()
+            }
+            if (components.isNotEmpty()) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO client_component_entitlements (client_id, component_key)
+                    VALUES (CAST(? AS uuid), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    components.forEach { component ->
+                        statement.setString(1, clientId)
+                        statement.setString(2, component)
+                        statement.addBatch()
+                    }
+                    statement.executeBatch()
+                }
+            }
+            val snapshot = clientSnapshot(connection, clientId, ownerAdminId)
+            connection.commit()
+            snapshot
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
     override fun deleteClient(clientId: String, ownerAdminId: String?) {
         dataSource.withConnection { connection ->
             requireClientExists(connection, clientId, ownerAdminId)
@@ -633,6 +813,252 @@ class PostgresSupportDeskRepository(
                 if (statement.executeUpdate() == 0) {
                     throw ServerNotFoundException("Client not found")
                 }
+            }
+        }
+    }
+
+    override fun getClientContacts(clientId: String, ownerAdminId: String?): List<ServerClientContactSnapshot> =
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId, ownerAdminId)
+            connection.prepareStatement(
+                """
+                SELECT id::text, client_id::text, full_name, email::text, phone, role, is_primary, created_at, updated_at
+                FROM client_contacts
+                WHERE client_id::text = ?
+                ORDER BY is_primary DESC, full_name ASC
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) add(clientContactSnapshot(resultSet))
+                    }
+                }
+            }
+        }
+
+    override fun createClientContact(
+        clientId: String,
+        request: CreateClientContactRequest,
+        ownerAdminId: String?,
+    ): ServerClientContactSnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            if (request.isPrimary) {
+                connection.prepareStatement(
+                    "UPDATE client_contacts SET is_primary = FALSE WHERE client_id::text = ? AND is_primary = TRUE",
+                ).use { statement ->
+                    statement.setString(1, clientId)
+                    statement.executeUpdate()
+                }
+            }
+            val contact = connection.prepareStatement(
+                """
+                INSERT INTO client_contacts (client_id, full_name, email, phone, role, is_primary)
+                VALUES (CAST(? AS uuid), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)
+                RETURNING id::text, client_id::text, full_name, email::text, phone, role, is_primary, created_at, updated_at
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.setString(2, request.fullName.trim())
+                statement.setString(3, request.email?.trim())
+                statement.setString(4, request.phone?.trim())
+                statement.setString(5, request.role?.trim())
+                statement.setBoolean(6, request.isPrimary)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    clientContactSnapshot(resultSet)
+                }
+            }
+            connection.commit()
+            contact
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun updateClientContact(
+        clientId: String,
+        contactId: String,
+        request: UpdateClientContactRequest,
+        ownerAdminId: String?,
+    ): ServerClientContactSnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            if (request.isPrimary == true) {
+                connection.prepareStatement(
+                    "UPDATE client_contacts SET is_primary = FALSE WHERE client_id::text = ? AND id::text <> ? AND is_primary = TRUE",
+                ).use { statement ->
+                    statement.setString(1, clientId)
+                    statement.setString(2, contactId)
+                    statement.executeUpdate()
+                }
+            }
+            val contact = connection.prepareStatement(
+                """
+                UPDATE client_contacts
+                SET full_name = COALESCE(NULLIF(?, ''), full_name),
+                    email = CASE WHEN ? IS NULL THEN email ELSE NULLIF(?, '') END,
+                    phone = CASE WHEN ? IS NULL THEN phone ELSE NULLIF(?, '') END,
+                    role = CASE WHEN ? IS NULL THEN role ELSE NULLIF(?, '') END,
+                    is_primary = COALESCE(CAST(? AS boolean), is_primary)
+                WHERE id::text = ? AND client_id::text = ?
+                RETURNING id::text, client_id::text, full_name, email::text, phone, role, is_primary, created_at, updated_at
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, request.fullName?.trim())
+                statement.setString(2, request.email)
+                statement.setString(3, request.email?.trim())
+                statement.setString(4, request.phone)
+                statement.setString(5, request.phone?.trim())
+                statement.setString(6, request.role)
+                statement.setString(7, request.role?.trim())
+                statement.setObject(8, request.isPrimary)
+                statement.setString(9, contactId)
+                statement.setString(10, clientId)
+                statement.executeQuery().use { resultSet ->
+                    if (!resultSet.next()) throw ServerNotFoundException("Client contact not found")
+                    clientContactSnapshot(resultSet)
+                }
+            }
+            connection.commit()
+            contact
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    override fun deleteClientContact(clientId: String, contactId: String, ownerAdminId: String?) {
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId, ownerAdminId)
+            connection.prepareStatement(
+                "DELETE FROM client_contacts WHERE id::text = ? AND client_id::text = ?",
+            ).use { statement ->
+                statement.setString(1, contactId)
+                statement.setString(2, clientId)
+                if (statement.executeUpdate() == 0) throw ServerNotFoundException("Client contact not found")
+            }
+        }
+    }
+
+    override fun getClientActivities(clientId: String, ownerAdminId: String?): List<ServerClientActivitySnapshot> =
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId, ownerAdminId)
+            connection.prepareStatement(
+                """
+                SELECT a.id::text, a.client_id::text, a.contact_id::text, a.activity_type, a.subject, a.details,
+                       a.due_date, a.completed_at, creator.name AS created_by_name, a.created_at, a.updated_at
+                FROM client_activities a
+                JOIN users creator ON creator.id = a.created_by
+                WHERE a.client_id::text = ?
+                ORDER BY a.completed_at NULLS FIRST, a.due_date ASC NULLS LAST, a.created_at DESC
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) add(clientActivitySnapshot(resultSet))
+                    }
+                }
+            }
+        }
+
+    override fun createClientActivity(
+        clientId: String,
+        request: CreateClientActivityRequest,
+        createdById: String,
+        ownerAdminId: String?,
+    ): ServerClientActivitySnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val contactId = request.contactId?.trim()?.takeIf(String::isNotBlank)
+        if (contactId != null) requireClientContactExists(connection, clientId, contactId)
+        val activityId = connection.prepareStatement(
+            """
+            INSERT INTO client_activities (client_id, contact_id, created_by, activity_type, subject, details, due_date)
+            VALUES (CAST(? AS uuid), CAST(NULLIF(?, '') AS uuid), CAST(? AS uuid), ?, ?, NULLIF(?, ''), CAST(NULLIF(?, '') AS date))
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, contactId)
+            statement.setString(3, createdById)
+            statement.setString(4, request.type)
+            statement.setString(5, request.subject.trim())
+            statement.setString(6, request.details?.trim())
+            statement.setString(7, request.dueDate?.trim())
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getString("id")
+            }
+        }
+        clientActivitySnapshot(connection, clientId, activityId)
+    }
+
+    override fun updateClientActivity(
+        clientId: String,
+        activityId: String,
+        request: UpdateClientActivityRequest,
+        ownerAdminId: String?,
+    ): ServerClientActivitySnapshot = dataSource.withConnection { connection ->
+        requireClientExists(connection, clientId, ownerAdminId)
+        val requestedContactId = request.contactId?.trim()?.takeIf(String::isNotBlank)
+        if (requestedContactId != null) requireClientContactExists(connection, clientId, requestedContactId)
+        val id = connection.prepareStatement(
+            """
+            UPDATE client_activities
+            SET activity_type = COALESCE(NULLIF(?, ''), activity_type),
+                subject = COALESCE(NULLIF(?, ''), subject),
+                details = CASE WHEN ? IS NULL THEN details ELSE NULLIF(?, '') END,
+                contact_id = CASE WHEN ? IS NULL THEN contact_id ELSE CAST(NULLIF(?, '') AS uuid) END,
+                due_date = CASE WHEN ? IS NULL THEN due_date ELSE CAST(NULLIF(?, '') AS date) END,
+                completed_at = CASE
+                    WHEN CAST(? AS boolean) IS TRUE THEN COALESCE(completed_at, NOW())
+                    WHEN CAST(? AS boolean) IS FALSE THEN NULL
+                    ELSE completed_at
+                END
+            WHERE id::text = ? AND client_id::text = ?
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, request.type?.trim())
+            statement.setString(2, request.subject?.trim())
+            statement.setString(3, request.details)
+            statement.setString(4, request.details?.trim())
+            statement.setString(5, request.contactId)
+            statement.setString(6, request.contactId?.trim())
+            statement.setString(7, request.dueDate)
+            statement.setString(8, request.dueDate?.trim())
+            statement.setObject(9, request.completed)
+            statement.setObject(10, request.completed)
+            statement.setString(11, activityId)
+            statement.setString(12, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) throw ServerNotFoundException("Client activity not found")
+                resultSet.getString("id")
+            }
+        }
+        clientActivitySnapshot(connection, clientId, id)
+    }
+
+    override fun deleteClientActivity(clientId: String, activityId: String, ownerAdminId: String?) {
+        dataSource.withConnection { connection ->
+            requireClientExists(connection, clientId, ownerAdminId)
+            connection.prepareStatement(
+                "DELETE FROM client_activities WHERE id::text = ? AND client_id::text = ?",
+            ).use { statement ->
+                statement.setString(1, activityId)
+                statement.setString(2, clientId)
+                if (statement.executeUpdate() == 0) throw ServerNotFoundException("Client activity not found")
             }
         }
     }
@@ -1212,6 +1638,75 @@ class PostgresSupportDeskRepository(
         }
     }
 
+    private fun clientSnapshot(
+        connection: Connection,
+        clientId: String,
+        ownerAdminId: String?,
+    ): ServerClientSnapshot {
+        val base = connection.prepareStatement(
+            """
+            SELECT id::text, owner_admin_id::text, company_name, product_name, contact_name,
+                   email::text, account_status, service_tier, preferred_contact_channel
+            FROM clients
+            WHERE id::text = ?
+              AND (? IS NULL OR owner_admin_id::text = ?)
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) throw ServerNotFoundException("Client not found")
+                ServerClientSnapshot(
+                    id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
+                    companyName = resultSet.getString("company_name"),
+                    productName = resultSet.getString("product_name"),
+                    contactName = resultSet.getString("contact_name"),
+                    email = resultSet.getString("email"),
+                    accountStatus = resultSet.getString("account_status"),
+                    serviceTier = resultSet.getString("service_tier"),
+                    enabledComponents = emptyList(),
+                    preferredContactChannel = resultSet.getString("preferred_contact_channel"),
+                    activeTicketCount = 0,
+                )
+            }
+        }
+        return base.copy(
+            enabledComponents = clientComponents(connection, clientId),
+            activeTicketCount = getActiveTicketCount(connection, clientId),
+            openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
+            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+        )
+    }
+
+    private fun clientComponents(connection: Connection, clientId: String): List<String> =
+        connection.prepareStatement(
+            """
+            SELECT component_key
+            FROM client_component_entitlements
+            WHERE client_id::text = ?
+            ORDER BY component_key
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(resultSet.getString("component_key"))
+                }
+            }
+        }
+
+    private fun ResultSet.textArray(column: String): List<String> {
+        val sqlArray = getArray(column) ?: return emptyList()
+        return try {
+            (sqlArray.array as? Array<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+        } finally {
+            sqlArray.free()
+        }
+    }
+
     private fun findRequesterId(connection: Connection, clientId: String): String =
         connection.prepareStatement(
             """
@@ -1709,6 +2204,65 @@ class PostgresSupportDeskRepository(
             }
         }
 
+    private fun clientContactSnapshot(resultSet: ResultSet): ServerClientContactSnapshot =
+        ServerClientContactSnapshot(
+            id = resultSet.getString("id"),
+            clientId = resultSet.getString("client_id"),
+            fullName = resultSet.getString("full_name"),
+            email = resultSet.getString("email"),
+            phone = resultSet.getString("phone"),
+            role = resultSet.getString("role"),
+            isPrimary = resultSet.getBoolean("is_primary"),
+            createdAt = formatTimestamp(resultSet.getObject("created_at")),
+            updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+        )
+
+    private fun clientActivitySnapshot(
+        connection: Connection,
+        clientId: String,
+        activityId: String,
+    ): ServerClientActivitySnapshot = connection.prepareStatement(
+        """
+        SELECT a.id::text, a.client_id::text, a.contact_id::text, a.activity_type, a.subject, a.details,
+               a.due_date, a.completed_at, creator.name AS created_by_name, a.created_at, a.updated_at
+        FROM client_activities a
+        JOIN users creator ON creator.id = a.created_by
+        WHERE a.id::text = ? AND a.client_id::text = ?
+        LIMIT 1
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, activityId)
+        statement.setString(2, clientId)
+        statement.executeQuery().use { resultSet ->
+            if (!resultSet.next()) throw ServerNotFoundException("Client activity not found")
+            clientActivitySnapshot(resultSet)
+        }
+    }
+
+    private fun clientActivitySnapshot(resultSet: ResultSet): ServerClientActivitySnapshot =
+        ServerClientActivitySnapshot(
+            id = resultSet.getString("id"),
+            clientId = resultSet.getString("client_id"),
+            contactId = resultSet.getString("contact_id"),
+            type = resultSet.getString("activity_type"),
+            subject = resultSet.getString("subject"),
+            details = resultSet.getString("details"),
+            dueDate = resultSet.getObject("due_date")?.toString(),
+            completedAt = resultSet.getObject("completed_at")?.let(::formatTimestamp),
+            createdByName = resultSet.getString("created_by_name"),
+            createdAt = formatTimestamp(resultSet.getObject("created_at")),
+            updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+        )
+
+    private fun revokeRefreshTokens(connection: Connection, userId: String) {
+        connection.prepareStatement(
+            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id::text = ? AND revoked_at IS NULL",
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeUpdate()
+        }
+    }
+
     private fun isEmailAssignedToAnotherUser(connection: Connection, email: String, currentUserId: String?): Boolean =
         connection.prepareStatement(
             "SELECT 1 FROM users WHERE email = ? AND (? IS NULL OR id::text <> ?) LIMIT 1",
@@ -1723,6 +2277,17 @@ class PostgresSupportDeskRepository(
         if (!recordExists(connection, "clients", clientId, ownerAdminId)) {
             throw ServerNotFoundException("Client not found")
         }
+    }
+
+    private fun requireClientContactExists(connection: Connection, clientId: String, contactId: String) {
+        val exists = connection.prepareStatement(
+            "SELECT 1 FROM client_contacts WHERE id::text = ? AND client_id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, contactId)
+            statement.setString(2, clientId)
+            statement.executeQuery().use { it.next() }
+        }
+        if (!exists) throw ServerNotFoundException("Client contact not found")
     }
 
     private fun requireLabelExists(connection: Connection, labelId: String, ownerAdminId: String? = null) {

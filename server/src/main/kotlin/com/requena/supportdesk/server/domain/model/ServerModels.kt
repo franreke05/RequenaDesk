@@ -93,10 +93,49 @@ data class ServerClientSnapshot(
     val email: String,
     val accountStatus: String,
     val serviceTier: String,
+    val enabledComponents: List<String> = emptyList(),
     val preferredContactChannel: String,
     val activeTicketCount: Int,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+)
+
+/** Plaintext code is returned only by provisioning/regeneration responses; it is never persisted. */
+data class ServerClientAccessCredentials(
+    val clientId: String,
+    val email: String,
+    val accessCode: String,
+)
+
+data class ServerClientProvisioning(
+    val client: ServerClientSnapshot,
+    val credentials: ServerClientAccessCredentials,
+)
+
+data class ServerClientContactSnapshot(
+    val id: String,
+    val clientId: String,
+    val fullName: String,
+    val email: String? = null,
+    val phone: String? = null,
+    val role: String? = null,
+    val isPrimary: Boolean,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+data class ServerClientActivitySnapshot(
+    val id: String,
+    val clientId: String,
+    val contactId: String? = null,
+    val type: String,
+    val subject: String,
+    val details: String? = null,
+    val dueDate: String? = null,
+    val completedAt: String? = null,
+    val createdByName: String,
+    val createdAt: String,
+    val updatedAt: String,
 )
 
 data class ServerDashboardSnapshot(

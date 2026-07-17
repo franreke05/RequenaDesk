@@ -11,6 +11,7 @@ interface InvoicePdfStorage {
     suspend fun listSavedInvoices(): List<InvoicePdfFile>
     suspend fun saveInvoice(input: CreateInvoiceInput): InvoicePdfFile
     suspend fun openSavedInvoice(fileName: String)
+    suspend fun deleteSavedInvoice(fileName: String)
 }
 
 expect fun createInvoicePdfStorage(): InvoicePdfStorage

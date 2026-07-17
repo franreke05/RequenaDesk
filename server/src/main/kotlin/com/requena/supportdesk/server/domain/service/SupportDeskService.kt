@@ -1,6 +1,8 @@
 package com.requena.supportdesk.server.domain.service
 
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
+import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
@@ -12,7 +14,10 @@ import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
+import com.requena.supportdesk.server.domain.model.UpdateClientComponentsRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
@@ -100,7 +105,49 @@ class SupportDeskService(
     fun updatedClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null) =
         repository.updateClientCredentials(clientId, request, ownerAdminId)
 
+    fun regeneratedClientCredentials(clientId: String, ownerAdminId: String? = null) =
+        repository.regenerateClientCredentials(clientId, ownerAdminId)
+
+    fun updatedClientComponents(clientId: String, request: UpdateClientComponentsRequest, ownerAdminId: String? = null) =
+        repository.updateClientComponents(clientId, request, ownerAdminId)
+
     fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
+
+    fun clientContacts(clientId: String, ownerAdminId: String? = null) =
+        repository.getClientContacts(clientId, ownerAdminId)
+
+    fun createdClientContact(clientId: String, request: CreateClientContactRequest, ownerAdminId: String? = null) =
+        repository.createClientContact(clientId, request, ownerAdminId)
+
+    fun updatedClientContact(
+        clientId: String,
+        contactId: String,
+        request: UpdateClientContactRequest,
+        ownerAdminId: String? = null,
+    ) = repository.updateClientContact(clientId, contactId, request, ownerAdminId)
+
+    fun deletedClientContact(clientId: String, contactId: String, ownerAdminId: String? = null) =
+        repository.deleteClientContact(clientId, contactId, ownerAdminId)
+
+    fun clientActivities(clientId: String, ownerAdminId: String? = null) =
+        repository.getClientActivities(clientId, ownerAdminId)
+
+    fun createdClientActivity(
+        clientId: String,
+        request: CreateClientActivityRequest,
+        createdById: String,
+        ownerAdminId: String? = null,
+    ) = repository.createClientActivity(clientId, request, createdById, ownerAdminId)
+
+    fun updatedClientActivity(
+        clientId: String,
+        activityId: String,
+        request: UpdateClientActivityRequest,
+        ownerAdminId: String? = null,
+    ) = repository.updateClientActivity(clientId, activityId, request, ownerAdminId)
+
+    fun deletedClientActivity(clientId: String, activityId: String, ownerAdminId: String? = null) =
+        repository.deleteClientActivity(clientId, activityId, ownerAdminId)
 
     fun taskLabels(ownerAdminId: String? = null) = repository.getTaskLabels(ownerAdminId)
 

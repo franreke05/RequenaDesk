@@ -27,6 +27,7 @@ import com.requena.supportdesk.app.client.initials
 import com.requena.supportdesk.core.model.Ticket
 import com.requena.supportdesk.core.model.TicketStatus
 import com.requena.supportdesk.core.model.Client
+import com.requena.supportdesk.core.model.displayName
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
@@ -176,6 +177,21 @@ fun ClientAccountScreen(
                 AccountStatRow(label = "Producto", value = it.productName)
                 AccountStatRow(label = "Correo", value = it.email)
                 AccountStatRow(label = "Canal preferido", value = it.preferredContactChannel.name)
+            }
+        }
+
+        SectionCard(title = "Componentes del portal") {
+            val components = client?.enabledComponents.orEmpty().sortedBy { it.name }
+            if (components.isEmpty()) {
+                Text(
+                    "Tu portal incluye el seguimiento esencial de solicitudes y trabajo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                components.forEach { component ->
+                    AccountStatRow(label = component.displayName(), value = "Activo")
+                }
             }
         }
 

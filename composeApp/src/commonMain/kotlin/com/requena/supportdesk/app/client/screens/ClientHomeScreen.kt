@@ -72,6 +72,7 @@ fun ClientHomeScreen(
     recentTickets: List<Ticket>,
     isLoading: Boolean,
     errorMessage: String?,
+    hasServiceSla: Boolean,
     onNavigate: (ClientDestination) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -119,7 +120,7 @@ fun ClientHomeScreen(
 
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                 Text(
-                    text = "Bienvenido,",
+                    text = "Centro de Cliente",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -159,6 +160,12 @@ fun ClientHomeScreen(
             LoadingState(itemCount = 4)
             return@Column
         }
+
+        ClientContinuityPanel(
+            tickets = allTickets,
+            hasServiceSla = hasServiceSla,
+            onNavigate = onNavigate,
+        )
 
         ClientStatusBoard(tickets = allTickets)
 
@@ -304,6 +311,66 @@ fun ClientHomeScreen(
             }
         }
 
+    }
+}
+
+@Composable
+private fun ClientContinuityPanel(
+    tickets: List<Ticket>,
+    hasServiceSla: Boolean,
+    onNavigate: (ClientDestination) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val pendingClientTicket = remember(tickets) {
+        tickets.firstOrNull { it.status == TicketStatus.PENDING_CLIENT }
+    }
+    val activeTicketCount = remember(tickets) {
+        tickets.count { it.status != TicketStatus.CLOSED && it.status != TicketStatus.RESOLVED }
+    }
+
+    SectionCard(
+        title = if (pendingClientTicket == null) "Estado de tu servicio" else "Tu siguiente acción",
+        subtitle = if (pendingClientTicket == null) {
+            if (activeTicketCount == 0) "No hay solicitudes activas en este momento." else "El equipo está trabajando en $activeTicketCount solicitud${if (activeTicketCount == 1) "" else "es"}."
+        } else {
+            "Necesitamos tu confirmación para avanzar."
+        },
+    ) {
+        if (pendingClientTicket != null) {
+            Text(
+                pendingClientTicket.subject,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            SecondaryButton(text = "Ver y responder", onClick = { onNavigate(ClientDestination.TICKETS) })
+        } else {
+            SupportDeskBadge(
+                text = "Servicio en seguimiento",
+                containerColor = SupportDeskThemeTokens.semanticColors.successContainer,
+                contentColor = SupportDeskThemeTokens.semanticColors.success,
+            )
+        }
+    }
+
+    SectionCard(
+        title = if (hasServiceSla) "Servicio y SLA activo" else "Más control sobre tu servicio",
+        subtitle = if (hasServiceSla) {
+            "Consulta consumo, actividad y el resumen de soporte."
+        } else {
+            "Activa el módulo Servicio y SLA para consultar el seguimiento de soporte."
+        },
+    ) {
+        SecondaryButton(
+            text = if (hasServiceSla) "Ver mi servicio" else "Conocer Servicio y SLA",
+            onClick = { onNavigate(ClientDestination.SERVICE) },
+        )
+        if (!hasServiceSla) {
+            Text(
+                "No es una limitación de tus solicitudes actuales; es un componente opcional de tu portal.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

@@ -8,6 +8,7 @@ import com.requena.supportdesk.server.data.repository.PostgresSupportDeskReposit
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -39,7 +40,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(4, dataSource.migrate())
+                assertEquals(6, dataSource.migrate())
                 assertTrue(dataSource.isReady())
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
@@ -97,7 +98,72 @@ class PostgresMigrationIntegrationTest {
                         )
                     }
                     assertEquals(HttpStatusCode.Created, clientResponse.status)
-                    val clientId = extractField(clientResponse.bodyAsText(), "id")
+                    val createdClientBody = clientResponse.bodyAsText()
+                    val clientId = extractField(createdClientBody, "id")
+                    val initialAccessCode = extractField(createdClientBody, "generatedAccessCode")
+                    assertTrue(initialAccessCode.startsWith("SBS-"))
+                    assertEquals(HttpStatusCode.OK, client.post("/auth/login") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"email":"integration@example.com","password":"$initialAccessCode"}""")
+                    }.status)
+
+                    val regeneratedCredentialsResponse = client.post("/admin/clients/$clientId/credentials/regenerate") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, regeneratedCredentialsResponse.status)
+                    val regeneratedAccessCode = extractField(regeneratedCredentialsResponse.bodyAsText(), "accessCode")
+                    assertTrue(regeneratedAccessCode != initialAccessCode)
+                    assertEquals(HttpStatusCode.Unauthorized, client.post("/auth/login") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"email":"integration@example.com","password":"$initialAccessCode"}""")
+                    }.status)
+
+                    val componentsResponse = client.put("/admin/clients/$clientId/components") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"components":["SERVICE_SLA"]}""")
+                    }
+                    assertEquals(HttpStatusCode.OK, componentsResponse.status)
+                    assertTrue(componentsResponse.bodyAsText().contains("\"SERVICE_SLA\""))
+
+                    val contactResponse = client.post("/admin/clients/$clientId/contacts") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody(
+                            """
+                            {
+                              "fullName":"Integration Contact",
+                              "email":"contact.integration@example.com",
+                              "role":"Product owner",
+                              "isPrimary":true
+                            }
+                            """.trimIndent(),
+                        )
+                    }
+                    assertEquals(HttpStatusCode.Created, contactResponse.status)
+                    val contactId = extractField(contactResponse.bodyAsText(), "id")
+
+                    val activityResponse = client.post("/admin/clients/$clientId/activities") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody(
+                            """
+                            {
+                              "type":"FOLLOW_UP",
+                              "subject":"Integration CRM follow-up",
+                              "contactId":"$contactId"
+                            }
+                            """.trimIndent(),
+                        )
+                    }
+                    assertEquals(HttpStatusCode.Created, activityResponse.status)
+                    assertTrue(activityResponse.bodyAsText().contains("Integration CRM follow-up"))
+
+                    val activitiesResponse = client.get("/admin/clients/$clientId/activities") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, activitiesResponse.status)
+                    assertTrue(activitiesResponse.bodyAsText().contains("Integration CRM follow-up"))
 
                     val labelResponse = client.post("/admin/labels") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")

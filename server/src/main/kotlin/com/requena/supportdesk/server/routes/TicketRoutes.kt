@@ -17,6 +17,8 @@ import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
 import com.requena.supportdesk.server.utils.ticketJson
 import com.requena.supportdesk.server.utils.ticketsJson
+import com.requena.supportdesk.server.utils.clientTicketJson
+import com.requena.supportdesk.server.utils.clientTicketsJson
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -34,10 +36,11 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         get {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val visibleClientIds = service.visibleClientIdsFor(identity)
+            val tickets = service.tickets().filter { it.clientId in visibleClientIds }
             call.respondJson(
                 body = successResponse(
                     "/tickets",
-                    ticketsJson(service.tickets().filter { it.clientId in visibleClientIds }),
+                    if (identity.isAdmin) ticketsJson(tickets) else clientTicketsJson(tickets),
                 ),
             )
         }
@@ -47,7 +50,12 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             val ticket = service.ticket(id)
                 ?.takeIf { it.clientId in service.visibleClientIdsFor(identity) }
                 ?: return@get call.respondJson(HttpStatusCode.NotFound, errorResponse("Ticket not found"))
-            call.respondJson(body = successResponse("/tickets/$id", ticketJson(ticket)))
+            call.respondJson(
+                body = successResponse(
+                    "/tickets/$id",
+                    if (identity.isAdmin) ticketJson(ticket) else clientTicketJson(ticket),
+                ),
+            )
         }
         post {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@post
@@ -85,7 +93,14 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                     )
                 }
             }
-            call.respondJson(HttpStatusCode.Created, successResponse("/tickets", ticketJson(service.createdTicket(request))))
+            val createdTicket = service.createdTicket(request)
+            call.respondJson(
+                HttpStatusCode.Created,
+                successResponse(
+                    "/tickets",
+                    if (identity.isAdmin) ticketJson(createdTicket) else clientTicketJson(createdTicket),
+                ),
+            )
         }
         post("/{id}/messages") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@post
