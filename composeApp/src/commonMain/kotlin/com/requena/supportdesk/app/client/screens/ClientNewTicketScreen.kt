@@ -86,12 +86,14 @@ fun ClientNewTicketScreen(
     val categoryOptions = remember { TicketCategory.entries.map { FilterOption(it, it.displayName()) } }
     val platformOptions = remember { SupportPlatform.entries.map { FilterOption(it, it.displayName()) } }
     val priorityOptions = remember { TicketPriority.entries.map { FilterOption(it, it.displayName()) } }
+    var justCreatedTicketId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(lastCreatedTicketId) {
         if (lastCreatedTicketId != null) {
             subject = ""
             description = ""
             priority = TicketPriority.MEDIUM
+            justCreatedTicketId = lastCreatedTicketId
         }
     }
 
@@ -101,6 +103,16 @@ fun ClientNewTicketScreen(
             title = "Nuevo ticket",
             subtitle = "Máximo $ClientDailyUrgentLimit tickets urgentes por día.",
         )
+        AnimatedVisibility(
+            visible = justCreatedTicketId != null,
+            enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { -it / 2 },
+            exit = fadeOut(tween(180)),
+        ) {
+            ClientNotice(
+                message = "Ticket enviado. El equipo lo revisará y te avisaremos en cuanto haya novedades.",
+                isError = false,
+            )
+        }
         val rem = ClientDailyUrgentLimit - urgentToday
         SectionCard(
             modifier = Modifier.fillMaxWidth(),
@@ -154,7 +166,7 @@ fun ClientNewTicketScreen(
         ) {
             OutlinedTextField(
                 value = subject,
-                onValueChange = { subject = it },
+                onValueChange = { subject = it; justCreatedTicketId = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Asunto") },
                 singleLine = true,
@@ -163,7 +175,7 @@ fun ClientNewTicketScreen(
             )
             OutlinedTextField(
                 value = description,
-                onValueChange = { description = it },
+                onValueChange = { description = it; justCreatedTicketId = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Detalle del problema") },
                 minLines = 5,
@@ -317,10 +329,13 @@ private fun TicketPreviewCard(
         else -> MaterialTheme.colorScheme.outlineVariant
     }
 
+    // Emphasized once the form reads as "ready to send" - a small reward for finishing,
+    // not decoration from the first keystroke.
     SectionCard(
         modifier = modifier,
         title = "Vista previa",
         subtitle = if (!hasContent) "Completa el formulario" else "Asi recibira el equipo tu solicitud",
+        emphasized = completeness >= 0.9f,
     ) {
         // Live indicator dot
         Row(

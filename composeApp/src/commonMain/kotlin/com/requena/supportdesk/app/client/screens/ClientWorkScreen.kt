@@ -116,7 +116,7 @@ private fun RequestsOverview(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    ClientPortalSurfaceCard(modifier) {
+    ClientPortalSurfaceCard(modifier, emphasized = pendingClientTickets > 0) {
         ClientPortalSectionTitle(
             title = if (pendingClientTickets > 0) "Hay una respuesta pendiente" else "Solicitudes",
             supportingText = if (pendingClientTickets > 0) {

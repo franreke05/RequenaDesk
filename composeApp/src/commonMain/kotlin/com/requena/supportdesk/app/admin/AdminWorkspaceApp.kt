@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -50,15 +51,21 @@ import com.requena.supportdesk.designsystem.components.navigation.AdminNavigatio
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
 import com.requena.supportdesk.designsystem.components.navigation.NavigationItemSpec
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.core.model.UserRole
 import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
+import com.requena.supportdesk.features.business.finance.presentation.BusinessFinanceUiEffect
+import com.requena.supportdesk.features.business.operations.OperationsUiEffect
+import com.requena.supportdesk.features.business.sales.presentation.BusinessSalesUiEffect
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
 import com.requena.supportdesk.features.clients.presentation.state.ClientsUiState
 import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
+import com.requena.supportdesk.features.programs.presentation.effect.ProgramsUiEffect
 import com.requena.supportdesk.features.programs.presentation.event.ProgramsUiEvent
 import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiState
+import com.requena.supportdesk.features.tasks.presentation.effect.TasksUiEffect
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
@@ -79,6 +86,10 @@ fun AdminWorkspaceApp() {
     val module = remember { AdminAppModule() }
     var navigation by remember { mutableStateOf(AdminNavigationState()) }
     var statusMessage by remember { mutableStateOf("Workspace admin listo.") }
+    // Collected here (the only place with simultaneous access to all 9 client-portal-relevant
+    // ViewModels via `module`), rendered inside ClientPortalScreen (the only place that knows
+    // the content panel's actual bounds, as opposed to the full window behind the sidebar).
+    val clientSnackbarHostState = remember { SnackbarHostState() }
 
     val authState by module.authViewModel.state.collectAsState()
     val currentUser = authState.authenticatedUser
@@ -150,12 +161,110 @@ fun AdminWorkspaceApp() {
         if (currentUser != null) {
             module.ticketsViewModel.effects.collect { effect ->
                 when (effect) {
-                    is TicketsUiEffect.ShowMessage -> statusMessage = effect.message
+                    is TicketsUiEffect.ShowMessage -> {
+                        statusMessage = effect.message
+                        // TicketsViewModel is shared with the client portal; only show the
+                        // snackbar for a client session (ClientPortalScreen is the only place
+                        // that mounts a SnackbarHost for this state - calling showSnackbar
+                        // without one composed would suspend forever and stall this collector).
+                        if (currentUser.role == UserRole.CLIENT) {
+                            clientSnackbarHostState.showSnackbar(effect.message)
+                        }
+                    }
                     // Ticket creation now happens from a dialog on top of the Tickets screen
                     // itself; the ViewModel already selects the new ticket (renderTickets(selectId
                     // = ...) in createTicket()), so the list/detail panes update in place without
                     // forcing navigation away from wherever the admin already is.
                     is TicketsUiEffect.TicketCreated -> Unit
+                }
+            }
+        }
+    }
+
+    // The following 8 collectors are gated to CLIENT sessions only (not just non-null, unlike
+    // the 4 above): every one of these ViewModels' effects is unread by any admin screen today,
+    // and ClientPortalScreen is the only place a SnackbarHost is actually mounted - collecting
+    // for an admin session would call showSnackbar with nothing composed to dismiss it, stalling
+    // the collector on its first message.
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.tasksViewModel.effects.collect { effect ->
+                when (effect) {
+                    is TasksUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.programsViewModel.effects.collect { effect ->
+                when (effect) {
+                    is ProgramsUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessInvoicingViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessFinanceUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                    // Access-denied already drives a persistent EmptyState in the workspace
+                    // itself (state.accessDenied) - a toast on top would just duplicate it.
+                    BusinessFinanceUiEffect.AccessDenied -> Unit
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessAccountingViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessFinanceUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                    BusinessFinanceUiEffect.AccessDenied -> Unit
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.operationsViewModel.effects.collect { effect ->
+                when (effect) {
+                    is OperationsUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.text)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessCustomersViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessSalesUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessCatalogViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessSalesUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessQuotesViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessSalesUiEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
                 }
             }
         }
@@ -222,6 +331,7 @@ fun AdminWorkspaceApp() {
                 businessCatalogViewModel = module.businessCatalogViewModel,
                 businessQuotesViewModel = module.businessQuotesViewModel,
                 clientId = currentUser.clientId,
+                snackbarHostState = clientSnackbarHostState,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

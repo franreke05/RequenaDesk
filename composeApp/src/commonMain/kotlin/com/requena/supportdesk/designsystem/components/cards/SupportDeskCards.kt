@@ -21,7 +21,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
@@ -29,30 +34,57 @@ import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 private val CardTextCrossfade =
     fadeIn(tween(SupportDeskMotion.regular)) togetherWith fadeOut(tween(SupportDeskMotion.quick))
 
-// Flat card, no drop shadow - a crisp accent-colored border reads as "neon" without the
-// muddy gray halo Compose's elevation shadow produces. MaterialTheme.colorScheme.primary
-// already resolves per light/dark theme, so this needs no separate dark-mode variant.
+// Editorial "hairline" card border - a thin neutral rule, never a glassy shadow.
+// Mirrors the portfolio's --border token: cards are defined by a crisp outline,
+// not elevation. MaterialTheme.colorScheme.outlineVariant resolves per light/dark theme.
 @Composable
-private fun neonCardBorder(): BorderStroke = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+private fun hairlineCardBorder(): BorderStroke = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+
+// Opt-in "printed panel" treatment for the rare card that should stand out (e.g. a
+// hero metric or the active timer card): ink-colored outline + a hard, unblurred
+// offset shadow in the accent color, borrowed from the portfolio's .comic-ink-outline
+// utility. Deliberately not the default card style - used sparingly, like the source.
+private fun Modifier.hardOffsetShadow(
+    color: Color,
+    offset: Dp = 4.dp,
+    cornerRadius: Dp = 8.dp,
+): Modifier = drawBehind {
+    val offsetPx = offset.toPx()
+    val radiusPx = cornerRadius.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(offsetPx, offsetPx),
+        size = size,
+        cornerRadius = CornerRadius(radiusPx, radiusPx),
+    )
+}
 
 @Composable
 fun SectionCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     subtitle: String? = null,
+    emphasized: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val resolvedTitle = title?.takeIf { it.isNotBlank() }
     val resolvedSubtitle = subtitle?.takeIf { it.isNotBlank() }
+    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
-        modifier = modifier.animateContentSize(),
+        modifier = modifier
+            .animateContentSize()
+            .let { if (emphasized) it.hardOffsetShadow(emphasisColor) else it },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = neonCardBorder(),
+        border = if (emphasized) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
+        } else {
+            hairlineCardBorder()
+        },
     ) {
         Column(
             modifier = Modifier
@@ -100,17 +132,24 @@ fun MetricCard(
     value: String,
     supportingText: String,
     modifier: Modifier = Modifier,
+    emphasized: Boolean = false,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
         modifier = modifier
             .heightIn(min = 132.dp)
-            .animateContentSize(),
+            .animateContentSize()
+            .let { if (emphasized) it.hardOffsetShadow(emphasisColor) else it },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = neonCardBorder(),
+        border = if (emphasized) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
+        } else {
+            hairlineCardBorder()
+        },
     ) {
         Column(
             modifier = Modifier

@@ -2,6 +2,7 @@ package com.requena.supportdesk.designsystem.components.badges
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -9,8 +10,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.requena.supportdesk.core.model.SupportPlatform
 import com.requena.supportdesk.core.model.TicketCategory
 import com.requena.supportdesk.core.model.TicketPriority
@@ -122,17 +125,22 @@ fun SupportDeskBadge(
         animationSpec = tween(durationMillis = SupportDeskMotion.regular),
         label = "badgeContent",
     )
+    // Comic "caption" treatment: bold italic uppercase, like an action-word panel
+    // caption, plus a thin ink border so every badge reads as a printed stamp.
     Surface(
         modifier = modifier,
         color = animatedContainerColor.value,
         contentColor = animatedContentColor.value,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.small,
+        border = BorderStroke(1.dp, animatedContentColor.value),
     ) {
         Text(
-            text = text,
+            text = text.uppercase(),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            fontStyle = FontStyle.Italic,
+            letterSpacing = 0.4.sp,
         )
     }
 }

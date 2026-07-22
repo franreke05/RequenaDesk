@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 
@@ -58,7 +59,7 @@ fun <T> AppSidebar(
     Surface(
         modifier = modifier
             .fillMaxHeight()
-            .width(284.dp),
+            .width(SupportDeskBreakpoints.clientSidebarWidth),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = SupportDeskThemeTokens.elevations.subtle,
     ) {

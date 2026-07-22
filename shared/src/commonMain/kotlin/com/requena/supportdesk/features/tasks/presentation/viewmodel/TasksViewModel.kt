@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 class TasksViewModel(
     private val getTaskLabelsUseCase: GetTaskLabelsUseCase,
@@ -59,13 +60,22 @@ class TasksViewModel(
     private var tasks = emptyList<WorkTask>()
     private var logs = emptyList<TaskLog>()
 
+    // Serializes every entry point that ends in loadWorkspace() (Load, create/update/delete
+    // task or label, stopTimer's time-log write). Two jobs: (1) the canonical double-submit
+    // guard (e.g. rapid double-taps on "Anadir tarea" used to both reach the network - the
+    // daily task-limit check read stale state from before either had completed); (2)
+    // categories/tasks/logs above are plain vars written by loadWorkspace() and read by
+    // publish(), with no coordination between the ~8 independent coroutines that used to be
+    // able to call loadWorkspace() concurrently - serializing here closes both at once.
+    private val workspaceMutex = Mutex()
+
     init {
         onEvent(TasksUiEvent.Load)
     }
 
     fun onEvent(event: TasksUiEvent) {
         when (event) {
-            TasksUiEvent.Load -> loadWorkspace()
+            TasksUiEvent.Load -> guardedLaunch(workspaceMutex) { loadWorkspace() }
             is TasksUiEvent.SelectDay -> selectDay(event.dayIsoDate)
             is TasksUiEvent.SelectTask -> publish(selectedTaskId = event.taskId)
             is TasksUiEvent.SelectCategory -> publish(selectedCategoryId = event.categoryId)
@@ -90,7 +100,11 @@ class TasksViewModel(
         }
     }
 
-    private fun loadWorkspace(
+    // suspend, not self-launching: every caller now runs it inside its own guardedLaunch
+    // (workspaceMutex) block so the mutex covers the full create/update-then-refresh
+    // sequence, not just the initial mutation - a plain `launch{}` here would let the mutex
+    // unlock (in the caller's `finally`) before this function's own network calls finished.
+    private suspend fun loadWorkspace(
         selectedDay: String? = state.value.selectedDay,
         selectedTaskId: String? = state.value.selectedTaskId,
         selectedCategoryId: String? = state.value.selectedCategoryId,
@@ -102,50 +116,48 @@ class TasksViewModel(
         isTimerRunning: Boolean = state.value.isTimerRunning,
         statusMessage: String? = null,
     ) {
-        launch {
-            _state.update { it.copy(isLoading = true, errorMessage = null, statusMessage = statusMessage) }
+        _state.update { it.copy(isLoading = true, errorMessage = null, statusMessage = statusMessage) }
 
-            val labelsResult = getTaskLabelsUseCase()
-            if (labelsResult is AppResult.Error) {
-                handleWorkspaceError(labelsResult.message)
-                return@launch
-            }
-
-            val tasksResult = getTasksUseCase()
-            if (tasksResult is AppResult.Error) {
-                handleWorkspaceError(tasksResult.message)
-                return@launch
-            }
-
-            val logsResult = getTaskLogsUseCase()
-            if (logsResult is AppResult.Error) {
-                handleWorkspaceError(logsResult.message)
-                return@launch
-            }
-
-            categories = (labelsResult as AppResult.Success).data
-            tasks = (tasksResult as AppResult.Success).data
-            logs = (logsResult as AppResult.Success).data
-
-            if (statusMessage != null) {
-                _effects.emit(TasksUiEffect.ShowMessage(statusMessage))
-            }
-
-            publish(
-                selectedDay = selectedDay,
-                selectedTaskId = selectedTaskId,
-                selectedCategoryId = selectedCategoryId,
-                selectedClientFilterId = selectedClientFilterId,
-                selectedDashboardClientId = selectedDashboardClientId,
-                selectedDashboardCategoryIds = selectedDashboardCategoryIds,
-                activeTaskId = activeTaskId,
-                activeTaskSeconds = activeTaskSeconds,
-                isTimerRunning = isTimerRunning,
-                isLoading = false,
-                errorMessage = null,
-                statusMessage = statusMessage,
-            )
+        val labelsResult = getTaskLabelsUseCase()
+        if (labelsResult is AppResult.Error) {
+            handleWorkspaceError(labelsResult.message)
+            return
         }
+
+        val tasksResult = getTasksUseCase()
+        if (tasksResult is AppResult.Error) {
+            handleWorkspaceError(tasksResult.message)
+            return
+        }
+
+        val logsResult = getTaskLogsUseCase()
+        if (logsResult is AppResult.Error) {
+            handleWorkspaceError(logsResult.message)
+            return
+        }
+
+        categories = (labelsResult as AppResult.Success).data
+        tasks = (tasksResult as AppResult.Success).data
+        logs = (logsResult as AppResult.Success).data
+
+        if (statusMessage != null) {
+            _effects.emit(TasksUiEffect.ShowMessage(statusMessage))
+        }
+
+        publish(
+            selectedDay = selectedDay,
+            selectedTaskId = selectedTaskId,
+            selectedCategoryId = selectedCategoryId,
+            selectedClientFilterId = selectedClientFilterId,
+            selectedDashboardClientId = selectedDashboardClientId,
+            selectedDashboardCategoryIds = selectedDashboardCategoryIds,
+            activeTaskId = activeTaskId,
+            activeTaskSeconds = activeTaskSeconds,
+            isTimerRunning = isTimerRunning,
+            isLoading = false,
+            errorMessage = null,
+            statusMessage = statusMessage,
+        )
     }
 
     private fun createLabel(name: String, colorHex: String) {
@@ -156,7 +168,7 @@ class TasksViewModel(
             handleWorkspaceError("No se encontro una sesion de administrador activa.")
             return
         }
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (val result = createTaskLabelUseCase(TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
@@ -175,7 +187,7 @@ class TasksViewModel(
             handleWorkspaceError("No se encontro una sesion de administrador activa.")
             return
         }
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (val result = updateTaskLabelUseCase(labelId, TaskLabelDraft(cleanName, normalizeHex(colorHex), ownerAdminId = ownerAdminId))) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
@@ -187,7 +199,7 @@ class TasksViewModel(
     }
 
     private fun deleteLabel(labelId: String) {
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (val result = deleteTaskLabelUseCase(labelId)) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
@@ -207,8 +219,12 @@ class TasksViewModel(
                 return
             }
         }
-        launch {
-            _state.update { it.copy(errorMessage = null, lastCreatedTaskId = null) }
+        guardedLaunch(workspaceMutex) {
+            // isLoading=true here is the actual fix: ClientTasksScreen's "Anadir" button is
+            // already correctly wired to `enabled = !state.isLoading`, it just never received
+            // a true value during the in-flight window before - the button was clickable for
+            // the entire round-trip, letting two fast taps both reach createTaskUseCase().
+            _state.update { it.copy(isLoading = true, errorMessage = null, lastCreatedTaskId = null) }
             when (
                 val result = createTaskUseCase(
                     TaskDraft(
@@ -277,7 +293,7 @@ class TasksViewModel(
 
     private fun deleteTask(taskId: String) {
         val fallbackSelection = nextSelectionAfterDelete(taskId)
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (val result = deleteTaskUseCase(taskId)) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
@@ -309,7 +325,7 @@ class TasksViewModel(
         input: TaskUpdateInput,
         successMessage: String,
     ) {
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (val result = updateTaskUseCase(taskId, input)) {
                 is AppResult.Error -> handleWorkspaceError(result.message)
                 is AppResult.Success -> loadWorkspace(
@@ -410,7 +426,7 @@ class TasksViewModel(
             )
             return
         }
-        launch {
+        guardedLaunch(workspaceMutex) {
             when (
                 val result = createTimeLogUseCase(
                     TaskTimeLogDraft(

@@ -1,5 +1,6 @@
 package com.requena.supportdesk.app.client.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -279,7 +280,8 @@ private fun ClientBillingPanel(
     activeProgramCount: Int,
     onManagePrograms: () -> Unit,
 ) {
-    ClientPortalSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+    // The free-beta framing is the headline fact of this whole panel - worth the hero treatment.
+    ClientPortalSurfaceCard(modifier = Modifier.fillMaxWidth(), emphasized = true) {
         ClientPortalSectionTitle(
             "Programas durante la beta",
             "Todos los programas están disponibles sin coste mientras realizamos las pruebas. Su activación requiere autorización del administrador.",
@@ -385,10 +387,11 @@ private fun SettingsEntry(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (isDestructive) SupportDeskThemeTokens.semanticColors.dangerContainer.copy(alpha = 0.38f) else MaterialTheme.colorScheme.surface,
         contentColor = contentColor,
         tonalElevation = 0.dp,
+        border = BorderStroke(1.dp, if (isDestructive) SupportDeskThemeTokens.semanticColors.danger.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(spacing.lg),

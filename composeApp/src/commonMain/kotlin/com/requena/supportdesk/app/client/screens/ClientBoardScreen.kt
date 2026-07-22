@@ -25,8 +25,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,7 +35,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
@@ -107,7 +106,10 @@ fun ClientBoardScreen(
                 message = "Crea el primer ticket para empezar a usar el tablero.",
             )
             else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            if (maxWidth >= SupportDeskBreakpoints.clientBoardWide) {
+            // Horizontally-scrollable columns absorb any width - no minimum-column-width
+            // constraint like Tickets' non-scrolling grid, so this can activate at the
+            // lower clientMedium tier without cramping.
+            if (maxWidth >= SupportDeskBreakpoints.clientMedium) {
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
@@ -254,24 +256,22 @@ private fun KanbanTicketCard(ticket: Ticket, onClick: () -> Unit, modifier: Modi
     val semantic = SupportDeskThemeTokens.semanticColors
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val elevation by animateDpAsState(
-        targetValue = if (hovered) 8.dp else 1.dp,
-        animationSpec = tween(180),
-        label = "kanban_elev",
-    )
     val priorityAccent = when (ticket.priority) {
         TicketPriority.LOW -> MaterialTheme.colorScheme.secondary
         TicketPriority.MEDIUM -> semantic.info
         TicketPriority.HIGH -> semantic.warning
         TicketPriority.URGENT -> semantic.danger
     }
-    ElevatedCard(
+    // Flat + hairline, matching the app's card language: hover reads as a crisper
+    // ink border instead of a growing blurred shadow.
+    Card(
         modifier = modifier
             .fillMaxWidth()
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, if (hovered) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             Box(

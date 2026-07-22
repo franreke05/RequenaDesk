@@ -32,6 +32,7 @@ import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.ErrorState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStatus
@@ -90,7 +91,7 @@ fun BusinessCustomersScreen(
             EmptyState("TodavÃ­a no hay clientes comerciales", "Crea el primero para organizar contactos y presupuestos.", actionText = "Actualizar", onAction = onRefresh)
         } else {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth < 900.dp) {
+                if (maxWidth < SupportDeskBreakpoints.clientWide) {
                     CustomerList(state.customers, onSelect)
                     state.selectedCustomer?.let { CustomerDetailCard(it, state.isSaving, onUpdateCustomer, onArchiveCustomer, onCreateContact, onUpdateContact) }
                 } else {

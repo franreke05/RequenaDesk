@@ -18,26 +18,61 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 
-private val ClientPortalCardShape = RoundedCornerShape(16.dp)
+private val ClientPortalCardShape = RoundedCornerShape(8.dp)
 
-/** Shared visual language for the customer-facing portal: calm, compact and task-led. */
+// Same "printed panel" trick used on the admin side (see SupportDeskCards.kt): a hard,
+// unblurred offset shadow instead of a Material elevation blur. Duplicated locally (not
+// imported) so the portal card system stays independent of the admin one.
+private fun Modifier.clientPortalHardShadow(
+    color: Color,
+    offset: Dp = 4.dp,
+    cornerRadius: Dp = 8.dp,
+): Modifier = drawBehind {
+    val offsetPx = offset.toPx()
+    val radiusPx = cornerRadius.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(offsetPx, offsetPx),
+        size = size,
+        cornerRadius = CornerRadius(radiusPx, radiusPx),
+    )
+}
+
+/**
+ * Shared visual language for the customer-facing portal: warm paper surface, hairline ink
+ * border by default. Set [emphasized] on at most one hero card per screen for the "printed
+ * panel" treatment: a 2dp ink outline plus a hard offset accent shadow. Full-width cards
+ * only - never inside a multi-column Row/grid at any breakpoint, since the offset shadow
+ * is sized against page padding, not a shared column gap.
+ */
 @Composable
 fun ClientPortalSurfaceCard(
     modifier: Modifier = Modifier,
+    emphasized: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
-        modifier = modifier,
+        modifier = modifier.let { if (emphasized) it.clientPortalHardShadow(emphasisColor) else it },
         shape = ClientPortalCardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+        border = if (emphasized) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        },
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(spacing.lg),
@@ -53,11 +88,12 @@ fun ClientPortalSectionCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     subtitle: String? = null,
+    emphasized: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    ClientPortalSurfaceCard(modifier) {
+    ClientPortalSurfaceCard(modifier, emphasized = emphasized) {
         val resolvedTitle = title?.takeIf { it.isNotBlank() }
         val resolvedSubtitle = subtitle?.takeIf { it.isNotBlank() }
         if (resolvedTitle != null || resolvedSubtitle != null) {
@@ -118,9 +154,9 @@ fun ClientPortalMetric(
     val spacing = SupportDeskThemeTokens.spacing
     Surface(
         modifier = modifier.heightIn(min = 88.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = ClientPortalCardShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.md, vertical = spacing.sm),

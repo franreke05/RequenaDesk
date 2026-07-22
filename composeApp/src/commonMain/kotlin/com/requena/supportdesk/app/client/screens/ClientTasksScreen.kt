@@ -44,6 +44,7 @@ import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.app.client.components.ClientPortalSectionCard as SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
+import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -90,6 +91,16 @@ fun ClientTasksScreen(
             title = "Mis tareas",
             subtitle = "Máximo $ClientDailyTaskLimit tareas nuevas por día. Solo para uso personal.",
         )
+
+        // Distinguishes "nothing has loaded yet" from an in-flight create on an already-empty
+        // list: state.isLoading is shared between the two (categories load in the same
+        // request), but categories can only be empty before the very first load ever
+        // resolves - the "Anadir" button requires a category to even be enabled, so a create
+        // can't be in flight while categories is still empty.
+        if (state.isLoading && clientTasks.isEmpty() && state.categories.isEmpty()) {
+            LoadingState(itemCount = 3)
+            return@Column
+        }
 
         SectionCard(
             modifier = Modifier.fillMaxWidth(),
@@ -144,10 +155,12 @@ fun ClientTasksScreen(
         }
 
         if (todayTasks.isNotEmpty()) {
+            // A small celebratory beat when the client clears everything for the day.
             SectionCard(
                 modifier = Modifier.fillMaxWidth(),
                 title = "Hoy",
                 subtitle = "$todayDone/${todayTasks.size} completadas",
+                emphasized = todayDone == todayTasks.size,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     todayTasks.forEach { task ->

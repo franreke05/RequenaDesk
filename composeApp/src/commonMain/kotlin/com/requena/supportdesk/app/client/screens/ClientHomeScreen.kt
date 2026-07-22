@@ -217,7 +217,10 @@ private fun ClientPriorityCard(
     onNavigate: (ClientDestination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ClientPortalSurfaceCard(modifier) {
+    // Emphasized only when something actually needs the client's attention - the
+    // ink-outline + offset-shadow "printed panel" treatment then doubles as an
+    // urgency cue, not just decoration.
+    ClientPortalSurfaceCard(modifier, emphasized = pendingTicket != null) {
         ClientPortalSectionTitle(
             title = if (pendingTicket == null) "Prioridad" else "Tu respuesta desbloquea el avance",
             supportingText = if (pendingTicket == null) "El equipo tiene el servicio bajo control." else "Revisa este ticket para que el equipo pueda continuar.",

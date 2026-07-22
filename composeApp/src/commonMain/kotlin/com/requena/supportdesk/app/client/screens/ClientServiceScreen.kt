@@ -125,16 +125,36 @@ fun ClientServiceScreen(
         )
 
         if (!isEnabled) {
+            // The upsell is the single most important thing on this screen when locked -
+            // give it the hero treatment instead of blending in as another flat card.
             SectionCard(
-                title = "Servicio y SLA no esta activo",
-                subtitle = "Este componente anade seguimiento de consumo y una vista de soporte para tu equipo.",
+                title = "Desbloquea el panel de consumo",
+                subtitle = "Servicio y SLA anade seguimiento de horas, tendencias mensuales y prioridad de atencion para tu equipo.",
+                emphasized = true,
             ) {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
+                    Text(
+                        "• Horas de soporte por mes, con comparativa frente al mes anterior.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "• Tendencia de los ultimos 6 meses y desglose por categoria.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "• Prioridad de atencion en tus tickets urgentes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
-                    "Puedes pedir informacion al equipo sin perder el contexto de tu cuenta.",
-                    style = MaterialTheme.typography.bodySmall,
+                    "Pide al equipo de OryKai que lo active: no perderas nada de tu historial actual mientras tanto.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SecondaryButton(text = "Solicitar informacion", onClick = onRequestActivation)
+                SecondaryButton(text = "Solicitar activacion", onClick = onRequestActivation)
             }
             return@Column
         }

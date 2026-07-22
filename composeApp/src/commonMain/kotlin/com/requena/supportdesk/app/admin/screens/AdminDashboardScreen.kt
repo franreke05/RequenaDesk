@@ -213,6 +213,7 @@ private fun DashboardFocusPanel(
     SectionCard(
         title = "Tiempo y foco",
         subtitle = null,
+        emphasized = true,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             DashboardFiltersRow(

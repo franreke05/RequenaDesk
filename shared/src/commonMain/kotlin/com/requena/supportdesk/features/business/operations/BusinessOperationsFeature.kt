@@ -9,8 +9,11 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
@@ -95,6 +98,18 @@ class BusinessOperationsRepositoryImpl(private val source: BusinessOperationsDat
 }
 
 data class OperationsUiState(val appointments: List<ClientAppointmentDto> = emptyList(), val documents: List<ClientDocumentDto> = emptyList(), val configuration: BookingConfigurationDto? = null, val isLoading: Boolean = false, val isSaving: Boolean = false, val message: String? = null)
+
+// Bookings and Documents are unrelated sub-features sharing one ViewModel instance (a
+// session-scoped singleton whose viewModelScope outlives per-screen navigation) - every
+// user-facing message is tagged with its origin so a Documents confirmation can never read
+// as a Bookings one (or vice versa) once something actually collects `effects` (see Wave 0
+// Snackbar wiring). `OperationsUiState.message` is left as-is (untagged, still unread by any
+// screen today) rather than restructured - this effect channel is the one thing Wave 0
+// actually wires up, so it's the one thing that needs the scope to be correct now.
+enum class OperationsScope { BOOKINGS, DOCUMENTS }
+sealed interface OperationsUiEffect {
+    data class ShowMessage(val text: String, val scope: OperationsScope) : OperationsUiEffect
+}
 sealed interface OperationsUiEvent {
     data object LoadBookingConfiguration : OperationsUiEvent
     data class CreateBookingService(val request: CreateBookingServiceDto) : OperationsUiEvent
@@ -111,6 +126,8 @@ sealed interface OperationsUiEvent {
 class OperationsViewModel(private val repository: BusinessOperationsRepository) : BaseViewModel() {
     private val _state = MutableStateFlow(OperationsUiState())
     val state: StateFlow<OperationsUiState> = _state.asStateFlow()
+    private val _effects = MutableSharedFlow<OperationsUiEffect>()
+    val effects: SharedFlow<OperationsUiEffect> = _effects.asSharedFlow()
     fun onEvent(event: OperationsUiEvent) = when (event) {
         OperationsUiEvent.LoadBookingConfiguration -> loadBookingConfiguration()
         is OperationsUiEvent.CreateBookingService -> createBookingService(event.request)
@@ -122,14 +139,14 @@ class OperationsViewModel(private val repository: BusinessOperationsRepository) 
         OperationsUiEvent.LoadDocuments -> loadDocuments()
         is OperationsUiEvent.CreateDocument -> createDocument(event.request)
     }
-    private fun loadBookingConfiguration() = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.bookingConfiguration()) { is AppResult.Success -> _state.update { it.copy(isLoading = false, configuration = r.data) }; is AppResult.Error -> fail(r.message) } }
-    private fun createBookingService(request: CreateBookingServiceDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createBookingService(request)) { is AppResult.Success -> _state.update { state -> state.copy(isSaving = false, configuration = state.configuration?.copy(services = state.configuration.services + r.data), message = "Servicio guardado") }; is AppResult.Error -> fail(r.message, true) } }
-    private fun createBookingResource(request: CreateBookingResourceDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createBookingResource(request)) { is AppResult.Success -> _state.update { state -> state.copy(isSaving = false, configuration = state.configuration?.copy(resources = state.configuration.resources + r.data), message = "Recurso guardado") }; is AppResult.Error -> fail(r.message, true) } }
-    private fun createAvailabilityRule(request: CreateAvailabilityRuleDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createAvailabilityRule(request)) { is AppResult.Success -> _state.update { it.copy(isSaving = false, message = "Horario guardado") }; is AppResult.Error -> fail(r.message, true) } }
-    private fun loadAgenda(from: String, to: String) = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.agenda(from, to)) { is AppResult.Success -> _state.update { it.copy(isLoading = false, appointments = r.data) }; is AppResult.Error -> fail(r.message) } }
-    private fun createAppointment(request: CreateAppointmentDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createAppointment(request)) { is AppResult.Success -> _state.update { it.copy(isSaving = false, appointments = (it.appointments + r.data).sortedBy(ClientAppointmentDto::startsAt), message = "Reserva confirmada") }; is AppResult.Error -> fail(r.message, true) } }
-    private fun cancel(id: String, reason: String?) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.cancelAppointment(id, reason)) { is AppResult.Success -> _state.update { s -> s.copy(isSaving = false, appointments = s.appointments.map { if (it.id == id) r.data else it }) }; is AppResult.Error -> fail(r.message, true) } }
-    private fun loadDocuments() = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.documents()) { is AppResult.Success -> _state.update { it.copy(isLoading = false, documents = r.data) }; is AppResult.Error -> fail(r.message) } }
-    private fun createDocument(request: CreateDocumentDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createDocument(request)) { is AppResult.Success -> _state.update { it.copy(isSaving = false, documents = listOf(r.data) + it.documents, message = "Documento creado") }; is AppResult.Error -> fail(r.message, true) } }
-    private fun fail(message: String, saving: Boolean = false) { _state.update { it.copy(isLoading = false, isSaving = if (saving) false else it.isSaving, message = message) } }
+    private fun loadBookingConfiguration() = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.bookingConfiguration()) { is AppResult.Success -> _state.update { it.copy(isLoading = false, configuration = r.data) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS) } }
+    private fun createBookingService(request: CreateBookingServiceDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createBookingService(request)) { is AppResult.Success -> { _state.update { state -> state.copy(isSaving = false, configuration = state.configuration?.copy(services = state.configuration.services + r.data), message = "Servicio guardado") }; _effects.emit(OperationsUiEffect.ShowMessage("Servicio guardado", OperationsScope.BOOKINGS)) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS, true) } }
+    private fun createBookingResource(request: CreateBookingResourceDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createBookingResource(request)) { is AppResult.Success -> { _state.update { state -> state.copy(isSaving = false, configuration = state.configuration?.copy(resources = state.configuration.resources + r.data), message = "Recurso guardado") }; _effects.emit(OperationsUiEffect.ShowMessage("Recurso guardado", OperationsScope.BOOKINGS)) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS, true) } }
+    private fun createAvailabilityRule(request: CreateAvailabilityRuleDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createAvailabilityRule(request)) { is AppResult.Success -> { _state.update { it.copy(isSaving = false, message = "Horario guardado") }; _effects.emit(OperationsUiEffect.ShowMessage("Horario guardado", OperationsScope.BOOKINGS)) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS, true) } }
+    private fun loadAgenda(from: String, to: String) = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.agenda(from, to)) { is AppResult.Success -> _state.update { it.copy(isLoading = false, appointments = r.data) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS) } }
+    private fun createAppointment(request: CreateAppointmentDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createAppointment(request)) { is AppResult.Success -> { _state.update { it.copy(isSaving = false, appointments = (it.appointments + r.data).sortedBy(ClientAppointmentDto::startsAt), message = "Reserva confirmada") }; _effects.emit(OperationsUiEffect.ShowMessage("Reserva confirmada", OperationsScope.BOOKINGS)) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS, true) } }
+    private fun cancel(id: String, reason: String?) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.cancelAppointment(id, reason)) { is AppResult.Success -> { _state.update { s -> s.copy(isSaving = false, appointments = s.appointments.map { if (it.id == id) r.data else it }) }; _effects.emit(OperationsUiEffect.ShowMessage("Reserva cancelada", OperationsScope.BOOKINGS)) }; is AppResult.Error -> fail(r.message, OperationsScope.BOOKINGS, true) } }
+    private fun loadDocuments() = launch { _state.update { it.copy(isLoading = true, message = null) }; when (val r = repository.documents()) { is AppResult.Success -> _state.update { it.copy(isLoading = false, documents = r.data) }; is AppResult.Error -> fail(r.message, OperationsScope.DOCUMENTS) } }
+    private fun createDocument(request: CreateDocumentDto) = launch { _state.update { it.copy(isSaving = true, message = null) }; when (val r = repository.createDocument(request)) { is AppResult.Success -> { _state.update { it.copy(isSaving = false, documents = listOf(r.data) + it.documents, message = "Documento creado") }; _effects.emit(OperationsUiEffect.ShowMessage("Documento creado", OperationsScope.DOCUMENTS)) }; is AppResult.Error -> fail(r.message, OperationsScope.DOCUMENTS, true) } }
+    private suspend fun fail(message: String, scope: OperationsScope, saving: Boolean = false) { _state.update { it.copy(isLoading = false, isSaving = if (saving) false else it.isSaving, message = message) }; _effects.emit(OperationsUiEffect.ShowMessage(message, scope)) }
 }

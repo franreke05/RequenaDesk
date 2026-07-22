@@ -18,9 +18,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +59,7 @@ import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.feedback.ConfirmDialog
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
 import com.requena.supportdesk.designsystem.components.navigation.NavigationItemSpec
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
@@ -78,6 +83,7 @@ import com.composables.icons.lucide.Columns3
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Headphones
 import com.composables.icons.lucide.House
+import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.ListTodo
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Ticket
@@ -238,6 +244,7 @@ fun ClientPortalScreen(
     businessCatalogViewModel: BusinessCatalogViewModel? = null,
     businessQuotesViewModel: BusinessQuotesViewModel? = null,
     clientId: String? = null,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -253,6 +260,7 @@ fun ClientPortalScreen(
                 modifier = Modifier.fillMaxWidth(),
                 title = "Acceso pendiente de configurar",
                 subtitle = "Tu cuenta aun no esta vinculada a una empresa.",
+                emphasized = true,
             ) {
                 Text(
                     text = "Pide al equipo de OryKai que active el acceso a tu portal. No mostramos datos hasta que la vinculacion este lista.",
@@ -274,6 +282,7 @@ fun ClientPortalScreen(
     }
     var destination by remember { mutableStateOf(ClientDestination.HOME) }
     var activeBusinessProgramKey by remember { mutableStateOf<String?>(null) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(clientId) {
         onTasksEvent(TasksUiEvent.SelectDashboardClient(clientId))
@@ -450,20 +459,34 @@ fun ClientPortalScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        if (maxWidth < SupportDeskBreakpoints.clientWide) {
+        // Uses clientShellExpandedThreshold, not clientWide: this BoxWithConstraints measures
+        // full WINDOW width (deciding whether to show the sidebar), while every child screen
+        // below measures its own remaining CONTENT width. clientWide alone would let the
+        // sidebar appear while content underneath still renders its compact layout - see
+        // SupportDeskBreakpoints.kt for the derivation.
+        if (maxWidth < SupportDeskBreakpoints.clientShellExpandedThreshold) {
             Column(modifier = Modifier.fillMaxSize()) {
                 ClientCompactHeader(
                     companyName = displayCompany,
                     contactName = displayContact,
+                    // Same reasoning as the wide sidebar: Home/Work already show this CTA
+                    // in their own page header, stacked directly below this header.
+                    showRequestHelp = destination != ClientDestination.HOME && destination != ClientDestination.WORK,
                     onRequestHelp = { destination = ClientDestination.NEW_TICKET },
                     onRefresh = onRefresh,
-                    onSignOut = onSignOut,
+                    onSignOut = { showSignOutConfirm = true },
                 )
                 ClientCompactNavigation(
                     selected = destination,
                     onSelect = { destination = it },
                 )
-                portalContent(Modifier.weight(1f).fillMaxWidth())
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    portalContent(Modifier.fillMaxSize())
+                    ClientPortalSnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    )
+                }
             }
         } else {
             Row(modifier = Modifier.fillMaxSize()) {
@@ -474,18 +497,93 @@ fun ClientPortalScreen(
                     selected = destination,
                     onSelect = { destination = it },
                     footer = {
-                        ThemeModeButton()
-                        PrimaryButton(
-                            text = "Solicitar ayuda",
-                            icon = Lucide.Plus,
-                            fullWidth = true,
-                            onClick = { destination = ClientDestination.NEW_TICKET },
-                        )
-                        SecondaryButton(text = "Actualizar", onClick = onRefresh)
-                        SecondaryButton(text = "Salir", onClick = onSignOut)
+                        ThemeModeButton(fullWidth = true)
+                        // Home and Work already show their own "Solicitar ayuda" CTA in
+                        // their page header, visible side-by-side with this sidebar in wide
+                        // mode - showing it here too would duplicate it on screen at once.
+                        if (destination != ClientDestination.HOME && destination != ClientDestination.WORK) {
+                            PrimaryButton(
+                                text = "Solicitar ayuda",
+                                icon = Lucide.Plus,
+                                fullWidth = true,
+                                onClick = { destination = ClientDestination.NEW_TICKET },
+                            )
+                        }
+                        SecondaryButton(text = "Actualizar", onClick = onRefresh, fullWidth = true)
+                        SecondaryButton(text = "Salir", onClick = { showSignOutConfirm = true }, fullWidth = true)
                     },
                 )
-                portalContent(Modifier.weight(1f).fillMaxHeight())
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    portalContent(Modifier.fillMaxSize())
+                    ClientPortalSnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    )
+                }
+            }
+        }
+    }
+
+    ConfirmDialog(
+        visible = showSignOutConfirm,
+        title = "Cerrar sesion",
+        message = "Vas a salir del portal. Podras volver a iniciar sesion cuando quieras.",
+        confirmText = "Cerrar sesion",
+        onConfirm = {
+            showSignOutConfirm = false
+            onSignOut()
+        },
+        onDismiss = { showSignOutConfirm = false },
+    )
+}
+
+// Scoped to the content panel's own Box (a sibling of portalContent's AnimatedContent, so
+// it survives destination swaps rather than being torn down with the outgoing screen), not
+// the outer BoxWithConstraints that also contains the sidebar - anchoring to the full window
+// would center the snackbar under the sidebar rather than under what the client is looking
+// at. Capped width so it reads as a floating transient object on wide/ultraWide windows
+// rather than stretching edge-to-edge like a persistent bar.
+@Composable
+private fun ClientPortalSnackbarHost(
+    hostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    SnackbarHost(
+        hostState = hostState,
+        modifier = modifier
+            .padding(spacing.md)
+            .widthIn(max = 480.dp),
+    ) { data ->
+        // Deliberately one neutral ink/paper treatment, not success/error colors: plain
+        // SnackbarHostState.showSnackbar(String) carries no severity, and every ViewModel
+        // wired up here already reuses this same shape for both outcomes today - the
+        // success/danger colors ratified during Wave-0 reconciliation are the target once
+        // each effect type gains a real isError field - the natural time to do that is
+        // whenever that ViewModel is next touched for its own logic work (e.g. TasksUiEffect
+        // during the Wave 0.5 pilot), not a blanket sweep across every feature that shares
+        // this shape today (including several outside the client portal, like Auth/Clients).
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.background,
+            tonalElevation = 0.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Lucide.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = data.visuals.message,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -512,6 +610,7 @@ private fun ClientProgramWorkspaceUnavailable(onBack: () -> Unit) {
 private fun ClientCompactHeader(
     companyName: String,
     contactName: String,
+    showRequestHelp: Boolean,
     onRequestHelp: () -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
@@ -541,12 +640,14 @@ private fun ClientCompactHeader(
                 }
                 ThemeModeButton()
             }
-            PrimaryButton(
-                text = "Solicitar ayuda",
-                icon = Lucide.Plus,
-                fullWidth = true,
-                onClick = onRequestHelp,
-            )
+            if (showRequestHelp) {
+                PrimaryButton(
+                    text = "Solicitar ayuda",
+                    icon = Lucide.Plus,
+                    fullWidth = true,
+                    onClick = onRequestHelp,
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),

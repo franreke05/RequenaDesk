@@ -38,8 +38,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -93,10 +93,21 @@ fun ClientTicketsScreen(
     val priorityCounts = remember(allTickets) { TicketPriority.entries.map { p -> p to allTickets.count { it.priority == p } } }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val stacked = maxWidth < SupportDeskBreakpoints.clientStacked
+        // Deliberately decoupled: `stacked` (3-panel split) and `cols` (grid density) used
+        // to share one threshold (the old clientStacked=820dp), which meant lowering either
+        // one moved both together. Verified math at the 2-column threshold: the grid panel
+        // gets a fixed-260dp Filters panel + a 0.48 weight share + the card's own internal
+        // padding taken out first, landing around ~87dp/column at 820dp width - well under
+        // that going lower. `stacked` has no such constraint (a single column always has
+        // room), so it can drop to clientMedium without cramping anything.
+        val stacked = maxWidth < SupportDeskBreakpoints.clientMedium
         val cols = when {
-            maxWidth >= SupportDeskBreakpoints.clientMultiColumn -> 3
-            maxWidth >= SupportDeskBreakpoints.clientStacked -> 2
+            maxWidth >= SupportDeskBreakpoints.clientUltraWide -> 3
+            // TODO(wave-1): derive from the grid panel's own measured width (its own
+            // BoxWithConstraints) rather than the outer maxWidth - today's threshold only
+            // works because it happens to match the current fixed-260dp filters panel/weight
+            // split; either of those changing would silently invalidate this number.
+            maxWidth >= SupportDeskBreakpoints.clientWide -> 2
             else -> 1
         }
         if (stacked) {
@@ -316,27 +327,33 @@ private fun TicketGridCard(
     val spacing = SupportDeskThemeTokens.spacing
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val elevation by animateDpAsState(
-        targetValue = when {
-            selected -> 6.dp
-            hovered -> 4.dp
-            else -> 1.dp
-        },
+    // Flat card, no blurred Material elevation - selection/hover read through a
+    // crisper ink/accent border instead, matching the app's hairline card language.
+    val borderWidth by animateDpAsState(
+        targetValue = if (selected) 2.dp else 1.dp,
         animationSpec = tween(200),
-        label = "gridCardElev",
+        label = "gridCardBorder",
     )
-    ElevatedCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
-        colors = CardDefaults.elevatedCardColors(
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(
             containerColor = if (selected)
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.60f)
             else
                 MaterialTheme.colorScheme.surface,
+        ),
+        border = BorderStroke(
+            borderWidth,
+            when {
+                selected -> MaterialTheme.colorScheme.onSurface
+                hovered -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.outlineVariant
+            },
         ),
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -533,10 +550,16 @@ private fun StatusDot() {
 
 @Composable
 private fun ClientClosure(ticket: Ticket, onEvent: (TicketsUiEvent) -> Unit) {
-    val isResolved = ticket.status == TicketStatus.RESOLVED || ticket.status == TicketStatus.CLOSED
-    SectionCard(title = "Estado de cierre") {
+    val (title, message) = when (ticket.status) {
+        TicketStatus.OPEN -> "Recibido" to "El equipo aún no ha empezado a trabajar en este ticket. Te avisaremos en cuanto haya movimiento."
+        TicketStatus.IN_PROGRESS -> "En curso" to "El equipo está trabajando activamente en tu solicitud."
+        TicketStatus.PENDING_CLIENT -> "Esperando tu respuesta" to "El equipo necesita una confirmación tuya para poder continuar. Revisa la descripción o los comentarios más arriba."
+        TicketStatus.RESOLVED -> "Resuelto" to "El equipo considera este ticket resuelto. Si el problema persiste, puedes reabrir la conversación desde un nuevo ticket."
+        TicketStatus.CLOSED -> "Cerrado" to "Este ticket está cerrado y ya no admite cambios. Consulta el historial en Actividad."
+    }
+    SectionCard(title = title, emphasized = ticket.status == TicketStatus.PENDING_CLIENT) {
         Text(
-            text = if (isResolved) "Este ticket ha sido resuelto." else "El ticket está pendiente de resolución.",
+            text = message,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

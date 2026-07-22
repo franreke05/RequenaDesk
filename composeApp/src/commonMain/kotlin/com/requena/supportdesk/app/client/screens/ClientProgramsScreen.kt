@@ -49,6 +49,7 @@ import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.feedback.EmptyState
 import com.requena.supportdesk.designsystem.components.feedback.LoadingState
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.features.programs.presentation.event.ProgramsUiEvent
 import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiState
 
@@ -186,7 +187,7 @@ private fun ProgramsHeading(
             subtitle = "Elige utilidades para tu equipo. El administrador confirma cada activación gratuita durante la beta.",
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val stacked = maxWidth < 560.dp
+            val stacked = maxWidth < SupportDeskBreakpoints.clientMedium
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     ClientPortalMetric(
@@ -261,7 +262,8 @@ private fun ProgramSelectionPanel(
     onSubmit: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    ClientPortalSurfaceCard {
+    // The client is about to commit to a request - the clearest "peak moment" on this screen.
+    ClientPortalSurfaceCard(emphasized = true) {
         ClientPortalSectionTitle("Tu selección", "Revisa la solicitud antes de enviarla al administrador.")
         selectedPrograms.forEach { program ->
             ProgramSelectionRow(program = program)
@@ -286,7 +288,7 @@ private fun ProgramSelectionPanel(
             enabled = !isSubmitting,
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            if (maxWidth < 520.dp) {
+            if (maxWidth < SupportDeskBreakpoints.clientMedium) {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     PrimaryButton(
                         text = "Enviar solicitud",
@@ -357,8 +359,8 @@ private fun ProgramCatalogGrid(
     val spacing = SupportDeskThemeTokens.spacing
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val columns = when {
-            maxWidth >= 1320.dp -> 3
-            maxWidth >= 720.dp -> 2
+            maxWidth >= SupportDeskBreakpoints.clientUltraWide -> 3
+            maxWidth >= SupportDeskBreakpoints.clientWide -> 2
             else -> 1
         }
         Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {

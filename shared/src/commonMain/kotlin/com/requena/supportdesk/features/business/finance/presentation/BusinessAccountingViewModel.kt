@@ -97,7 +97,11 @@ class BusinessAccountingViewModel(
         if (!saveMutex.tryLock()) return
         launch {
             try {
-                _state.update { it.copy(isSaving = true, errorMessage = null) }
+                // Reset accessDenied at the start of a fresh attempt too (refresh() already
+                // does this) - otherwise a retry after a stale access-denied can render the
+                // full-screen "ask your admin" panel for the entire in-flight window even
+                // though this attempt hasn't failed yet.
+                _state.update { it.copy(isSaving = true, accessDenied = false, errorMessage = null) }
                 when (val result = request(idempotencyKeyFactory.create(operation))) {
                     is AppResult.Error -> fail(result, isSaving = true)
                     is AppResult.Success -> {
@@ -122,7 +126,10 @@ class BusinessAccountingViewModel(
                     _state.update { it.copy(accessDenied = true, errorMessage = null) }
                     _effects.emit(BusinessFinanceUiEffect.AccessDenied)
                 } else {
-                    _state.update { it.copy(errorMessage = result.message) }
+                    // Same accessDenied-must-not-survive-an-unrelated-error rule as fail()
+                    // below - this is a separate error path (the post-save overview refresh)
+                    // that had the identical gap.
+                    _state.update { it.copy(accessDenied = false, errorMessage = result.message) }
                 }
             }
         }
@@ -159,6 +166,10 @@ class BusinessAccountingViewModel(
                 it.copy(
                     isLoading = false,
                     isSaving = if (isSaving) false else it.isSaving,
+                    // A stale accessDenied=true from an earlier failure must not survive
+                    // into an unrelated later error - otherwise the UI shows this error
+                    // AND a full-screen "ask your admin for access" state together.
+                    accessDenied = false,
                     errorMessage = result.message,
                 )
             }

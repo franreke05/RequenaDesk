@@ -1,6 +1,7 @@
 package com.requena.supportdesk.app.client.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -152,15 +153,20 @@ private fun ProfileCard(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    ClientPortalSurfaceCard(modifier) {
+    // The client's own identity card - the natural hero of this screen.
+    ClientPortalSurfaceCard(modifier, emphasized = true) {
         ClientPortalSectionTitle("Perfil", "Identidad visible en el portal")
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Thin ink ring around the avatar - a small "letterpress stamp" touch.
             Box(
-                modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(initials, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
