@@ -3,6 +3,8 @@ package com.requena.supportdesk.features.business.sales.presentation
 import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogItem
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessSale
 import com.requena.supportdesk.features.business.sales.domain.BusinessStockSummary
@@ -10,6 +12,11 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessStockSumma
 data class BusinessCustomersUiState(
     val customers: List<BusinessCustomer> = emptyList(),
     val selectedCustomer: BusinessCustomerDetail? = null,
+    val tags: List<BusinessCustomerTag> = emptyList(),
+    val query: String = "",
+    val status: String? = null,
+    val stage: BusinessCustomerStage? = null,
+    val tagId: String? = null,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,

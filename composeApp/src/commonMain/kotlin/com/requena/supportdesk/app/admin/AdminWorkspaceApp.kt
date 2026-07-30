@@ -56,6 +56,7 @@ import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.business.finance.presentation.BusinessFinanceUiEffect
 import com.requena.supportdesk.features.business.operations.OperationsUiEffect
+import com.requena.supportdesk.features.business.projects.BusinessProjectsEffect
 import com.requena.supportdesk.features.business.sales.presentation.BusinessSalesUiEffect
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
@@ -288,6 +289,16 @@ fun AdminWorkspaceApp() {
         }
     }
 
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessProjectsViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessProjectsEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
     LaunchedEffect(currentUser?.id) {
         currentUser?.id ?: return@LaunchedEffect
 
@@ -348,6 +359,7 @@ fun AdminWorkspaceApp() {
                 businessCustomersViewModel = module.businessCustomersViewModel,
                 businessCatalogViewModel = module.businessCatalogViewModel,
                 businessQuotesViewModel = module.businessQuotesViewModel,
+                businessProjectsViewModel = module.businessProjectsViewModel,
                 clientId = currentUser.clientId,
                 snackbarHostState = clientSnackbarHostState,
                 modifier = Modifier.fillMaxSize(),

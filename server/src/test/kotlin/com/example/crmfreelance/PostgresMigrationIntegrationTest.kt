@@ -5,6 +5,22 @@ import com.requena.supportdesk.server.application.configureSupportDeskModule
 import com.requena.supportdesk.server.data.datasource.PostgresDemoBootstrapper
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
 import com.requena.supportdesk.server.data.repository.PostgresSupportDeskRepository
+import com.requena.supportdesk.server.business.projects.BusinessProjectsIdentity
+import com.requena.supportdesk.server.business.projects.BusinessProjectsQuery
+import com.requena.supportdesk.server.business.projects.PostgresBusinessProjectsStore
+import com.requena.supportdesk.server.business.sales.PostgresSalesProgramStore
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivityType
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
+import com.requena.supportdesk.features.business.sales.domain.BusinessSalesPageRequest
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.projects.BusinessTaskBoardPlacementInput
+import com.requena.supportdesk.features.business.projects.BusinessTaskPriority
+import com.requena.supportdesk.features.business.projects.BusinessTaskStatus
+import com.requena.supportdesk.features.business.projects.CreateBusinessProjectInput
+import com.requena.supportdesk.features.business.projects.CreateBusinessTaskInput
+import com.requena.supportdesk.features.business.projects.UpdateBusinessTaskInput
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -45,7 +61,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(14, dataSource.migrate())
+                assertEquals(15, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",
@@ -101,6 +117,18 @@ class PostgresMigrationIntegrationTest {
                     "business_sales_sales",
                     "business_sales_sale_lines",
                     "business_sales_audit_events",
+                    "business_sales_customer_tags",
+                    "business_sales_customer_tag_links",
+                    "business_sales_customer_activities",
+                    "business_projects",
+                    "business_tasks",
+                    "business_task_labels",
+                    "business_task_label_links",
+                    "business_task_board_placements",
+                    "business_work_sessions",
+                    "business_work_segments",
+                    "business_time_entries",
+                    "business_project_audit_events",
                 ).forEach { table ->
                     assertTrue(dataSource.hasRowLevelSecurity(table), "RLS is not enabled for $table")
                 }
@@ -113,11 +141,105 @@ class PostgresMigrationIntegrationTest {
                 assertFalse(dataSource.hasTablePrivilege("anon", "business_sales_quotes", "SELECT"))
                 assertFalse(dataSource.hasTablePrivilege("anon", "task_board_placements", "SELECT"))
                 assertFalse(dataSource.hasTablePrivilege("authenticated", "task_board_placements", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("anon", "business_projects", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("authenticated", "business_work_sessions", "SELECT"))
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
                     adminPassword = ADMIN_PASSWORD,
                     clientPassword = CLIENT_PASSWORD,
                 )
+
+                val projectsIdentity = dataSource.withConnection { connection ->
+                    connection.prepareStatement(
+                        """
+                        SELECT users.id::text AS user_id, users.client_id::text AS client_id
+                        FROM users WHERE users.email='client.user@orykai.local'
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            BusinessProjectsIdentity(result.getString("user_id"), result.getString("client_id"))
+                        }
+                    }
+                }
+                val salesStore = PostgresSalesProgramStore(dataSource)
+                val persistedCustomerTag = salesStore.createCustomerTag(
+                    projectsIdentity.clientId,
+                    projectsIdentity.userId,
+                    CreateBusinessCustomerTagInput("Piloto V15", "#445566"),
+                )
+                val persistedCustomer = salesStore.createCustomer(
+                    projectsIdentity.clientId,
+                    projectsIdentity.userId,
+                    CreateBusinessCustomerInput(
+                        displayName = "Cliente comercial V15",
+                        stage = BusinessCustomerStage.PROSPECT,
+                        tagIds = listOf(persistedCustomerTag.id),
+                    ),
+                )
+                salesStore.createCustomerActivity(
+                    projectsIdentity.clientId,
+                    projectsIdentity.userId,
+                    persistedCustomer.id,
+                    CreateBusinessCustomerActivityInput(
+                        type = BusinessCustomerActivityType.FOLLOW_UP,
+                        subject = "Seguimiento V15",
+                        dueAt = "2030-08-03T09:00:00Z",
+                    ),
+                )
+                assertEquals(
+                    listOf(persistedCustomer.id),
+                    salesStore.customers(
+                        projectsIdentity.clientId,
+                        BusinessSalesPageRequest(
+                            stage = BusinessCustomerStage.PROSPECT,
+                            tagId = persistedCustomerTag.id,
+                        ),
+                    ).items.map { it.id },
+                )
+                val projectsStore = PostgresBusinessProjectsStore(dataSource)
+                val persistedProject = projectsStore.createProject(
+                    projectsIdentity,
+                    CreateBusinessProjectInput(
+                        customerId = persistedCustomer.id,
+                        name = "PostgreSQL V15 project",
+                    ),
+                )
+                val persistedTask = projectsStore.createTask(
+                    projectsIdentity,
+                    CreateBusinessTaskInput(projectId = persistedProject.id, title = "PostgreSQL V15 task"),
+                )
+                val businessBoardDate = LocalDate.now(java.time.ZoneId.of("Europe/Madrid")).plusDays(1).toString()
+                projectsStore.placeTask(
+                    projectsIdentity,
+                    persistedTask.id,
+                    BusinessTaskBoardPlacementInput(businessBoardDate, 0.35, 0.65),
+                )
+                assertEquals(
+                    businessBoardDate,
+                    projectsStore.workspace(projectsIdentity, BusinessProjectsQuery()).board.placements.single().boardDate,
+                )
+                assertEquals(
+                    listOf(persistedCustomer.id),
+                    projectsStore.workspace(projectsIdentity, BusinessProjectsQuery()).customers.map { it.id },
+                )
+                val businessSession = projectsStore.startWorkSession(projectsIdentity, persistedTask.id)
+                assertEquals("ACTIVE", businessSession.status.name)
+                assertEquals("PAUSED", projectsStore.pauseWorkSession(projectsIdentity, businessSession.id).status.name)
+                assertEquals("ACTIVE", projectsStore.resumeWorkSession(projectsIdentity, businessSession.id).status.name)
+                assertEquals("FINISHED", projectsStore.stopWorkSession(projectsIdentity, businessSession.id).status.name)
+                projectsStore.updateTask(
+                    projectsIdentity,
+                    persistedTask.id,
+                    UpdateBusinessTaskInput(
+                        projectId = persistedProject.id,
+                        title = persistedTask.title,
+                        priority = BusinessTaskPriority.NORMAL,
+                        status = BusinessTaskStatus.DONE,
+                        expectedVersion = persistedTask.version,
+                    ),
+                )
+                assertTrue(projectsStore.workspace(projectsIdentity, BusinessProjectsQuery()).board.placements.isEmpty())
 
                 val repository = PostgresSupportDeskRepository(dataSource)
                 val identity = repository.authenticate("admin@orykai.dev", ADMIN_PASSWORD)
@@ -228,7 +350,7 @@ class PostgresMigrationIntegrationTest {
                     val programRequest = client.post("/client/program-requests") {
                         header(HttpHeaders.Authorization, "Bearer $portalAccessToken")
                         contentType(ContentType.Application.Json)
-                        setBody("""{"productKeys":["BUSINESS_QUOTES"],"customerNote":"Integration program request"}""")
+                        setBody("""{"productKeys":["BUSINESS_PROJECTS"],"customerNote":"Integration program request"}""")
                     }
                     assertEquals(HttpStatusCode.Created, programRequest.status)
                     val programRequestId = extractField(programRequest.bodyAsText(), "id")

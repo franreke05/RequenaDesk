@@ -3075,6 +3075,7 @@ class PostgresSupportDeskRepository(
                    currency, is_requestable, is_available,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(capabilities)), ARRAY[]::text[]) AS capabilities
             FROM product_catalog
+            WHERE product_key LIKE 'BUSINESS_%'
             ORDER BY sort_order, product_key
             """.trimIndent(),
         ).use { statement ->

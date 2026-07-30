@@ -5,6 +5,7 @@ import com.requena.supportdesk.features.auth.presentation.viewmodel.AuthViewMode
 import com.requena.supportdesk.features.business.finance.presentation.BusinessAccountingViewModel
 import com.requena.supportdesk.features.business.finance.presentation.BusinessInvoicingViewModel
 import com.requena.supportdesk.features.business.operations.OperationsViewModel
+import com.requena.supportdesk.features.business.projects.BusinessProjectsViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCustomersViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessQuotesViewModel
@@ -29,6 +30,7 @@ class AdminAppModule {
     private val businessCustomersViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessCustomersViewModel() }
     private val businessCatalogViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessCatalogViewModel() }
     private val businessQuotesViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessQuotesViewModel() }
+    private val businessProjectsViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessProjectsViewModel() }
 
     val clientsViewModel: ClientsViewModel
         get() = clientsViewModelDelegate.value
@@ -66,6 +68,9 @@ class AdminAppModule {
     val businessQuotesViewModel: BusinessQuotesViewModel
         get() = businessQuotesViewModelDelegate.value
 
+    val businessProjectsViewModel: BusinessProjectsViewModel
+        get() = businessProjectsViewModelDelegate.value
+
     fun clear() {
         authViewModel.clear()
         if (clientsViewModelDelegate.isInitialized()) clientsViewModelDelegate.value.clear()
@@ -80,5 +85,6 @@ class AdminAppModule {
         if (businessCustomersViewModelDelegate.isInitialized()) businessCustomersViewModelDelegate.value.clear()
         if (businessCatalogViewModelDelegate.isInitialized()) businessCatalogViewModelDelegate.value.clear()
         if (businessQuotesViewModelDelegate.isInitialized()) businessQuotesViewModelDelegate.value.clear()
+        if (businessProjectsViewModelDelegate.isInitialized()) businessProjectsViewModelDelegate.value.clear()
     }
 }

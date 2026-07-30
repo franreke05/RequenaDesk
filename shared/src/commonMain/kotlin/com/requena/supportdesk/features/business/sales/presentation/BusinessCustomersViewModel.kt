@@ -7,8 +7,14 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessSalesPageR
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesRepository
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -26,12 +32,38 @@ class BusinessCustomersViewModel(
     private val _effects = MutableSharedFlow<BusinessSalesUiEffect>(extraBufferCapacity = 2)
     val effects: SharedFlow<BusinessSalesUiEffect> = _effects.asSharedFlow()
 
-    fun refresh(query: String? = null) = launch {
+    fun refresh(query: String? = state.value.query) = launch {
         _state.update { it.copy(isLoading = true, errorMessage = null) }
-        when (val result = repository.customers(BusinessSalesPageRequest(query = query))) {
+        val current = state.value
+        when (
+            val result = repository.customers(
+                BusinessSalesPageRequest(
+                    query = query,
+                    status = current.status,
+                    stage = current.stage,
+                    tagId = current.tagId,
+                ),
+            )
+        ) {
             is AppResult.Error -> fail(result.message)
-            is AppResult.Success -> _state.update { it.copy(isLoading = false, customers = result.data.items) }
+            is AppResult.Success -> {
+                val tags = when (val tagsResult = repository.customerTags()) {
+                    is AppResult.Error -> current.tags
+                    is AppResult.Success -> tagsResult.data
+                }
+                _state.update { it.copy(isLoading = false, customers = result.data.items, tags = tags, query = query.orEmpty()) }
+            }
         }
+    }
+
+    fun setFilters(
+        query: String = state.value.query,
+        status: String? = state.value.status,
+        stage: BusinessCustomerStage? = state.value.stage,
+        tagId: String? = state.value.tagId,
+    ) {
+        _state.update { it.copy(query = query, status = status, stage = stage, tagId = tagId) }
+        refresh(query)
     }
 
     fun selectCustomer(customerId: String) = launch {
@@ -63,6 +95,13 @@ class BusinessCustomersViewModel(
         }
     }
 
+    fun restoreCustomer(customerId: String, expectedVersion: Int) = save {
+        repository.restoreCustomer(customerId, expectedVersion).mapSuccess { restored ->
+            updateCustomerInState(restored)
+            emit("Cliente comercial restaurado")
+        }
+    }
+
     fun createContact(customerId: String, input: CreateBusinessContactInput) = save {
         when (val result = repository.createContact(customerId, input)) {
             is AppResult.Error -> result
@@ -78,6 +117,46 @@ class BusinessCustomersViewModel(
             is AppResult.Success -> reloadSelectedCustomer(customerId).onSuccess {
                 emit("Contacto actualizado")
             }
+        }
+    }
+
+    fun createTag(input: CreateBusinessCustomerTagInput) = save {
+        repository.createCustomerTag(input).mapSuccess { created ->
+            _state.update { it.copy(tags = it.tags + created) }
+            emit("Etiqueta creada")
+        }
+    }
+
+    fun updateTag(tagId: String, input: UpdateBusinessCustomerTagInput) = save {
+        repository.updateCustomerTag(tagId, input).mapSuccess { updated ->
+            _state.update { current ->
+                current.copy(
+                    tags = current.tags.map { if (it.id == updated.id) updated else it },
+                    customers = current.customers.map { customer ->
+                        customer.copy(tags = customer.tags.map { if (it.id == updated.id) updated else it })
+                    },
+                )
+            }
+        }
+    }
+
+    fun archiveTag(tag: BusinessCustomerTag) = save {
+        repository.archiveCustomerTag(tag.id, tag.version).mapSuccess { archived ->
+            _state.update { current -> current.copy(tags = current.tags.map { if (it.id == archived.id) archived else it }) }
+        }
+    }
+
+    fun createActivity(customerId: String, input: CreateBusinessCustomerActivityInput) = save {
+        repository.createCustomerActivity(customerId, input).mapSuccess {
+            reloadSelectedCustomer(customerId)
+            emit("Actividad registrada")
+        }
+    }
+
+    fun updateActivity(customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput) = save {
+        repository.updateCustomerActivity(customerId, activityId, input).mapSuccess {
+            reloadSelectedCustomer(customerId)
+            emit("Actividad actualizada")
         }
     }
 

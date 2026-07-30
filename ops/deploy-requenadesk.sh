@@ -160,7 +160,7 @@ else
     echo "  sudo mv $BACKUP_DIR $DIST_DIR" >&2
     echo "  sudo systemctl start $SERVICE_NAME" >&2
     echo "" >&2
-    echo "Flyway NO revierte migraciones automaticamente: si V13 ya se aplico y" >&2
+    echo "Flyway NO revierte migraciones automaticamente: si la nueva migracion ya se aplico y" >&2
     echo "hace falta deshacerla, restaura el backup de Supabase del Paso 1." >&2
     exit 1
   fi

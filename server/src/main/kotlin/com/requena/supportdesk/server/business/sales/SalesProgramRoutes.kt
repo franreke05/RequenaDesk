@@ -2,12 +2,15 @@ package com.requena.supportdesk.server.business.sales
 
 import com.requena.supportdesk.features.business.sales.data.mapper.BusinessSalesMapper
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesPageRequest
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesValidationException
 import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.ExpectedVersionInput
 import com.requena.supportdesk.features.business.sales.domain.QuoteTransitionInput
@@ -15,6 +18,8 @@ import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInp
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessQuoteInput
 import com.requena.supportdesk.server.plugins.SensitiveOperationRateLimit
 import com.requena.supportdesk.server.security.SupportDeskTokenService
@@ -55,6 +60,37 @@ fun Route.salesProgramRoutes(
                 val input = call.receiveSales<CreateBusinessCustomerInput>() ?: return@post
                 call.respondSales("/client/apps/customers", HttpStatusCode.Created) { BusinessSalesMapper.customerDto(service.createCustomer(identity, input)) }
             }
+            route("/tags") {
+                get {
+                    val identity = call.salesIdentity(tokenService) ?: return@get
+                    call.respondSales("/client/apps/customers/tags") {
+                        service.customerTags(identity).map(BusinessSalesMapper::customerTagDto)
+                    }
+                }
+                post {
+                    val identity = call.salesIdentity(tokenService) ?: return@post
+                    val input = call.receiveSales<CreateBusinessCustomerTagInput>() ?: return@post
+                    call.respondSales("/client/apps/customers/tags", HttpStatusCode.Created) {
+                        BusinessSalesMapper.customerTagDto(service.createCustomerTag(identity, input))
+                    }
+                }
+                patch("/{tagId}") {
+                    val identity = call.salesIdentity(tokenService) ?: return@patch
+                    val tagId = call.uuidParameter("tagId") ?: return@patch
+                    val input = call.receiveSales<UpdateBusinessCustomerTagInput>() ?: return@patch
+                    call.respondSales("/client/apps/customers/tags/$tagId") {
+                        BusinessSalesMapper.customerTagDto(service.updateCustomerTag(identity, tagId, input))
+                    }
+                }
+                post("/{tagId}/archive") {
+                    val identity = call.salesIdentity(tokenService) ?: return@post
+                    val tagId = call.uuidParameter("tagId") ?: return@post
+                    val input = call.receiveSales<ExpectedVersionInput>() ?: return@post
+                    call.respondSales("/client/apps/customers/tags/$tagId/archive") {
+                        BusinessSalesMapper.customerTagDto(service.archiveCustomerTag(identity, tagId, input.expectedVersion))
+                    }
+                }
+            }
             get("/{customerId}") {
                 val identity = call.salesIdentity(tokenService) ?: return@get
                 val customerId = call.uuidParameter("customerId") ?: return@get
@@ -73,6 +109,14 @@ fun Route.salesProgramRoutes(
                     val input = call.receiveSales<ExpectedVersionInput>() ?: return@post
                     call.respondSales("/client/apps/customers/$customerId/archive") { BusinessSalesMapper.customerDto(service.archiveCustomer(identity, customerId, input.expectedVersion)) }
                 }
+                post("/{customerId}/restore") {
+                    val identity = call.salesIdentity(tokenService) ?: return@post
+                    val customerId = call.uuidParameter("customerId") ?: return@post
+                    val input = call.receiveSales<ExpectedVersionInput>() ?: return@post
+                    call.respondSales("/client/apps/customers/$customerId/restore") {
+                        BusinessSalesMapper.customerDto(service.restoreCustomer(identity, customerId, input.expectedVersion))
+                    }
+                }
                 post("/{customerId}/contacts") {
                     val identity = call.salesIdentity(tokenService) ?: return@post
                     val customerId = call.uuidParameter("customerId") ?: return@post
@@ -85,6 +129,30 @@ fun Route.salesProgramRoutes(
                     val contactId = call.uuidParameter("contactId") ?: return@patch
                     val input = call.receiveSales<UpdateBusinessContactInput>() ?: return@patch
                     call.respondSales("/client/apps/customers/$customerId/contacts/$contactId") { BusinessSalesMapper.contactDto(service.updateContact(identity, customerId, contactId, input)) }
+                }
+                get("/{customerId}/activities") {
+                    val identity = call.salesIdentity(tokenService) ?: return@get
+                    val customerId = call.uuidParameter("customerId") ?: return@get
+                    call.respondSales("/client/apps/customers/$customerId/activities") {
+                        service.customerActivities(identity, customerId).map(BusinessSalesMapper::customerActivityDto)
+                    }
+                }
+                post("/{customerId}/activities") {
+                    val identity = call.salesIdentity(tokenService) ?: return@post
+                    val customerId = call.uuidParameter("customerId") ?: return@post
+                    val input = call.receiveSales<CreateBusinessCustomerActivityInput>() ?: return@post
+                    call.respondSales("/client/apps/customers/$customerId/activities", HttpStatusCode.Created) {
+                        BusinessSalesMapper.customerActivityDto(service.createCustomerActivity(identity, customerId, input))
+                    }
+                }
+                patch("/{customerId}/activities/{activityId}") {
+                    val identity = call.salesIdentity(tokenService) ?: return@patch
+                    val customerId = call.uuidParameter("customerId") ?: return@patch
+                    val activityId = call.uuidParameter("activityId") ?: return@patch
+                    val input = call.receiveSales<UpdateBusinessCustomerActivityInput>() ?: return@patch
+                    call.respondSales("/client/apps/customers/$customerId/activities/$activityId") {
+                        BusinessSalesMapper.customerActivityDto(service.updateCustomerActivity(identity, customerId, activityId, input))
+                    }
                 }
             }
         }
@@ -212,12 +280,28 @@ private suspend fun ApplicationCall.pageRequest(allowedStatuses: Set<String>): B
     val query = request.queryParameters["query"]?.trim()?.takeIf(String::isNotBlank)
     val status = request.queryParameters["status"]?.trim()?.uppercase()?.takeIf(String::isNotBlank)
     val cursor = request.queryParameters["cursor"]?.trim()?.takeIf(String::isNotBlank)
+    val stage = request.queryParameters["stage"]?.trim()?.uppercase()?.takeIf(String::isNotBlank)
+    val tagId = request.queryParameters["tagId"]?.trim()?.takeIf(String::isNotBlank)
     val limit = request.queryParameters["limit"]?.toIntOrNull() ?: 40
-    if (query != null && query.length > 160 || cursor != null && !cursor.isUuid() || limit !in 1..100 || status != null && status !in allowedStatuses) {
+    if (
+        query != null && query.length > 160 ||
+        cursor != null && !cursor.isUuid() ||
+        tagId != null && !tagId.isUuid() ||
+        limit !in 1..100 ||
+        status != null && status !in allowedStatuses ||
+        stage != null && stage !in BusinessCustomerStage.entries.map { it.name }
+    ) {
         respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid list filters"))
         return null
     }
-    return BusinessSalesPageRequest(query = query, status = status, cursor = cursor, limit = limit)
+    return BusinessSalesPageRequest(
+        query = query,
+        status = status,
+        cursor = cursor,
+        limit = limit,
+        stage = stage?.let(BusinessCustomerStage::valueOf),
+        tagId = tagId,
+    )
 }
 
 private suspend fun ApplicationCall.uuidParameter(name: String): String? {

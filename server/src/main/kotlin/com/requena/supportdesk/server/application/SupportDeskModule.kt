@@ -16,6 +16,11 @@ import com.requena.supportdesk.server.business.operations.OperationsPrincipal
 import com.requena.supportdesk.server.business.operations.OperationsRole
 import com.requena.supportdesk.server.business.operations.PostgresBusinessOperationsRepository
 import com.requena.supportdesk.server.business.operations.businessOperationsRoutes
+import com.requena.supportdesk.server.business.projects.BusinessProjectsAccessGuard
+import com.requena.supportdesk.server.business.projects.BusinessProjectsService
+import com.requena.supportdesk.server.business.projects.InMemoryBusinessProjectsStore
+import com.requena.supportdesk.server.business.projects.PostgresBusinessProjectsStore
+import com.requena.supportdesk.server.business.projects.businessProjectsRoutes
 import com.requena.supportdesk.server.business.sales.InMemorySalesProgramStore
 import com.requena.supportdesk.server.business.sales.PostgresSalesProgramStore
 import com.requena.supportdesk.server.business.sales.SalesProgramAccessGuard
@@ -57,6 +62,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.requena.supportdesk.features.business.projects.BUSINESS_PROJECTS
 
 fun Application.configureSupportDeskModule(
     repositoryOverride: SupportDeskRepository? = null,
@@ -105,6 +111,12 @@ fun Application.configureSupportDeskModule(
         store = runtime.database?.let(::PostgresSalesProgramStore) ?: InMemorySalesProgramStore(),
         accessGuard = SalesProgramAccessGuard { identity, productKey ->
             service.hasActiveBusinessEntitlement(identity.clientId, productKey)
+        },
+    )
+    val businessProjectsService = BusinessProjectsService(
+        store = runtime.database?.let(::PostgresBusinessProjectsStore) ?: InMemoryBusinessProjectsStore(),
+        accessGuard = BusinessProjectsAccessGuard { identity ->
+            service.hasActiveBusinessEntitlement(identity.clientId, BUSINESS_PROJECTS)
         },
     )
 
@@ -163,6 +175,7 @@ fun Application.configureSupportDeskModule(
         }
         businessOperationsRoutes(operationsService, tokenService, operationsGuard)
         salesProgramRoutes(salesProgramService, tokenService)
+        businessProjectsRoutes(businessProjectsService, tokenService, service)
         labelRoutes(service, tokenService)
         taskRoutes(service, tokenService)
         taskBoardRoutes(service, tokenService)

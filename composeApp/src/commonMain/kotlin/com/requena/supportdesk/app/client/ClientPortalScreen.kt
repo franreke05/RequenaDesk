@@ -74,6 +74,7 @@ import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiSt
 import com.requena.supportdesk.features.business.finance.presentation.BusinessAccountingViewModel
 import com.requena.supportdesk.features.business.finance.presentation.BusinessInvoicingViewModel
 import com.requena.supportdesk.features.business.operations.OperationsViewModel
+import com.requena.supportdesk.features.business.projects.BusinessProjectsViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCustomersViewModel
 import com.requena.supportdesk.features.business.sales.presentation.BusinessQuotesViewModel
@@ -243,6 +244,7 @@ fun ClientPortalScreen(
     businessCustomersViewModel: BusinessCustomersViewModel? = null,
     businessCatalogViewModel: BusinessCatalogViewModel? = null,
     businessQuotesViewModel: BusinessQuotesViewModel? = null,
+    businessProjectsViewModel: BusinessProjectsViewModel? = null,
     clientId: String? = null,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
@@ -374,7 +376,8 @@ fun ClientPortalScreen(
                         operationsViewModel != null &&
                         businessCustomersViewModel != null &&
                         businessCatalogViewModel != null &&
-                        businessQuotesViewModel != null
+                        businessQuotesViewModel != null &&
+                        businessProjectsViewModel != null
                     ) {
                         ClientBusinessProgramWorkspace(
                             programKey = key,
@@ -384,6 +387,7 @@ fun ClientPortalScreen(
                             customersViewModel = businessCustomersViewModel,
                             catalogViewModel = businessCatalogViewModel,
                             quotesViewModel = businessQuotesViewModel,
+                            projectsViewModel = businessProjectsViewModel,
                             onBack = { destination = ClientDestination.PROGRAMS },
                         )
                     } else {
