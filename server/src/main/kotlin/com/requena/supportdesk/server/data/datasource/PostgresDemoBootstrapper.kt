@@ -26,7 +26,7 @@ class PostgresDemoBootstrapper(
                 val clientId = ensureClient(connection, primaryAdminId)
                 val clientUserId = ensureClientUser(connection, clientId, clientPassword)
                 val labelId = ensureTaskLabel(connection, primaryAdminId)
-                val taskId = ensureTask(connection, clientId, primaryAdminId, labelId)
+                val taskId = ensureTask(connection, clientId, primaryAdminId, clientUserId, labelId)
                 ensureTimeLog(connection, taskId, clientId, primaryAdminId)
                 ensureTicket(connection, clientId, clientUserId, primaryAdminId)
                 connection.commit()
@@ -123,22 +123,24 @@ class PostgresDemoBootstrapper(
         connection: Connection,
         clientId: String,
         ownerAdminId: String,
+        createdByUserId: String,
         labelId: String,
     ): String = connection.returningId(
         """
         INSERT INTO tasks (
-            id, client_id, owner_admin_id, label_id, title, description,
+            id, client_id, owner_admin_id, created_by_user_id, label_id, title, description,
             due_date, completed, logged_minutes, logged_seconds
         )
         VALUES (
             CAST('66666666-6666-6666-6666-666666666666' AS uuid),
-            CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid),
+            CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid),
             'Demo task', 'Operational task to validate dashboard, timer and client linkage.',
             CURRENT_DATE + INTERVAL '1 day', FALSE, 45, 2700
         )
         ON CONFLICT (id) DO UPDATE SET
             client_id = EXCLUDED.client_id,
             owner_admin_id = EXCLUDED.owner_admin_id,
+            created_by_user_id = EXCLUDED.created_by_user_id,
             label_id = EXCLUDED.label_id,
             title = EXCLUDED.title,
             description = EXCLUDED.description
@@ -147,7 +149,8 @@ class PostgresDemoBootstrapper(
     ) {
         setString(1, clientId)
         setString(2, ownerAdminId)
-        setString(3, labelId)
+        setString(3, createdByUserId)
+        setString(4, labelId)
     }
 
     private fun ensureTimeLog(

@@ -40,6 +40,7 @@ import com.requena.supportdesk.server.routes.dashboardRoutes
 import com.requena.supportdesk.server.routes.deviceRoutes
 import com.requena.supportdesk.server.routes.labelRoutes
 import com.requena.supportdesk.server.routes.taskRoutes
+import com.requena.supportdesk.server.routes.taskBoardRoutes
 import com.requena.supportdesk.server.routes.ticketRoutes
 import com.requena.supportdesk.server.routes.timeLogRoutes
 import com.requena.supportdesk.server.routes.workSessionRoutes
@@ -164,6 +165,7 @@ fun Application.configureSupportDeskModule(
         salesProgramRoutes(salesProgramService, tokenService)
         labelRoutes(service, tokenService)
         taskRoutes(service, tokenService)
+        taskBoardRoutes(service, tokenService)
         timeLogRoutes(service, tokenService)
         workSessionRoutes(service, tokenService)
         dashboardRoutes(service, tokenService)

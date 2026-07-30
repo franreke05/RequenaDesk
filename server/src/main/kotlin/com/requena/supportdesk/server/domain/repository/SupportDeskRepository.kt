@@ -24,6 +24,8 @@ import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSna
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardPlacementSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
@@ -100,9 +102,18 @@ interface SupportDeskRepository {
     fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
     fun deleteTaskLabel(labelId: String, ownerAdminId: String? = null)
     fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): List<ServerTaskSnapshot>
-    fun createTask(request: CreateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
+    fun createTask(request: CreateTaskRequest, createdByUserId: String, ownerAdminId: String? = null): ServerTaskSnapshot
     fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
     fun deleteTask(taskId: String, ownerAdminId: String? = null)
+    fun getTaskBoard(ownerAdminId: String): ServerTaskBoardSnapshot
+    fun upsertTaskBoardPlacement(
+        taskId: String,
+        ownerAdminId: String,
+        boardDate: String,
+        positionX: Double,
+        positionY: Double,
+    ): ServerTaskBoardPlacementSnapshot
+    fun deleteTaskBoardPlacement(taskId: String, ownerAdminId: String)
     fun getTimeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null): List<ServerTimeLogSnapshot>
     fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot
     fun getAttachment(id: String): ServerAttachmentSnapshot?

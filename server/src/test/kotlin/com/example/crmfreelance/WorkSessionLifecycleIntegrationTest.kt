@@ -58,11 +58,13 @@ class WorkSessionLifecycleIntegrationTest {
                 )
                 val taskA = repository.createTask(
                     CreateTaskRequest(title = "Tarea A", description = "", clientId = null, labelId = label.id),
-                    ownerAdminId,
+                    createdByUserId = ownerAdminId,
+                    ownerAdminId = ownerAdminId,
                 )
                 val taskB = repository.createTask(
                     CreateTaskRequest(title = "Tarea B", description = "", clientId = null, labelId = label.id),
-                    ownerAdminId,
+                    createdByUserId = ownerAdminId,
+                    ownerAdminId = ownerAdminId,
                 )
 
                 // No active session initially.

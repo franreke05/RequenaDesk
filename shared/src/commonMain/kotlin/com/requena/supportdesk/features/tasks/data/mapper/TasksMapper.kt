@@ -22,6 +22,8 @@ object TasksMapper {
 
     fun fromTaskDto(dto: TaskDto): WorkTask = WorkTask(
         id = dto.id,
+        createdByUserId = dto.createdByUserId.ifBlank { dto.ownerAdminId },
+        createdByUserName = dto.createdByUserName.ifBlank { "Usuario" },
         title = dto.title,
         clientId = dto.clientId,
         categoryId = dto.labelId,

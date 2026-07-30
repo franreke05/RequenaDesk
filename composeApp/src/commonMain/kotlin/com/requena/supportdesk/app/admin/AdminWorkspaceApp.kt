@@ -68,6 +68,8 @@ import com.requena.supportdesk.features.programs.presentation.state.ProgramsUiSt
 import com.requena.supportdesk.features.tasks.presentation.effect.TasksUiEffect
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
+import com.requena.supportdesk.features.taskboard.presentation.effect.TaskBoardUiEffect
+import com.requena.supportdesk.features.taskboard.presentation.event.TaskBoardUiEvent
 import com.requena.supportdesk.features.tickets.presentation.effect.TicketsUiEffect
 import com.requena.supportdesk.features.tickets.presentation.event.TicketsUiEvent
 import com.requena.supportdesk.features.tickets.presentation.state.TicketsUiState
@@ -154,6 +156,22 @@ fun AdminWorkspaceApp() {
                     is InvoicesUiEffect.ShowMessage -> statusMessage = effect.message
                 }
             }
+        }
+    }
+
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.ADMIN) {
+            module.taskBoardViewModel.effects.collect { effect ->
+                when (effect) {
+                    is TaskBoardUiEffect.ShowMessage -> statusMessage = effect.message
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(currentUser?.id, navigation.destination) {
+        if (currentUser?.role == UserRole.ADMIN && navigation.destination == AppDestination.Pinboard) {
+            module.taskBoardViewModel.onEvent(TaskBoardUiEvent.Refresh)
         }
     }
 
@@ -357,8 +375,8 @@ fun AdminWorkspaceApp() {
                     ),
                     NavigationItemSpec(
                         key = AppDestination.Pinboard,
-                        title = "Tablon",
-                        supportingText = "Chinchetas del dia",
+                        title = "Tablero",
+                        supportingText = "Planificacion diaria y semanal",
                         icon = Lucide.Pin,
                     ),
                     NavigationItemSpec(
@@ -478,6 +496,7 @@ private fun AdminContentArea(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val taskBoardState by module.taskBoardViewModel.state.collectAsState()
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -605,7 +624,9 @@ private fun AdminContentArea(
             AppDestination.Pinboard -> AdminPinboardScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
+                boardState = taskBoardState,
                 onTasksEvent = module.tasksViewModel::onEvent,
+                onBoardEvent = module.taskBoardViewModel::onEvent,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -656,7 +677,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Dashboard -> "Dashboard"
     AppDestination.Clients -> "Clientes"
     AppDestination.Tasks -> "Tareas"
-    AppDestination.Pinboard -> "Tablon"
+    AppDestination.Pinboard -> "Tablero"
     AppDestination.Labels,
     AppDestination.Notifications -> "Etiquetas"
     is AppDestination.Invoices -> "Facturas"
@@ -669,7 +690,7 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Dashboard -> null
     AppDestination.Clients -> "Consulta clientes y enlaza contexto sin mezclar trabajo."
     AppDestination.Tasks -> "Lista principal de trabajo, cliente asociado y etiquetas."
-    AppDestination.Pinboard -> "Chinchetas con las tareas pendientes de hoy, organizadas por etiqueta."
+    AppDestination.Pinboard -> "Organiza las tareas por dia, semana y posicion en el tablero."
     AppDestination.Labels,
     AppDestination.Notifications -> "Colores y nombres para estructurar el trabajo diario."
     is AppDestination.Invoices -> "Genera facturas en PDF para tus clientes."

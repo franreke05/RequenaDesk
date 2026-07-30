@@ -10,6 +10,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -463,7 +464,10 @@ class ApplicationTest {
         }
 
         assertEquals(HttpStatusCode.Created, response.status)
-        assertTrue(response.bodyAsText().contains("\"clientId\":\"client-1\""))
+        val body = response.bodyAsText()
+        assertTrue(body.contains("\"clientId\":\"client-1\""))
+        assertTrue(body.contains("\"createdByUserId\":\"user-client\""))
+        assertTrue(body.contains("\"createdByUserName\":\"Ana Northwind\""))
     }
 
     @Test
@@ -683,6 +687,91 @@ class ApplicationTest {
 
         assertEquals(HttpStatusCode.Created, response.status)
         assertTrue(response.bodyAsText().contains("\"dueDate\":\"$futureDate\""))
+    }
+
+    @Test
+    fun testTaskBoardPersistsOnePlacementAndRemovesItWhenTaskCompletes() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val today = LocalDate.now(java.time.ZoneId.of("Europe/Madrid"))
+        val tomorrow = today.plusDays(1)
+
+        val unauthorized = client.get("/admin/task-board")
+        assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
+
+        val clientToken = client.accessToken(
+            email = "ana@northwind.dev",
+            password = "UnitTestClientPassword1",
+        )
+        val forbidden = client.get("/admin/task-board") { bearer(clientToken) }
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status)
+
+        val placedToday = client.put("/admin/task-board/placements/task-1") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"boardDate":"$today","positionX":0.2,"positionY":0.3}""")
+        }
+        assertEquals(HttpStatusCode.OK, placedToday.status)
+        assertTrue(placedToday.bodyAsText().contains("\"createdAt\""))
+
+        val movedTomorrow = client.put("/admin/task-board/placements/task-1") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"boardDate":"$tomorrow","positionX":0.75,"positionY":0.6}""")
+        }
+        assertEquals(HttpStatusCode.OK, movedTomorrow.status)
+
+        val board = client.get("/admin/task-board") { bearer(adminToken) }
+        assertEquals(HttpStatusCode.OK, board.status)
+        val boardBody = board.bodyAsText()
+        assertTrue(boardBody.contains("\"today\":\"$today\""))
+        assertTrue(boardBody.contains("\"timeZone\":\"Europe/Madrid\""))
+        assertTrue(boardBody.contains("\"refreshAfterSeconds\":"))
+        assertTrue(boardBody.contains("\"taskId\":\"task-1\""))
+        assertTrue(boardBody.contains("\"boardDate\":\"$tomorrow\""))
+        assertEquals(boardBody.indexOf("\"taskId\":\"task-1\""), boardBody.lastIndexOf("\"taskId\":\"task-1\""))
+
+        val completed = client.patch("/admin/tasks/task-1") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"completed":true}""")
+        }
+        assertEquals(HttpStatusCode.OK, completed.status)
+
+        val afterCompletion = client.get("/admin/task-board") { bearer(adminToken) }.bodyAsText()
+        assertTrue(!afterCompletion.contains("\"taskId\":\"task-1\""))
+    }
+
+    @Test
+    fun testTaskBoardRejectsPastInvalidAndCrossTenantPlacements() = testApplication {
+        application { testModule() }
+        val adminToken = client.accessToken()
+        val partnerToken = client.accessToken(
+            email = "admin2@orykai.dev",
+            password = "UnitTestAdminPassword2",
+        )
+        val today = LocalDate.now(java.time.ZoneId.of("Europe/Madrid"))
+
+        val past = client.put("/admin/task-board/placements/task-1") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"boardDate":"${today.minusDays(1)}","positionX":0.2,"positionY":0.3}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, past.status)
+
+        val invalidPosition = client.put("/admin/task-board/placements/task-1") {
+            bearer(adminToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"boardDate":"$today","positionX":1.2,"positionY":0.3}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, invalidPosition.status)
+
+        val crossTenant = client.put("/admin/task-board/placements/task-1") {
+            bearer(partnerToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"boardDate":"$today","positionX":0.2,"positionY":0.3}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, crossTenant.status)
     }
 
     @Test

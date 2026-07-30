@@ -45,7 +45,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(13, dataSource.migrate())
+                assertEquals(14, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",
@@ -62,6 +62,7 @@ class PostgresMigrationIntegrationTest {
                     "time_logs",
                     "work_sessions",
                     "work_segments",
+                    "task_board_placements",
                     "client_component_entitlements",
                     "client_contacts",
                     "client_activities",
@@ -110,6 +111,8 @@ class PostgresMigrationIntegrationTest {
                 assertFalse(dataSource.hasTablePrivilege("anon", "business_finance_entries", "SELECT"))
                 assertFalse(dataSource.hasTablePrivilege("authenticated", "business_appointments", "SELECT"))
                 assertFalse(dataSource.hasTablePrivilege("anon", "business_sales_quotes", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("anon", "task_board_placements", "SELECT"))
+                assertFalse(dataSource.hasTablePrivilege("authenticated", "task_board_placements", "SELECT"))
 
                 PostgresDemoBootstrapper(dataSource).bootstrap(
                     adminPassword = ADMIN_PASSWORD,
@@ -139,6 +142,7 @@ class PostgresMigrationIntegrationTest {
                         "/admin/clients",
                         "/admin/labels",
                         "/admin/tasks",
+                        "/admin/task-board",
                         "/admin/time-logs",
                         "/admin/dashboard",
                     ).forEach { path ->
@@ -147,6 +151,27 @@ class PostgresMigrationIntegrationTest {
                         }
                         assertEquals(HttpStatusCode.OK, response.status, "GET $path failed")
                     }
+
+                    val tasksBody = client.get("/admin/tasks") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }.bodyAsText()
+                    assertTrue(tasksBody.contains("\"createdByUserId\""))
+                    assertTrue(tasksBody.contains("\"createdByUserName\":\"Demo Client User\""))
+
+                    val boardDate = LocalDate.now(java.time.ZoneId.of("Europe/Madrid")).plusDays(2)
+                    val placementResponse = client.put(
+                        "/admin/task-board/placements/66666666-6666-6666-6666-666666666666",
+                    ) {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"boardDate":"$boardDate","positionX":0.25,"positionY":0.75}""")
+                    }
+                    assertEquals(HttpStatusCode.OK, placementResponse.status)
+                    val persistedBoard = client.get("/admin/task-board") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }.bodyAsText()
+                    assertTrue(persistedBoard.contains("\"boardDate\":\"$boardDate\""))
+                    assertTrue(persistedBoard.contains("\"positionX\":0.25"))
 
                     val clientResponse = client.post("/admin/clients") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")

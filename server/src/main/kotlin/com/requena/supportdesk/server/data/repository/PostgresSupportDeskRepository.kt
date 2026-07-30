@@ -32,6 +32,8 @@ import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardPlacementSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
@@ -54,6 +56,8 @@ import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
+import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
+import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
@@ -1459,6 +1463,8 @@ class PostgresSupportDeskRepository(
             SELECT
                 t.id::text AS id,
                 t.owner_admin_id::text AS owner_admin_id,
+                t.created_by_user_id::text AS created_by_user_id,
+                creator.name AS created_by_user_name,
                 t.title,
                 t.description,
                 t.client_id::text AS client_id,
@@ -1474,6 +1480,7 @@ class PostgresSupportDeskRepository(
                 t.updated_at
             FROM tasks t
             JOIN task_labels tl ON tl.id = t.label_id
+            JOIN users creator ON creator.id = t.created_by_user_id
             LEFT JOIN clients c ON c.id = t.client_id
             WHERE (? IS NULL OR t.client_id::text = ?)
               AND (? IS NULL OR t.label_id::text = ?)
@@ -1497,14 +1504,22 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
+    override fun createTask(
+        request: CreateTaskRequest,
+        createdByUserId: String,
+        ownerAdminId: String?,
+    ): ServerTaskSnapshot = dataSource.withConnection { connection ->
         requireLabelExists(connection, request.labelId, ownerAdminId)
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
+        requireTaskCreatorBelongsToOwner(connection, createdByUserId, resolvedOwnerAdminId)
         request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOwnerAdminId) }
         connection.prepareStatement(
             """
-            INSERT INTO tasks (title, description, client_id, owner_admin_id, label_id, due_date, completed, logged_minutes, logged_seconds)
-            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
+            INSERT INTO tasks (
+                title, description, client_id, owner_admin_id, created_by_user_id,
+                label_id, due_date, completed, logged_minutes, logged_seconds
+            )
+            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
             RETURNING
                 id::text AS id,
                 title,
@@ -1522,8 +1537,9 @@ class PostgresSupportDeskRepository(
             statement.setString(2, request.description.trim())
             statement.setString(3, request.clientId?.takeIf { it.isNotBlank() })
             statement.setString(4, resolvedOwnerAdminId)
-            statement.setString(5, request.labelId)
-            statement.setString(6, request.dueDate?.trim()?.takeIf { it.isNotBlank() })
+            statement.setString(5, createdByUserId)
+            statement.setString(6, request.labelId)
+            statement.setString(7, request.dueDate?.trim()?.takeIf { it.isNotBlank() })
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 hydrateTaskSnapshot(connection, resultSet)
@@ -1611,6 +1627,115 @@ class PostgresSupportDeskRepository(
                 if (statement.executeUpdate() == 0) {
                     throw ServerNotFoundException("Task not found")
                 }
+            }
+        }
+    }
+
+    override fun getTaskBoard(ownerAdminId: String): ServerTaskBoardSnapshot = dataSource.withConnection { connection ->
+        val today = connection.prepareStatement(
+            "SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Madrid')::date::text AS today",
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getString("today")
+            }
+        }
+        val placements = connection.prepareStatement(
+            """
+            SELECT
+                placement.task_id::text AS task_id,
+                placement.board_date::text AS board_date,
+                placement.position_x,
+                placement.position_y,
+                placement.created_at,
+                placement.updated_at
+            FROM task_board_placements placement
+            JOIN tasks task ON task.id = placement.task_id
+            WHERE task.owner_admin_id::text = ?
+              AND task.completed = FALSE
+              AND placement.board_date >= CAST(? AS date)
+            ORDER BY placement.board_date, placement.updated_at, placement.task_id
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.setString(2, today)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(taskBoardPlacementSnapshot(resultSet))
+                }
+            }
+        }
+        ServerTaskBoardSnapshot(
+            today = today,
+            timeZone = TASK_BOARD_TIME_ZONE,
+            refreshAfterSeconds = madridTaskBoardDayBoundary().refreshAfterSeconds,
+            placements = placements,
+        )
+    }
+
+    override fun upsertTaskBoardPlacement(
+        taskId: String,
+        ownerAdminId: String,
+        boardDate: String,
+        positionX: Double,
+        positionY: Double,
+    ): ServerTaskBoardPlacementSnapshot = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            WITH target_task AS (
+                SELECT id
+                FROM tasks
+                WHERE id::text = ?
+                  AND owner_admin_id::text = ?
+                  AND completed = FALSE
+                FOR UPDATE
+            )
+            INSERT INTO task_board_placements (task_id, board_date, position_x, position_y)
+            SELECT id, CAST(? AS date), ?, ?
+            FROM target_task
+            ON CONFLICT (task_id) DO UPDATE
+            SET board_date = EXCLUDED.board_date,
+                position_x = EXCLUDED.position_x,
+                position_y = EXCLUDED.position_y
+            RETURNING
+                task_id::text AS task_id,
+                board_date::text AS board_date,
+                position_x,
+                position_y,
+                created_at,
+                updated_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, taskId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, boardDate)
+            statement.setDouble(4, positionX)
+            statement.setDouble(5, positionY)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    requireTaskExists(connection, taskId, ownerAdminId)
+                    throw ServerConflictException("Completed tasks cannot be placed on the board")
+                }
+                taskBoardPlacementSnapshot(resultSet)
+            }
+        }
+    }
+
+    override fun deleteTaskBoardPlacement(taskId: String, ownerAdminId: String) {
+        dataSource.withConnection { connection ->
+            requireTaskExists(connection, taskId, ownerAdminId)
+            connection.prepareStatement(
+                """
+                DELETE FROM task_board_placements placement
+                USING tasks task
+                WHERE placement.task_id = task.id
+                  AND task.id::text = ?
+                  AND task.owner_admin_id::text = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, taskId)
+                statement.setString(2, ownerAdminId)
+                statement.executeUpdate()
             }
         }
     }
@@ -2616,6 +2741,8 @@ class PostgresSupportDeskRepository(
     private fun taskSnapshot(resultSet: ResultSet): ServerTaskSnapshot = ServerTaskSnapshot(
         id = resultSet.getString("id"),
         ownerAdminId = resultSet.getString("owner_admin_id"),
+        createdByUserId = resultSet.getString("created_by_user_id"),
+        createdByUserName = resultSet.getString("created_by_user_name"),
         title = resultSet.getString("title"),
         description = resultSet.getString("description") ?: "",
         clientId = resultSet.getString("client_id"),
@@ -2638,6 +2765,8 @@ class PostgresSupportDeskRepository(
             SELECT
                 t.id::text AS id,
                 t.owner_admin_id::text AS owner_admin_id,
+                t.created_by_user_id::text AS created_by_user_id,
+                creator.name AS created_by_user_name,
                 t.title,
                 t.description,
                 t.client_id::text AS client_id,
@@ -2653,6 +2782,7 @@ class PostgresSupportDeskRepository(
                 t.updated_at
             FROM tasks t
             JOIN task_labels tl ON tl.id = t.label_id
+            JOIN users creator ON creator.id = t.created_by_user_id
             LEFT JOIN clients c ON c.id = t.client_id
             WHERE t.id::text = ?
             LIMIT 1
@@ -2665,6 +2795,15 @@ class PostgresSupportDeskRepository(
             }
         }
     }
+
+    private fun taskBoardPlacementSnapshot(resultSet: ResultSet) = ServerTaskBoardPlacementSnapshot(
+        taskId = resultSet.getString("task_id"),
+        boardDate = resultSet.getString("board_date"),
+        positionX = resultSet.getDouble("position_x"),
+        positionY = resultSet.getDouble("position_y"),
+        createdAt = formatTimestamp(resultSet.getObject("created_at")),
+        updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+    )
 
     private fun timeLogSnapshot(resultSet: ResultSet): ServerTimeLogSnapshot = ServerTimeLogSnapshot(
         id = resultSet.getString("id"),
@@ -2849,6 +2988,32 @@ class PostgresSupportDeskRepository(
         if (!recordExists(connection, "tasks", taskId, ownerAdminId)) {
             throw ServerNotFoundException("Task not found")
         }
+    }
+
+    private fun requireTaskCreatorBelongsToOwner(
+        connection: Connection,
+        createdByUserId: String,
+        ownerAdminId: String,
+    ) {
+        val belongsToOwner = connection.prepareStatement(
+            """
+            SELECT 1
+            FROM users creator
+            LEFT JOIN clients client ON client.id = creator.client_id
+            WHERE creator.id::text = ?
+              AND (
+                  creator.id::text = ?
+                  OR client.owner_admin_id::text = ?
+              )
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, createdByUserId)
+            statement.setString(2, ownerAdminId)
+            statement.setString(3, ownerAdminId)
+            statement.executeQuery().use { it.next() }
+        }
+        if (!belongsToOwner) throw ServerNotFoundException("Task creator not found")
     }
 
     private fun recordExists(connection: Connection, tableName: String, id: String, ownerAdminId: String? = null): Boolean =
