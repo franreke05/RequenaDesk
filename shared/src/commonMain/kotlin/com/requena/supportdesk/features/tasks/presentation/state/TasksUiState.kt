@@ -31,6 +31,8 @@ data class TasksUiState(
     val errorMessage: String? = null,
     val statusMessage: String? = null,
     val lastCreatedTaskId: String? = null,
+    val isCreatingTaskSteps: Boolean = false,
+    val taskStepsCreationVersion: Int = 0,
     // Finished sessions (with their segments/tramos) for whichever task's history panel is
     // currently expanded - fetched on demand, not preloaded for every task.
     val taskSessions: List<WorkSession> = emptyList(),

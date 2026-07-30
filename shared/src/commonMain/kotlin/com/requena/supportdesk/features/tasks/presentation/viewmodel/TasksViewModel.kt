@@ -15,6 +15,9 @@ import com.requena.supportdesk.core.time.parseIsoInstantToEpochMillis
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskUpdateInput
+import com.requena.supportdesk.features.tasks.domain.model.derivedTaskStepDescription
+import com.requena.supportdesk.features.tasks.domain.model.derivedTaskStepTitle
+import com.requena.supportdesk.features.tasks.domain.model.parseDerivedTaskSteps
 import com.requena.supportdesk.features.tasks.domain.usecase.CheckpointWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskUseCase
@@ -110,6 +113,7 @@ class TasksViewModel(
             is TasksUiEvent.UpdateLabel -> updateLabel(event.labelId, event.name, event.colorHex)
             is TasksUiEvent.DeleteLabel -> deleteLabel(event.labelId)
             is TasksUiEvent.CreateTask -> createTask(event)
+            is TasksUiEvent.CreateTaskSteps -> createTaskSteps(event)
             is TasksUiEvent.UpdateTaskClient -> updateTaskClient(event.taskId, event.clientId)
             is TasksUiEvent.UpdateTask -> updateTask(event)
             is TasksUiEvent.DeleteTask -> deleteTask(event.taskId)
@@ -281,6 +285,86 @@ class TasksViewModel(
                         statusMessage = "Tarea creada",
                     )
                 }
+            }
+        }
+    }
+
+    private fun createTaskSteps(event: TasksUiEvent.CreateTaskSteps) {
+        val parent = tasks.firstOrNull { it.id == event.parentTaskId }
+        if (parent == null) {
+            handleWorkspaceError("No se encontró la tarea que quieres dividir.")
+            return
+        }
+        if (parent.completed) {
+            handleWorkspaceError("Reabre la tarea antes de crear nuevos pasos.")
+            return
+        }
+        val steps = parseDerivedTaskSteps(event.steps)
+        if (steps.isEmpty()) {
+            handleWorkspaceError("Escribe al menos un paso.")
+            return
+        }
+
+        guardedLaunch(workspaceMutex) {
+            _state.update {
+                it.copy(
+                    isLoading = true,
+                    isCreatingTaskSteps = true,
+                    errorMessage = null,
+                    statusMessage = null,
+                )
+            }
+            val createdTasks = mutableListOf<WorkTask>()
+            var failureMessage: String? = null
+            for (step in steps) {
+                when (
+                    val result = createTaskUseCase(
+                        TaskDraft(
+                            title = derivedTaskStepTitle(parent.title, step),
+                            description = derivedTaskStepDescription(parent.title),
+                            clientId = parent.clientId,
+                            categoryId = parent.categoryId,
+                            dueDate = parent.dueDate?.takeUnless(::isPastIsoDate),
+                        ),
+                    )
+                ) {
+                    is AppResult.Error -> {
+                        failureMessage = result.message
+                        break
+                    }
+                    is AppResult.Success -> createdTasks += result.data
+                }
+            }
+
+            if (createdTasks.isEmpty()) {
+                _state.update { it.copy(isCreatingTaskSteps = false) }
+                handleWorkspaceError(failureMessage ?: "No se pudieron crear los pasos.")
+                return@guardedLaunch
+            }
+
+            _state.update {
+                it.copy(
+                    isCreatingTaskSteps = false,
+                    taskStepsCreationVersion = it.taskStepsCreationVersion + 1,
+                )
+            }
+            val lastCreated = createdTasks.last()
+            val status = if (failureMessage == null) {
+                if (createdTasks.size == 1) "1 paso creado" else "${createdTasks.size} pasos creados"
+            } else {
+                "Se crearon ${createdTasks.size} de ${steps.size} pasos"
+            }
+            loadWorkspace(
+                selectedTaskId = lastCreated.id,
+                selectedCategoryId = parent.categoryId,
+                selectedClientFilterId = parent.clientId,
+                selectedDashboardClientId = parent.clientId ?: state.value.selectedDashboardClientId,
+                statusMessage = status,
+            )
+            if (failureMessage != null) {
+                val partialFailure = "$status. No se pudo continuar: $failureMessage"
+                _state.update { it.copy(errorMessage = partialFailure, statusMessage = partialFailure) }
+                _effects.emit(TasksUiEffect.ShowMessage(partialFailure))
             }
         }
     }

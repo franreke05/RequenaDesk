@@ -108,6 +108,7 @@ fun AdminPinboardScreen(
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    var taskForSteps by remember { mutableStateOf<WorkTask?>(null) }
     val activeTasks = remember(tasksState.tasks) { tasksState.tasks.filterNot(WorkTask::completed) }
     val activeTaskIds = remember(activeTasks) { activeTasks.mapTo(mutableSetOf(), WorkTask::id) }
     val activePlacements = remember(boardState.placements, activeTaskIds) {
@@ -118,6 +119,9 @@ fun AdminPinboardScreen(
     }
     val selectedPlacements = remember(activePlacements, boardState.selectedDate) {
         activePlacements.filter { it.boardDate == boardState.selectedDate }
+    }
+    LaunchedEffect(tasksState.taskStepsCreationVersion) {
+        if (tasksState.taskStepsCreationVersion > 0) taskForSteps = null
     }
 
     Column(
@@ -178,6 +182,7 @@ fun AdminPinboardScreen(
                                     },
                                     onRemoveTask = { onBoardEvent(TaskBoardUiEvent.RemoveTask(it)) },
                                     onCompleteTask = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
+                                    onCreateSteps = { taskForSteps = it },
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                                 BoardCalendar(
@@ -205,6 +210,7 @@ fun AdminPinboardScreen(
                                         ),
                                     )
                                 },
+                                onCreateSteps = { taskForSteps = it },
                                 modifier = Modifier.weight(1f).widthIn(min = 300.dp, max = 400.dp),
                             )
                         }
@@ -230,6 +236,7 @@ fun AdminPinboardScreen(
                                     },
                                     onRemoveTask = { onBoardEvent(TaskBoardUiEvent.RemoveTask(it)) },
                                     onCompleteTask = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
+                                    onCreateSteps = { taskForSteps = it },
                                     modifier = Modifier.requiredWidthIn(min = BoardMinWidthDp.dp),
                                 )
                             }
@@ -251,6 +258,7 @@ fun AdminPinboardScreen(
                                         ),
                                     )
                                 },
+                                onCreateSteps = { taskForSteps = it },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             BoardCalendar(
@@ -265,6 +273,20 @@ fun AdminPinboardScreen(
             }
         }
     }
+
+    TaskStepsDialog(
+        task = taskForSteps,
+        client = clients.firstOrNull { it.id == taskForSteps?.clientId },
+        category = tasksState.categories.firstOrNull { it.id == taskForSteps?.categoryId },
+        isLoading = tasksState.isCreatingTaskSteps,
+        errorMessage = tasksState.errorMessage,
+        onCreate = { steps ->
+            taskForSteps?.id?.let { parentTaskId ->
+                onTasksEvent(TasksUiEvent.CreateTaskSteps(parentTaskId, steps))
+            }
+        },
+        onDismiss = { if (!tasksState.isCreatingTaskSteps) taskForSteps = null },
+    )
 }
 
 @Composable
@@ -446,6 +468,7 @@ private fun DailyBoard(
     onMoveTask: (String, Double, Double) -> Unit,
     onRemoveTask: (String) -> Unit,
     onCompleteTask: (String) -> Unit,
+    onCreateSteps: (WorkTask) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -526,6 +549,7 @@ private fun DailyBoard(
                             onMove = { x, y -> onMoveTask(task.id, x, y) },
                             onRemove = { onRemoveTask(task.id) },
                             onComplete = { onCompleteTask(task.id) },
+                            onCreateSteps = { onCreateSteps(task) },
                             modifier = Modifier.zIndex(index.toFloat() + 1f),
                         )
                     }
@@ -547,6 +571,7 @@ private fun DraggablePin(
     onMove: (Double, Double) -> Unit,
     onRemove: () -> Unit,
     onComplete: () -> Unit,
+    onCreateSteps: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -622,6 +647,13 @@ private fun DraggablePin(
                 if (saving) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 }
+                IconButton(onClick = onCreateSteps, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Lucide.Plus,
+                        contentDescription = "Crear pasos como pósits",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
                 IconButton(onClick = onComplete, modifier = Modifier.size(30.dp)) {
                     Icon(
                         Lucide.CircleCheck,
@@ -688,6 +720,7 @@ private fun PlanningInbox(
     selectedDayPlacements: List<TaskBoardPlacement>,
     savingTaskIds: Set<String>,
     onPlaceTask: (String, Double, Double) -> Unit,
+    onCreateSteps: (WorkTask) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -787,6 +820,7 @@ private fun PlanningInbox(
                                     val position = nextAvailablePosition(selectedDayPlacements)
                                     onPlaceTask(task.id, position.first, position.second)
                                 },
+                                onCreateSteps = { onCreateSteps(task) },
                             )
                         }
                     }
@@ -804,6 +838,7 @@ private fun InboxTaskCard(
     selectedDate: String,
     saving: Boolean,
     onAdd: () -> Unit,
+    onCreateSteps: () -> Unit,
 ) {
     val pinColor = parsePinColor(category?.colorHex)
     Surface(
@@ -847,6 +882,13 @@ private fun InboxTaskCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+            SecondaryButton(
+                text = "Crear pasos como pósits",
+                onClick = onCreateSteps,
+                enabled = !saving,
+                icon = Lucide.Plus,
+                fullWidth = true,
             )
             SecondaryButton(
                 text = "Añadir al ${formatBoardDate(selectedDate)}",

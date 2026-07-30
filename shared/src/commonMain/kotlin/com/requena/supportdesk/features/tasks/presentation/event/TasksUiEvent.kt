@@ -19,6 +19,10 @@ sealed interface TasksUiEvent {
         val categoryId: String,
         val dueDate: String? = null,
     ) : TasksUiEvent
+    data class CreateTaskSteps(
+        val parentTaskId: String,
+        val steps: String,
+    ) : TasksUiEvent
     data class UpdateTaskClient(val taskId: String, val clientId: String?) : TasksUiEvent
     data class UpdateTask(
         val taskId: String,
