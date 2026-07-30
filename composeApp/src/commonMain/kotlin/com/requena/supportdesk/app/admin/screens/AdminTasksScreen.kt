@@ -111,6 +111,7 @@ fun AdminTasksScreen(
     var filtersExpanded by rememberSaveable { mutableStateOf(false) }
     var statusFilter by rememberSaveable { mutableStateOf(TaskStatusFilter.ALL) }
     var taskPendingDeletion by remember { mutableStateOf<WorkTask?>(null) }
+    var taskForSteps by remember { mutableStateOf<WorkTask?>(null) }
     val clientsById = remember(clients) { clients.associateBy(Client::id) }
     val categoriesById = remember(tasksState.categories) { tasksState.categories.associateBy(TaskCategory::id) }
     val visibleTasks = remember(
@@ -128,6 +129,9 @@ fun AdminTasksScreen(
 
     LaunchedEffect(tasksState.lastCreatedTaskId) {
         if (tasksState.lastCreatedTaskId != null) showCreateDialog = false
+    }
+    LaunchedEffect(tasksState.taskStepsCreationVersion) {
+        if (tasksState.taskStepsCreationVersion > 0) taskForSteps = null
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -172,6 +176,7 @@ fun AdminTasksScreen(
                 },
                 onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
                 onLoadTaskSessions = { onTasksEvent(TasksUiEvent.LoadTaskSessions(it)) },
+                onCreateSteps = { selectedTask?.let { taskForSteps = it } },
                 modifier = paneModifier,
             )
         }
@@ -224,6 +229,20 @@ fun AdminTasksScreen(
             taskPendingDeletion = null
         },
         onDismiss = { taskPendingDeletion = null },
+    )
+
+    TaskStepsDialog(
+        task = taskForSteps,
+        client = clients.firstOrNull { it.id == taskForSteps?.clientId },
+        category = tasksState.categories.firstOrNull { it.id == taskForSteps?.categoryId },
+        isLoading = tasksState.isCreatingTaskSteps,
+        errorMessage = tasksState.errorMessage,
+        onCreate = { steps ->
+            taskForSteps?.id?.let { parentTaskId ->
+                onTasksEvent(TasksUiEvent.CreateTaskSteps(parentTaskId, steps))
+            }
+        },
+        onDismiss = { if (!tasksState.isCreatingTaskSteps) taskForSteps = null },
     )
 }
 
@@ -927,6 +946,7 @@ private fun TaskEditorPane(
     onUpdateTask: (String, String, String, String, String?, String?) -> Unit,
     onToggleCompleted: (String) -> Unit,
     onLoadTaskSessions: (String) -> Unit,
+    onCreateSteps: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -994,6 +1014,7 @@ private fun TaskEditorPane(
                 canSave = title.isNotBlank() && selectedCategoryId.isNotBlank() && isDirty,
                 onSave = saveTask,
                 onToggleCompleted = { onToggleCompleted(task.id) },
+                onCreateSteps = onCreateSteps,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
             TaskFormFields(
@@ -1101,6 +1122,7 @@ private fun TaskEditorActions(
     canSave: Boolean,
     onSave: () -> Unit,
     onToggleCompleted: () -> Unit,
+    onCreateSteps: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -1121,22 +1143,38 @@ private fun TaskEditorActions(
                     fullWidth = true,
                     icon = Lucide.CircleCheck,
                 )
+                SecondaryButton(
+                    text = "Crear pasos como pósits",
+                    onClick = onCreateSteps,
+                    enabled = !completed && !isLoading,
+                    fullWidth = true,
+                    icon = Lucide.Plus,
+                )
             }
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                PrimaryButton(
-                    text = "Guardar cambios",
-                    onClick = onSave,
-                    enabled = canSave && !isLoading,
-                    isLoading = isLoading,
-                    modifier = Modifier.weight(1f),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    PrimaryButton(
+                        text = "Guardar cambios",
+                        onClick = onSave,
+                        enabled = canSave && !isLoading,
+                        isLoading = isLoading,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SecondaryButton(
+                        text = if (completed) "Reabrir tarea" else "Marcar como hecha",
+                        onClick = onToggleCompleted,
+                        enabled = !isLoading,
+                        icon = Lucide.CircleCheck,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 SecondaryButton(
-                    text = if (completed) "Reabrir tarea" else "Marcar como hecha",
-                    onClick = onToggleCompleted,
-                    enabled = !isLoading,
-                    icon = Lucide.CircleCheck,
-                    modifier = Modifier.weight(1f),
+                    text = "Crear pasos como pósits",
+                    onClick = onCreateSteps,
+                    enabled = !completed && !isLoading,
+                    fullWidth = true,
+                    icon = Lucide.Plus,
                 )
             }
         }

@@ -8,6 +8,22 @@ data class TaskDraft(
     val dueDate: String? = null,
 )
 
+const val MAX_DERIVED_TASK_STEPS = 20
+
+fun parseDerivedTaskSteps(raw: String): List<String> =
+    raw.lineSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinctBy(String::lowercase)
+        .take(MAX_DERIVED_TASK_STEPS)
+        .toList()
+
+fun derivedTaskStepTitle(parentTitle: String, stepTitle: String): String =
+    "[${parentTitle.trim()}] ${stepTitle.trim()}"
+
+fun derivedTaskStepDescription(parentTitle: String): String =
+    "Paso derivado de la tarea «${parentTitle.trim()}»."
+
 data class TaskUpdateInput(
     val title: String,
     val description: String,
