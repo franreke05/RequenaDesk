@@ -24,6 +24,7 @@ import com.requena.supportdesk.app.client.screens.business.finance.BusinessInvoi
 import com.requena.supportdesk.app.client.screens.business.operations.BookingSetupScreen
 import com.requena.supportdesk.app.client.screens.business.operations.BookingsOperationsScreen
 import com.requena.supportdesk.app.client.screens.business.operations.DocumentsOperationsScreen
+import com.requena.supportdesk.app.client.screens.business.projects.BusinessProjectsRoute
 import com.requena.supportdesk.app.client.screens.business.sales.BusinessCatalogRoute
 import com.requena.supportdesk.app.client.screens.business.sales.BusinessCustomersRoute
 import com.requena.supportdesk.app.client.screens.business.sales.BusinessQuotesRoute
@@ -40,6 +41,8 @@ import com.requena.supportdesk.features.business.operations.CreateBookingResourc
 import com.requena.supportdesk.features.business.operations.CreateBookingServiceDto
 import com.requena.supportdesk.features.business.operations.OperationsUiEvent
 import com.requena.supportdesk.features.business.operations.OperationsViewModel
+import com.requena.supportdesk.features.business.projects.BUSINESS_PROJECTS
+import com.requena.supportdesk.features.business.projects.BusinessProjectsViewModel
 import com.requena.supportdesk.features.business.sales.domain.BUSINESS_CATALOG
 import com.requena.supportdesk.features.business.sales.domain.BUSINESS_CUSTOMERS
 import com.requena.supportdesk.features.business.sales.domain.BUSINESS_QUOTES
@@ -63,6 +66,7 @@ fun ClientBusinessProgramWorkspace(
     customersViewModel: BusinessCustomersViewModel,
     catalogViewModel: BusinessCatalogViewModel,
     quotesViewModel: BusinessQuotesViewModel,
+    projectsViewModel: BusinessProjectsViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,6 +76,7 @@ fun ClientBusinessProgramWorkspace(
         BUSINESS_CUSTOMERS -> SalesWorkspace(onBack, modifier) { BusinessCustomersRoute(customersViewModel, Modifier.fillMaxSize()) }
         BUSINESS_CATALOG -> SalesWorkspace(onBack, modifier) { BusinessCatalogRoute(catalogViewModel, Modifier.fillMaxSize()) }
         BUSINESS_QUOTES -> SalesWorkspace(onBack, modifier) { BusinessQuotesRoute(quotesViewModel, Modifier.fillMaxSize()) }
+        BUSINESS_PROJECTS -> SalesWorkspace(onBack, modifier) { BusinessProjectsRoute(projectsViewModel, Modifier.fillMaxSize()) }
         BUSINESS_BOOKINGS -> BookingsWorkspace(operationsViewModel, onBack, modifier)
         BUSINESS_DOCUMENTS -> DocumentsWorkspace(operationsViewModel, onBack, modifier)
         else -> UnknownProgramWorkspace(onBack, modifier)

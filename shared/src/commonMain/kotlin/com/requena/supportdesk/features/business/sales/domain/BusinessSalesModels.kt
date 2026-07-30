@@ -12,6 +12,15 @@ private const val EUR = "EUR"
 enum class BusinessCustomerStatus { ACTIVE, ARCHIVED }
 
 @Serializable
+enum class BusinessCustomerType { PERSON, COMPANY }
+
+@Serializable
+enum class BusinessCustomerStage { LEAD, PROSPECT, CUSTOMER, INACTIVE }
+
+@Serializable
+enum class BusinessCustomerActivityType { NOTE, CALL, EMAIL, MEETING, FOLLOW_UP }
+
+@Serializable
 enum class BusinessCatalogItemType { PRODUCT, SERVICE }
 
 @Serializable
@@ -34,12 +43,47 @@ data class BusinessCustomer(
     val status: BusinessCustomerStatus,
     val version: Int,
     val updatedAt: String,
+    val type: BusinessCustomerType = BusinessCustomerType.COMPANY,
+    val stage: BusinessCustomerStage = BusinessCustomerStage.CUSTOMER,
+    val source: String? = null,
+    val tags: List<BusinessCustomerTag> = emptyList(),
+    val nextAction: BusinessCustomerActivity? = null,
 )
 
 @Serializable
 data class BusinessCustomerDetail(
     val customer: BusinessCustomer,
     val contacts: List<BusinessContact>,
+    val tags: List<BusinessCustomerTag> = emptyList(),
+    val activities: List<BusinessCustomerActivity> = emptyList(),
+    val nextAction: BusinessCustomerActivity? = null,
+)
+
+@Serializable
+data class BusinessCustomerTag(
+    val id: String,
+    val name: String,
+    val colorHex: String,
+    val archived: Boolean,
+    val version: Int,
+    val updatedAt: String,
+)
+
+@Serializable
+data class BusinessCustomerActivity(
+    val id: String,
+    val customerId: String,
+    val contactId: String? = null,
+    val contactName: String? = null,
+    val type: BusinessCustomerActivityType,
+    val subject: String,
+    val details: String? = null,
+    val occurredAt: String? = null,
+    val dueAt: String? = null,
+    val completedAt: String? = null,
+    val version: Int,
+    val createdAt: String,
+    val updatedAt: String,
 )
 
 @Serializable
@@ -155,6 +199,8 @@ data class BusinessSalesPageRequest(
     val status: String? = null,
     val cursor: String? = null,
     val limit: Int = 40,
+    val stage: BusinessCustomerStage? = null,
+    val tagId: String? = null,
 )
 
 @Serializable
@@ -164,6 +210,10 @@ data class CreateBusinessCustomerInput(
     val email: String? = null,
     val phone: String? = null,
     val address: String? = null,
+    val type: BusinessCustomerType = BusinessCustomerType.COMPANY,
+    val stage: BusinessCustomerStage = BusinessCustomerStage.CUSTOMER,
+    val source: String? = null,
+    val tagIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -174,6 +224,10 @@ data class UpdateBusinessCustomerInput(
     val phone: String? = null,
     val address: String? = null,
     val expectedVersion: Int,
+    val type: BusinessCustomerType = BusinessCustomerType.COMPANY,
+    val stage: BusinessCustomerStage = BusinessCustomerStage.CUSTOMER,
+    val source: String? = null,
+    val tagIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -193,6 +247,41 @@ data class UpdateBusinessContactInput(
     val phone: String? = null,
     val isPrimary: Boolean = false,
     val status: BusinessCustomerStatus = BusinessCustomerStatus.ACTIVE,
+    val expectedVersion: Int,
+)
+
+@Serializable
+data class CreateBusinessCustomerTagInput(
+    val name: String,
+    val colorHex: String,
+)
+
+@Serializable
+data class UpdateBusinessCustomerTagInput(
+    val name: String,
+    val colorHex: String,
+    val expectedVersion: Int,
+)
+
+@Serializable
+data class CreateBusinessCustomerActivityInput(
+    val contactId: String? = null,
+    val type: BusinessCustomerActivityType,
+    val subject: String,
+    val details: String? = null,
+    val occurredAt: String? = null,
+    val dueAt: String? = null,
+)
+
+@Serializable
+data class UpdateBusinessCustomerActivityInput(
+    val contactId: String? = null,
+    val type: BusinessCustomerActivityType,
+    val subject: String,
+    val details: String? = null,
+    val occurredAt: String? = null,
+    val dueAt: String? = null,
+    val completed: Boolean = false,
     val expectedVersion: Int,
 )
 
@@ -305,6 +394,9 @@ object BusinessSalesRules {
     private const val BASIS_POINTS = 10_000L
     private val isoDate = Regex("\\d{4}-\\d{2}-\\d{2}")
     private val idempotencyKey = Regex("[A-Za-z0-9._:-]{8,120}")
+    private val uuid = Regex(
+        "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    )
 
     fun validateCustomer(input: CreateBusinessCustomerInput) {
         required(input.displayName, "Customer name", 160)
@@ -312,10 +404,60 @@ object BusinessSalesRules {
         email(input.email)
         optional(input.phone, "Phone", 40)
         optional(input.address, "Address", 500)
+        optional(input.source, "Commercial source", 160)
+        if (input.tagIds.size > 20 || input.tagIds.distinct().size != input.tagIds.size || input.tagIds.any { !uuid.matches(it) }) {
+            invalid("Customer tags are invalid")
+        }
     }
 
     fun validateCustomer(input: UpdateBusinessCustomerInput) {
-        validateCustomer(CreateBusinessCustomerInput(input.displayName, input.taxId, input.email, input.phone, input.address))
+        validateCustomer(
+            CreateBusinessCustomerInput(
+                input.displayName,
+                input.taxId,
+                input.email,
+                input.phone,
+                input.address,
+                input.type,
+                input.stage,
+                input.source,
+                input.tagIds,
+            ),
+        )
+        version(input.expectedVersion)
+    }
+
+    fun validateCustomerTag(input: CreateBusinessCustomerTagInput) {
+        required(input.name, "Tag name", 80)
+        if (!Regex("#[0-9A-Fa-f]{6}").matches(input.colorHex)) invalid("Tag color must use #RRGGBB")
+    }
+
+    fun validateCustomerTag(input: UpdateBusinessCustomerTagInput) {
+        validateCustomerTag(CreateBusinessCustomerTagInput(input.name, input.colorHex))
+        version(input.expectedVersion)
+    }
+
+    fun validateCustomerActivity(input: CreateBusinessCustomerActivityInput) {
+        required(input.subject, "Activity subject", 160)
+        optional(input.details, "Activity details", 4_000)
+        if (input.contactId != null && !uuid.matches(input.contactId)) invalid("Contact identifier is invalid")
+        if (input.type == BusinessCustomerActivityType.FOLLOW_UP && input.dueAt == null) {
+            invalid("A follow-up needs a due time")
+        }
+    }
+
+    fun validateCustomerActivity(input: UpdateBusinessCustomerActivityInput) {
+        validateCustomerActivity(
+            CreateBusinessCustomerActivityInput(
+                input.contactId,
+                input.type,
+                input.subject,
+                input.details,
+                input.occurredAt,
+                input.dueAt,
+            ),
+        )
+        if (input.completed && input.dueAt == null) invalid("Only an activity with a due time can be completed")
         version(input.expectedVersion)
     }
 

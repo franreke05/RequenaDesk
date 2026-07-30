@@ -63,7 +63,58 @@ class SalesProgramRoutesTest {
             setBody("""{"displayName":"Cliente de prueba real"}""")
         }
         assertEquals(HttpStatusCode.Created, created.status)
-        assertTrue(created.bodyAsText().contains("Cliente de prueba real"))
+        val createdBody = created.bodyAsText()
+        assertTrue(createdBody.contains("Cliente de prueba real"))
+
+        val tag = client.post("/client/apps/customers/tags") {
+            bearer(clientToken(clientA))
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Prioritario","colorHex":"#445566","clientId":"${clientB.clientId}"}""")
+        }
+        assertEquals(HttpStatusCode.Created, tag.status)
+        val tagId = extract(tag.bodyAsText(), "id")
+
+        val trackedCustomer = client.post("/client/apps/customers") {
+            bearer(clientToken(clientA))
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "displayName":"Cliente con seguimiento",
+                  "stage":"PROSPECT",
+                  "tagIds":["$tagId"],
+                  "clientId":"${clientB.clientId}",
+                  "createdByUserId":"${clientB.userId}"
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, trackedCustomer.status)
+        val trackedBody = trackedCustomer.bodyAsText()
+        assertTrue(trackedBody.contains("\"stage\":\"PROSPECT\""))
+        assertTrue(trackedBody.contains("Prioritario"))
+        val customerId = extract(trackedBody, "id")
+
+        val invalidActivity = client.post("/client/apps/customers/$customerId/activities") {
+            bearer(clientToken(clientA))
+            contentType(ContentType.Application.Json)
+            setBody("""{"type":"FOLLOW_UP","subject":"Llamar","dueAt":"mañana"}""")
+        }
+        assertEquals(HttpStatusCode.UnprocessableEntity, invalidActivity.status)
+
+        val activity = client.post("/client/apps/customers/$customerId/activities") {
+            bearer(clientToken(clientA))
+            contentType(ContentType.Application.Json)
+            setBody("""{"type":"FOLLOW_UP","subject":"Llamar","dueAt":"2026-08-03T09:00:00Z"}""")
+        }
+        assertEquals(HttpStatusCode.Created, activity.status)
+        assertTrue(activity.bodyAsText().contains("Llamar"))
+
+        val filtered = client.get("/client/apps/customers?stage=PROSPECT&tagId=$tagId") {
+            bearer(clientToken(clientA))
+        }
+        assertEquals(HttpStatusCode.OK, filtered.status)
+        assertTrue(filtered.bodyAsText().contains("Cliente con seguimiento"))
     }
 
     private fun clientToken(identity: SalesProgramIdentity): String = tokenService.createAccessToken(
@@ -73,4 +124,7 @@ class SalesProgramRoutesTest {
     private fun io.ktor.client.request.HttpRequestBuilder.bearer(token: String) {
         header(HttpHeaders.Authorization, "Bearer $token")
     }
+
+    private fun extract(body: String, field: String): String =
+        requireNotNull(Regex(""""$field":"([^"]+)"""").find(body)?.groupValues?.get(1))
 }

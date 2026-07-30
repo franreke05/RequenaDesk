@@ -131,6 +131,25 @@ class DatabaseMigrationTest {
         assertTrue(migration.contains("REVOKE ALL PRIVILEGES ON public.task_board_placements FROM PUBLIC"))
     }
 
+    @Test
+    fun v15CreatesPrivateCrmProjectsBoardAndTimeTables() {
+        val migration = migrationText("db/migration/V15__business_customers_and_projects.sql")
+
+        assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS customer_type"))
+        assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS commercial_stage"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS business_sales_customer_activities"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS business_projects"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS business_tasks"))
+        assertTrue(migration.contains("business_tasks_single_parent_check"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS business_task_board_placements"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS business_work_sessions"))
+        assertTrue(migration.contains("business_work_sessions_one_live_idx"))
+        assertTrue(migration.contains("'BUSINESS_PROJECTS'"))
+        assertTrue(migration.contains("'[\"projects\", \"tasks\", \"daily_board\", \"time_tracking\"]'::jsonb"))
+        assertTrue(migration.contains("ENABLE ROW LEVEL SECURITY"))
+        assertTrue(migration.contains("REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC"))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

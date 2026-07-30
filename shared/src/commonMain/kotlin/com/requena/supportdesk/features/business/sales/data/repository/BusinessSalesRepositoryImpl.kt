@@ -7,6 +7,8 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogIte
 import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
 import com.requena.supportdesk.features.business.sales.domain.BusinessSale
@@ -19,12 +21,16 @@ import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuo
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.QuoteTransitionInput
 import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessQuoteInput
 import kotlinx.coroutines.CancellationException
 
@@ -51,12 +57,44 @@ class BusinessSalesRepositoryImpl(
         BusinessSalesMapper.customer(dataSource.archiveCustomer(customerId, expectedVersion))
     }
 
+    override suspend fun restoreCustomer(customerId: String, expectedVersion: Int) = request("No se pudo restaurar el cliente comercial.") {
+        BusinessSalesMapper.customer(dataSource.restoreCustomer(customerId, expectedVersion))
+    }
+
     override suspend fun createContact(customerId: String, input: CreateBusinessContactInput) = request("No se pudo crear el contacto.") {
         BusinessSalesMapper.contact(dataSource.createContact(customerId, input))
     }
 
     override suspend fun updateContact(customerId: String, contactId: String, input: UpdateBusinessContactInput) = request("No se pudo actualizar el contacto.") {
         BusinessSalesMapper.contact(dataSource.updateContact(customerId, contactId, input))
+    }
+
+    override suspend fun customerTags() = request("No se pudieron cargar las etiquetas.") {
+        dataSource.customerTags().map(BusinessSalesMapper::customerTag)
+    }
+
+    override suspend fun createCustomerTag(input: CreateBusinessCustomerTagInput) = request("No se pudo crear la etiqueta.") {
+        BusinessSalesMapper.customerTag(dataSource.createCustomerTag(input))
+    }
+
+    override suspend fun updateCustomerTag(tagId: String, input: UpdateBusinessCustomerTagInput) = request("No se pudo actualizar la etiqueta.") {
+        BusinessSalesMapper.customerTag(dataSource.updateCustomerTag(tagId, input))
+    }
+
+    override suspend fun archiveCustomerTag(tagId: String, expectedVersion: Int) = request("No se pudo archivar la etiqueta.") {
+        BusinessSalesMapper.customerTag(dataSource.archiveCustomerTag(tagId, expectedVersion))
+    }
+
+    override suspend fun customerActivities(customerId: String) = request("No se pudo cargar la actividad.") {
+        dataSource.customerActivities(customerId).map(BusinessSalesMapper::customerActivity)
+    }
+
+    override suspend fun createCustomerActivity(customerId: String, input: CreateBusinessCustomerActivityInput) = request("No se pudo crear la actividad.") {
+        BusinessSalesMapper.customerActivity(dataSource.createCustomerActivity(customerId, input))
+    }
+
+    override suspend fun updateCustomerActivity(customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput) = request("No se pudo actualizar la actividad.") {
+        BusinessSalesMapper.customerActivity(dataSource.updateCustomerActivity(customerId, activityId, input))
     }
 
     override suspend fun catalogItems(request: BusinessSalesPageRequest) = request("No se pudo cargar el catÃ¡logo.") {

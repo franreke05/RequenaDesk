@@ -2,6 +2,9 @@ package com.requena.supportdesk.features.business.sales.data.dto
 
 import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogItemType
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStatus
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerType
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivityType
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
 import com.requena.supportdesk.features.business.sales.domain.BusinessSaleStatus
 import com.requena.supportdesk.features.business.sales.domain.BusinessStockMovementType
@@ -18,6 +21,11 @@ data class BusinessCustomerDto(
     val status: BusinessCustomerStatus,
     val version: Int,
     val updatedAt: String,
+    val type: BusinessCustomerType = BusinessCustomerType.COMPANY,
+    val stage: BusinessCustomerStage = BusinessCustomerStage.CUSTOMER,
+    val source: String? = null,
+    val tags: List<BusinessCustomerTagDto> = emptyList(),
+    val nextAction: BusinessCustomerActivityDto? = null,
 )
 
 @Serializable
@@ -38,6 +46,36 @@ data class BusinessContactDto(
 data class BusinessCustomerDetailDto(
     val customer: BusinessCustomerDto,
     val contacts: List<BusinessContactDto>,
+    val tags: List<BusinessCustomerTagDto> = emptyList(),
+    val activities: List<BusinessCustomerActivityDto> = emptyList(),
+    val nextAction: BusinessCustomerActivityDto? = null,
+)
+
+@Serializable
+data class BusinessCustomerTagDto(
+    val id: String,
+    val name: String,
+    val colorHex: String,
+    val archived: Boolean,
+    val version: Int,
+    val updatedAt: String,
+)
+
+@Serializable
+data class BusinessCustomerActivityDto(
+    val id: String,
+    val customerId: String,
+    val contactId: String? = null,
+    val contactName: String? = null,
+    val type: BusinessCustomerActivityType,
+    val subject: String,
+    val details: String? = null,
+    val occurredAt: String? = null,
+    val dueAt: String? = null,
+    val completedAt: String? = null,
+    val version: Int,
+    val createdAt: String,
+    val updatedAt: String,
 )
 
 @Serializable

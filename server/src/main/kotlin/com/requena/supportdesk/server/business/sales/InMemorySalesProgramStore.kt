@@ -6,6 +6,8 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStatus
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteLine
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
@@ -22,11 +24,15 @@ import com.requena.supportdesk.features.business.sales.domain.CalculatedBusiness
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import java.time.Instant
 import java.util.UUID
 
@@ -38,6 +44,9 @@ class InMemorySalesProgramStore(
     private val lock = Any()
     private val customers = mutableMapOf<String, StoredCustomer>()
     private val contacts = mutableMapOf<String, StoredContact>()
+    private val customerTags = mutableMapOf<String, StoredCustomerTag>()
+    private val customerTagLinks = mutableMapOf<String, MutableSet<String>>()
+    private val customerActivities = mutableMapOf<String, StoredCustomerActivity>()
     private val catalog = mutableMapOf<String, StoredCatalogItem>()
     private val movements = mutableMapOf<String, StoredMovement>()
     private val quotes = mutableMapOf<String, StoredQuote>()
@@ -53,8 +62,10 @@ class InMemorySalesProgramStore(
         page(
             customers.values.asSequence()
                 .filter { it.clientId == clientId }
-                .map(StoredCustomer::value)
+                .map { hydrateCustomer(clientId, it.value) }
                 .filter { request.status == null || it.status.name == request.status }
+                .filter { request.stage == null || it.stage == request.stage }
+                .filter { request.tagId == null || it.tags.any { tag -> tag.id == request.tagId } }
                 .filter { query == null || it.displayName.contains(query, ignoreCase = true) }
                 .sortedBy { it.id }
                 .toList(),
@@ -64,28 +75,51 @@ class InMemorySalesProgramStore(
 
     override fun customer(clientId: String, customerId: String): BusinessCustomerDetail? = synchronized(lock) {
         val customer = customers[customerId]?.takeIf { it.clientId == clientId }?.value ?: return@synchronized null
+        val tags = tagsForCustomer(clientId, customerId)
+        val activities = activitiesForCustomer(clientId, customerId)
         BusinessCustomerDetail(
-            customer = customer,
+            customer = hydrateCustomer(clientId, customer),
             contacts = contacts.values.asSequence().filter { it.clientId == clientId && it.value.customerId == customerId }
                 .map(StoredContact::value).sortedBy { it.fullName.lowercase() }.toList(),
+            tags = tags,
+            activities = activities,
+            nextAction = activities.filter { it.completedAt == null && it.dueAt != null }.minByOrNull { requireNotNull(it.dueAt) },
         )
     }
 
     override fun createCustomer(clientId: String, actorUserId: String, input: CreateBusinessCustomerInput): BusinessCustomer = synchronized(lock) {
-        val value = BusinessCustomer(idFactory(), input.displayName, input.taxId, input.email, input.phone, input.address, BusinessCustomerStatus.ACTIVE, 1, now())
+        requireCustomerTags(clientId, input.tagIds)
+        val value = BusinessCustomer(
+            id = idFactory(),
+            displayName = input.displayName,
+            taxId = input.taxId,
+            email = input.email,
+            phone = input.phone,
+            address = input.address,
+            status = BusinessCustomerStatus.ACTIVE,
+            version = 1,
+            updatedAt = now(),
+            type = input.type,
+            stage = input.stage,
+            source = input.source,
+        )
         customers[value.id] = StoredCustomer(clientId, value)
-        value
+        customerTagLinks[value.id] = input.tagIds.toMutableSet()
+        hydrateCustomer(clientId, value)
     }
 
     override fun updateCustomer(clientId: String, actorUserId: String, customerId: String, input: UpdateBusinessCustomerInput): BusinessCustomer = synchronized(lock) {
         val current = customers[customerId]?.takeIf { it.clientId == clientId } ?: throw SalesProgramNotFoundException()
         requireVersion(current.value.version, input.expectedVersion)
+        requireCustomerTags(clientId, input.tagIds)
         val updated = current.value.copy(
             displayName = input.displayName, taxId = input.taxId, email = input.email, phone = input.phone, address = input.address,
-            version = input.expectedVersion + 1, updatedAt = now(),
+            type = input.type, stage = input.stage, source = input.source,
+            version = input.expectedVersion + 1, updatedAt = now(), tags = emptyList(), nextAction = null,
         )
         customers[customerId] = current.copy(value = updated)
-        updated
+        customerTagLinks[customerId] = input.tagIds.toMutableSet()
+        hydrateCustomer(clientId, updated)
     }
 
     override fun archiveCustomer(clientId: String, actorUserId: String, customerId: String, expectedVersion: Int): BusinessCustomer = synchronized(lock) {
@@ -93,7 +127,15 @@ class InMemorySalesProgramStore(
         requireVersion(current.value.version, expectedVersion)
         val updated = current.value.copy(status = BusinessCustomerStatus.ARCHIVED, version = expectedVersion + 1, updatedAt = now())
         customers[customerId] = current.copy(value = updated)
-        updated
+        hydrateCustomer(clientId, updated)
+    }
+
+    override fun restoreCustomer(clientId: String, actorUserId: String, customerId: String, expectedVersion: Int): BusinessCustomer = synchronized(lock) {
+        val current = customers[customerId]?.takeIf { it.clientId == clientId } ?: throw SalesProgramNotFoundException()
+        requireVersion(current.value.version, expectedVersion)
+        val updated = current.value.copy(status = BusinessCustomerStatus.ACTIVE, version = expectedVersion + 1, updatedAt = now())
+        customers[customerId] = current.copy(value = updated)
+        hydrateCustomer(clientId, updated)
     }
 
     override fun createContact(clientId: String, actorUserId: String, customerId: String, input: CreateBusinessContactInput): BusinessContact = synchronized(lock) {
@@ -115,6 +157,101 @@ class InMemorySalesProgramStore(
             status = input.status, version = input.expectedVersion + 1, updatedAt = now(),
         )
         contacts[contactId] = current.copy(value = updated)
+        updated
+    }
+
+    override fun customerTags(clientId: String): List<BusinessCustomerTag> = synchronized(lock) {
+        customerTags.values.filter { it.clientId == clientId }.map(StoredCustomerTag::value).sortedBy { it.name.lowercase() }
+    }
+
+    override fun createCustomerTag(clientId: String, actorUserId: String, input: CreateBusinessCustomerTagInput): BusinessCustomerTag = synchronized(lock) {
+        if (customerTags.values.any { it.clientId == clientId && !it.value.archived && it.value.name.equals(input.name, true) }) {
+            throw SalesProgramConflictException("A customer tag with that name already exists")
+        }
+        val value = BusinessCustomerTag(idFactory(), input.name, input.colorHex, false, 1, now())
+        customerTags[value.id] = StoredCustomerTag(clientId, value)
+        value
+    }
+
+    override fun updateCustomerTag(clientId: String, actorUserId: String, tagId: String, input: UpdateBusinessCustomerTagInput): BusinessCustomerTag = synchronized(lock) {
+        val current = customerTags[tagId]?.takeIf { it.clientId == clientId } ?: throw SalesProgramNotFoundException()
+        requireVersion(current.value.version, input.expectedVersion)
+        val updated = current.value.copy(name = input.name, colorHex = input.colorHex, version = input.expectedVersion + 1, updatedAt = now())
+        customerTags[tagId] = current.copy(value = updated)
+        updated
+    }
+
+    override fun archiveCustomerTag(clientId: String, actorUserId: String, tagId: String, expectedVersion: Int): BusinessCustomerTag = synchronized(lock) {
+        val current = customerTags[tagId]?.takeIf { it.clientId == clientId } ?: throw SalesProgramNotFoundException()
+        requireVersion(current.value.version, expectedVersion)
+        val updated = current.value.copy(archived = true, version = expectedVersion + 1, updatedAt = now())
+        customerTags[tagId] = current.copy(value = updated)
+        updated
+    }
+
+    override fun customerActivities(clientId: String, customerId: String): List<BusinessCustomerActivity> = synchronized(lock) {
+        requireCustomer(clientId, customerId)
+        activitiesForCustomer(clientId, customerId)
+    }
+
+    override fun createCustomerActivity(
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        input: CreateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity = synchronized(lock) {
+        requireActiveCustomer(clientId, customerId)
+        val contactName = input.contactId?.let { contactId ->
+            contacts[contactId]?.takeIf { it.clientId == clientId && it.value.customerId == customerId }?.value?.fullName
+                ?: throw SalesProgramNotFoundException()
+        }
+        val timestamp = now()
+        val value = BusinessCustomerActivity(
+            id = idFactory(),
+            customerId = customerId,
+            contactId = input.contactId,
+            contactName = contactName,
+            type = input.type,
+            subject = input.subject,
+            details = input.details,
+            occurredAt = input.occurredAt,
+            dueAt = input.dueAt,
+            version = 1,
+            createdAt = timestamp,
+            updatedAt = timestamp,
+        )
+        customerActivities[value.id] = StoredCustomerActivity(clientId, value)
+        value
+    }
+
+    override fun updateCustomerActivity(
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        activityId: String,
+        input: UpdateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity = synchronized(lock) {
+        requireCustomer(clientId, customerId)
+        val current = customerActivities[activityId]?.takeIf { it.clientId == clientId && it.value.customerId == customerId }
+            ?: throw SalesProgramNotFoundException()
+        requireVersion(current.value.version, input.expectedVersion)
+        val contactName = input.contactId?.let { contactId ->
+            contacts[contactId]?.takeIf { it.clientId == clientId && it.value.customerId == customerId }?.value?.fullName
+                ?: throw SalesProgramNotFoundException()
+        }
+        val updated = current.value.copy(
+            contactId = input.contactId,
+            contactName = contactName,
+            type = input.type,
+            subject = input.subject,
+            details = input.details,
+            occurredAt = input.occurredAt,
+            dueAt = input.dueAt,
+            completedAt = if (input.completed) current.value.completedAt ?: now() else null,
+            version = input.expectedVersion + 1,
+            updatedAt = now(),
+        )
+        customerActivities[activityId] = current.copy(value = updated)
         updated
     }
 
@@ -296,6 +433,29 @@ class InMemorySalesProgramStore(
         if (requireCustomer(clientId, customerId).status != BusinessCustomerStatus.ACTIVE) throw SalesProgramConflictException("Archived customers cannot receive new contacts")
     }
 
+    private fun tagsForCustomer(clientId: String, customerId: String): List<BusinessCustomerTag> =
+        customerTagLinks[customerId].orEmpty().mapNotNull { customerTags[it]?.takeIf { stored -> stored.clientId == clientId }?.value }
+            .sortedBy { it.name.lowercase() }
+
+    private fun activitiesForCustomer(clientId: String, customerId: String): List<BusinessCustomerActivity> =
+        customerActivities.values.filter { it.clientId == clientId && it.value.customerId == customerId }
+            .map(StoredCustomerActivity::value).sortedByDescending(BusinessCustomerActivity::createdAt)
+
+    private fun hydrateCustomer(clientId: String, value: BusinessCustomer): BusinessCustomer {
+        val activities = activitiesForCustomer(clientId, value.id)
+        return value.copy(
+            tags = tagsForCustomer(clientId, value.id),
+            nextAction = activities.filter { it.completedAt == null && it.dueAt != null }.minByOrNull { requireNotNull(it.dueAt) },
+        )
+    }
+
+    private fun requireCustomerTags(clientId: String, ids: List<String>) {
+        ids.forEach { id ->
+            val tag = customerTags[id]?.takeIf { it.clientId == clientId }?.value ?: throw SalesProgramNotFoundException()
+            if (tag.archived) throw SalesProgramConflictException("Archived tags cannot be assigned")
+        }
+    }
+
     private fun requireCatalogItem(clientId: String, itemId: String): BusinessCatalogItem =
         catalog[itemId]?.takeIf { it.clientId == clientId }?.value ?: throw SalesProgramNotFoundException()
 
@@ -347,6 +507,8 @@ class InMemorySalesProgramStore(
 
     private data class StoredCustomer(val clientId: String, val value: BusinessCustomer)
     private data class StoredContact(val clientId: String, val value: BusinessContact)
+    private data class StoredCustomerTag(val clientId: String, val value: BusinessCustomerTag)
+    private data class StoredCustomerActivity(val clientId: String, val value: BusinessCustomerActivity)
     private data class StoredCatalogItem(val clientId: String, val value: BusinessCatalogItem)
     private data class StoredMovement(val clientId: String, val value: BusinessStockMovement)
     private data class StoredQuote(val clientId: String, val value: BusinessQuote)

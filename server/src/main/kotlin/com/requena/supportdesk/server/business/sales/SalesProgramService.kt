@@ -7,24 +7,31 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogIte
 import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
 import com.requena.supportdesk.features.business.sales.domain.BusinessSale
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesPage
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesPageRequest
 import com.requena.supportdesk.features.business.sales.domain.BusinessSalesRules
+import com.requena.supportdesk.features.business.sales.domain.BusinessSalesValidationException
 import com.requena.supportdesk.features.business.sales.domain.BusinessStockMovement
 import com.requena.supportdesk.features.business.sales.domain.BusinessStockSummary
 import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.QuoteTransitionInput
 import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessQuoteInput
 
 /**
@@ -63,6 +70,12 @@ class SalesProgramService(
         return store.archiveCustomer(identity.clientId, identity.userId, customerId, expectedVersion)
     }
 
+    fun restoreCustomer(identity: SalesProgramIdentity, customerId: String, expectedVersion: Int): BusinessCustomer {
+        requireCustomers(identity)
+        require(expectedVersion > 0) { "Expected version is invalid" }
+        return store.restoreCustomer(identity.clientId, identity.userId, customerId, expectedVersion)
+    }
+
     fun createContact(identity: SalesProgramIdentity, customerId: String, input: CreateBusinessContactInput): BusinessContact {
         requireCustomers(identity)
         BusinessSalesRules.validateContact(input)
@@ -73,6 +86,63 @@ class SalesProgramService(
         requireCustomers(identity)
         BusinessSalesRules.validateContact(input)
         return store.updateContact(identity.clientId, identity.userId, customerId, contactId, input.normalized())
+    }
+
+    fun customerTags(identity: SalesProgramIdentity): List<BusinessCustomerTag> {
+        requireCustomers(identity)
+        return store.customerTags(identity.clientId)
+    }
+
+    fun createCustomerTag(identity: SalesProgramIdentity, input: CreateBusinessCustomerTagInput): BusinessCustomerTag {
+        requireCustomers(identity)
+        BusinessSalesRules.validateCustomerTag(input)
+        return store.createCustomerTag(identity.clientId, identity.userId, input.copy(name = input.name.trim(), colorHex = input.colorHex.uppercase()))
+    }
+
+    fun updateCustomerTag(identity: SalesProgramIdentity, tagId: String, input: UpdateBusinessCustomerTagInput): BusinessCustomerTag {
+        requireCustomers(identity)
+        BusinessSalesRules.validateCustomerTag(input)
+        return store.updateCustomerTag(identity.clientId, identity.userId, tagId, input.copy(name = input.name.trim(), colorHex = input.colorHex.uppercase()))
+    }
+
+    fun archiveCustomerTag(identity: SalesProgramIdentity, tagId: String, expectedVersion: Int): BusinessCustomerTag {
+        requireCustomers(identity)
+        require(expectedVersion > 0) { "Expected version is invalid" }
+        return store.archiveCustomerTag(identity.clientId, identity.userId, tagId, expectedVersion)
+    }
+
+    fun customerActivities(identity: SalesProgramIdentity, customerId: String): List<BusinessCustomerActivity> {
+        requireCustomers(identity)
+        return store.customerActivities(identity.clientId, customerId)
+    }
+
+    fun createCustomerActivity(
+        identity: SalesProgramIdentity,
+        customerId: String,
+        input: CreateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity {
+        requireCustomers(identity)
+        BusinessSalesRules.validateCustomerActivity(input)
+        validateActivityTimestamps(input.occurredAt, input.dueAt)
+        val normalized = input.normalized()
+        val timestamped = if (normalized.occurredAt == null && normalized.dueAt == null) {
+            normalized.copy(occurredAt = java.time.Instant.now().toString())
+        } else {
+            normalized
+        }
+        return store.createCustomerActivity(identity.clientId, identity.userId, customerId, timestamped)
+    }
+
+    fun updateCustomerActivity(
+        identity: SalesProgramIdentity,
+        customerId: String,
+        activityId: String,
+        input: UpdateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity {
+        requireCustomers(identity)
+        BusinessSalesRules.validateCustomerActivity(input)
+        validateActivityTimestamps(input.occurredAt, input.dueAt)
+        return store.updateCustomerActivity(identity.clientId, identity.userId, customerId, activityId, input.normalized())
     }
 
     fun catalogItems(identity: SalesProgramIdentity, request: BusinessSalesPageRequest): BusinessSalesPage<BusinessCatalogItem> {
@@ -166,29 +236,52 @@ class SalesProgramService(
     private fun requireQuotes(identity: SalesProgramIdentity) = requireSalesEntitlement(accessGuard, identity, BUSINESS_QUOTES)
 }
 
+private fun validateActivityTimestamps(occurredAt: String?, dueAt: String?) {
+    listOfNotNull(occurredAt, dueAt).forEach { value ->
+        if (runCatching { java.time.Instant.parse(value) }.isFailure) {
+            throw BusinessSalesValidationException("Activity timestamps must use ISO-8601 UTC format")
+        }
+    }
+}
+
 private fun BusinessSalesPageRequest.validated(): BusinessSalesPageRequest {
     val requestLimit = limit
     val requestQuery = query
     val requestCursor = cursor
     val requestStatus = status
+    val requestTagId = tagId
     require(requestLimit in 1..100) { "Limit must be between 1 and 100" }
     require(requestQuery == null || requestQuery.length <= 160) { "Search query is invalid" }
     require(requestCursor == null || requestCursor.length <= 64) { "Cursor is invalid" }
     require(requestStatus == null || requestStatus.length <= 20) { "Status filter is invalid" }
+    require(requestTagId == null || requestTagId.length <= 64) { "Tag filter is invalid" }
     return copy(
         query = requestQuery?.trim()?.takeIf(String::isNotBlank),
         status = requestStatus?.trim()?.uppercase()?.takeIf(String::isNotBlank),
+        tagId = requestTagId?.trim()?.takeIf(String::isNotBlank),
     )
 }
 
 private fun CreateBusinessCustomerInput.normalized() = copy(
     displayName = displayName.trim(), taxId = taxId?.trim()?.takeIf(String::isNotBlank), email = email?.trim()?.takeIf(String::isNotBlank),
     phone = phone?.trim()?.takeIf(String::isNotBlank), address = address?.trim()?.takeIf(String::isNotBlank),
+    source = source?.trim()?.takeIf(String::isNotBlank), tagIds = tagIds.distinct(),
 )
 
 private fun UpdateBusinessCustomerInput.normalized() = copy(
     displayName = displayName.trim(), taxId = taxId?.trim()?.takeIf(String::isNotBlank), email = email?.trim()?.takeIf(String::isNotBlank),
     phone = phone?.trim()?.takeIf(String::isNotBlank), address = address?.trim()?.takeIf(String::isNotBlank),
+    source = source?.trim()?.takeIf(String::isNotBlank), tagIds = tagIds.distinct(),
+)
+
+private fun CreateBusinessCustomerActivityInput.normalized() = copy(
+    subject = subject.trim(),
+    details = details?.trim()?.takeIf(String::isNotBlank),
+)
+
+private fun UpdateBusinessCustomerActivityInput.normalized() = copy(
+    subject = subject.trim(),
+    details = details?.trim()?.takeIf(String::isNotBlank),
 )
 
 private fun CreateBusinessContactInput.normalized() = copy(

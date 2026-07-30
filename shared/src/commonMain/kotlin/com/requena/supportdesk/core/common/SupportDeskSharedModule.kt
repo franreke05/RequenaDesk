@@ -16,6 +16,9 @@ import com.requena.supportdesk.features.business.finance.presentation.BusinessIn
 import com.requena.supportdesk.features.business.operations.BusinessOperationsRepositoryImpl
 import com.requena.supportdesk.features.business.operations.OperationsViewModel
 import com.requena.supportdesk.features.business.operations.RemoteBusinessOperationsDataSource
+import com.requena.supportdesk.features.business.projects.BusinessProjectsRepositoryImpl
+import com.requena.supportdesk.features.business.projects.BusinessProjectsViewModel
+import com.requena.supportdesk.features.business.projects.RemoteBusinessProjectsDataSource
 import com.requena.supportdesk.features.business.sales.data.datasource.RemoteBusinessSalesDataSource
 import com.requena.supportdesk.features.business.sales.data.repository.BusinessSalesRepositoryImpl
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
@@ -102,6 +105,7 @@ object SupportDeskSharedModule {
     private val businessFinanceRepository = BusinessFinanceRepositoryImpl(RemoteBusinessFinanceDataSource(httpClient))
     private val businessOperationsRepository = BusinessOperationsRepositoryImpl(RemoteBusinessOperationsDataSource(httpClient))
     private val businessSalesRepository = BusinessSalesRepositoryImpl(RemoteBusinessSalesDataSource(httpClient))
+    private val businessProjectsRepository = BusinessProjectsRepositoryImpl(RemoteBusinessProjectsDataSource(httpClient))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
@@ -200,6 +204,9 @@ object SupportDeskSharedModule {
 
     fun createBusinessQuotesViewModel(): BusinessQuotesViewModel =
         BusinessQuotesViewModel(businessSalesRepository)
+
+    fun createBusinessProjectsViewModel(): BusinessProjectsViewModel =
+        BusinessProjectsViewModel(businessProjectsRepository)
 
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
         invoicePdfStorage = createInvoicePdfStorage(),
