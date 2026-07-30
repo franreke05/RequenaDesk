@@ -12,12 +12,14 @@ import com.requena.supportdesk.features.clients.presentation.viewmodel.ClientsVi
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.programs.presentation.viewmodel.ProgramsViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
+import com.requena.supportdesk.features.taskboard.presentation.viewmodel.TaskBoardViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
 class AdminAppModule {
     val authViewModel: AuthViewModel = SupportDeskSharedModule.createAuthViewModel()
     private val clientsViewModelDelegate = lazy { SupportDeskSharedModule.createClientsViewModel() }
     private val tasksViewModelDelegate = lazy { SupportDeskSharedModule.createTasksViewModel() }
+    private val taskBoardViewModelDelegate = lazy { SupportDeskSharedModule.createTaskBoardViewModel() }
     private val invoicesViewModelDelegate = lazy { SupportDeskSharedModule.createInvoicesViewModel() }
     private val ticketsViewModelDelegate = lazy { SupportDeskSharedModule.createTicketsViewModel() }
     private val programsViewModelDelegate = lazy { SupportDeskSharedModule.createProgramsViewModel() }
@@ -33,6 +35,9 @@ class AdminAppModule {
 
     val tasksViewModel: TasksViewModel
         get() = tasksViewModelDelegate.value
+
+    val taskBoardViewModel: TaskBoardViewModel
+        get() = taskBoardViewModelDelegate.value
 
     val invoicesViewModel: InvoicesViewModel
         get() = invoicesViewModelDelegate.value
@@ -65,6 +70,7 @@ class AdminAppModule {
         authViewModel.clear()
         if (clientsViewModelDelegate.isInitialized()) clientsViewModelDelegate.value.clear()
         if (tasksViewModelDelegate.isInitialized()) tasksViewModelDelegate.value.clear()
+        if (taskBoardViewModelDelegate.isInitialized()) taskBoardViewModelDelegate.value.clear()
         if (invoicesViewModelDelegate.isInitialized()) invoicesViewModelDelegate.value.clear()
         if (ticketsViewModelDelegate.isInitialized()) ticketsViewModelDelegate.value.clear()
         if (programsViewModelDelegate.isInitialized()) programsViewModelDelegate.value.clear()

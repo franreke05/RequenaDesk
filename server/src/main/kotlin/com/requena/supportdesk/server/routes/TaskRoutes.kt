@@ -61,7 +61,10 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
             }
             call.respondJson(
                 HttpStatusCode.Created,
-                successResponse("/admin/tasks", taskJson(service.createdTask(request, ownerAdminId))),
+                successResponse(
+                    "/admin/tasks",
+                    taskJson(service.createdTask(request, identity.userId, ownerAdminId)),
+                ),
             )
         }
         patch("/tasks/{taskId}") {

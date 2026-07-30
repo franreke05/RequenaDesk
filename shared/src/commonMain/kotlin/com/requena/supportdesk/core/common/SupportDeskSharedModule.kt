@@ -77,6 +77,12 @@ import com.requena.supportdesk.features.invoices.data.ledger.createInvoiceBillin
 import com.requena.supportdesk.features.invoices.data.storage.createInvoicePdfStorage
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
+import com.requena.supportdesk.features.taskboard.data.datasource.RemoteTaskBoardDataSource
+import com.requena.supportdesk.features.taskboard.data.repository.TaskBoardRepositoryImpl
+import com.requena.supportdesk.features.taskboard.domain.usecase.GetTaskBoardUseCase
+import com.requena.supportdesk.features.taskboard.domain.usecase.PlaceTaskOnBoardUseCase
+import com.requena.supportdesk.features.taskboard.domain.usecase.RemoveTaskFromBoardUseCase
+import com.requena.supportdesk.features.taskboard.presentation.viewmodel.TaskBoardViewModel
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
 object SupportDeskSharedModule {
@@ -89,6 +95,7 @@ object SupportDeskSharedModule {
     private val ticketsRepository = TicketsRepositoryImpl(RemoteTicketsDataSource(httpClient))
     private val clientsRepository = ClientsRepositoryImpl(RemoteClientsDataSource(httpClient))
     private val tasksRepository = TasksRepositoryImpl(RemoteTasksDataSource(httpClient))
+    private val taskBoardRepository = TaskBoardRepositoryImpl(RemoteTaskBoardDataSource(httpClient))
     private val dashboardRepository = DashboardRepositoryImpl(RemoteDashboardDataSource(httpClient))
     private val notificationsRepository = NotificationsRepositoryImpl(RemoteNotificationsDataSource(httpClient))
     private val programsRepository = ProgramsRepositoryImpl(RemoteProgramsDataSource(httpClient))
@@ -127,6 +134,9 @@ object SupportDeskSharedModule {
     private val stopWorkSessionUseCase = StopWorkSessionUseCase(tasksRepository)
     private val checkpointWorkSessionUseCase = CheckpointWorkSessionUseCase(tasksRepository)
     private val getWorkSessionsForTaskUseCase = GetWorkSessionsForTaskUseCase(tasksRepository)
+    private val getTaskBoardUseCase = GetTaskBoardUseCase(taskBoardRepository)
+    private val placeTaskOnBoardUseCase = PlaceTaskOnBoardUseCase(taskBoardRepository)
+    private val removeTaskFromBoardUseCase = RemoveTaskFromBoardUseCase(taskBoardRepository)
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
     private val getClientProgramsUseCase = GetClientProgramsUseCase(programsRepository)
@@ -213,5 +223,11 @@ object SupportDeskSharedModule {
         stopWorkSessionUseCase = stopWorkSessionUseCase,
         checkpointWorkSessionUseCase = checkpointWorkSessionUseCase,
         getWorkSessionsForTaskUseCase = getWorkSessionsForTaskUseCase,
+    )
+
+    fun createTaskBoardViewModel(): TaskBoardViewModel = TaskBoardViewModel(
+        getTaskBoardUseCase = getTaskBoardUseCase,
+        placeTaskOnBoardUseCase = placeTaskOnBoardUseCase,
+        removeTaskFromBoardUseCase = removeTaskFromBoardUseCase,
     )
 }

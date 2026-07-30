@@ -2,6 +2,8 @@ package com.requena.supportdesk.core.model
 
 data class WorkTask(
     val id: String,
+    val createdByUserId: String = "",
+    val createdByUserName: String = "",
     val title: String,
     val clientId: String? = null,
     val categoryId: String,

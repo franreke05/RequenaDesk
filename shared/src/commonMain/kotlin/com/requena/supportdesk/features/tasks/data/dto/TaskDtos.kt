@@ -15,6 +15,8 @@ data class TaskLabelDto(
 data class TaskDto(
     val id: String,
     val ownerAdminId: String,
+    val createdByUserId: String = "",
+    val createdByUserName: String = "",
     val title: String,
     val description: String = "",
     val clientId: String? = null,

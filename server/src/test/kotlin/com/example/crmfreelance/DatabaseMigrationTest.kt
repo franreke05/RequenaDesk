@@ -118,6 +118,19 @@ class DatabaseMigrationTest {
         assertFalse(migration.contains("invoice", ignoreCase = true))
     }
 
+    @Test
+    fun dailyTaskBoardMigrationPersistsCreatorAndNormalizedPlacements() {
+        val migration = migrationText("db/migration/V14__daily_task_board.sql")
+
+        assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS created_by_user_id"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS task_board_placements"))
+        assertTrue(migration.contains("task_board_placements_position_x_check"))
+        assertTrue(migration.contains("task_board_placements_position_y_check"))
+        assertTrue(migration.contains("remove_completed_task_board_placement"))
+        assertTrue(migration.contains("ALTER TABLE public.task_board_placements ENABLE ROW LEVEL SECURITY"))
+        assertTrue(migration.contains("REVOKE ALL PRIVILEGES ON public.task_board_placements FROM PUBLIC"))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

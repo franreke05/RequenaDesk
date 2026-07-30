@@ -28,9 +28,11 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.SupportDeskTokenService
+import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 
 class SupportDeskService(
     private val repository: SupportDeskRepository,
@@ -202,15 +204,51 @@ class SupportDeskService(
     fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
         repository.getTasks(clientId, labelId, ownerAdminId)
 
-    fun createdTask(request: CreateTaskRequest, ownerAdminId: String? = null): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
+    fun createdTask(
+        request: CreateTaskRequest,
+        createdByUserId: String,
+        ownerAdminId: String? = null,
+    ): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
         validateTaskDueDate(request.dueDate)
-        return repository.createTask(request, ownerAdminId)
+        return repository.createTask(request, createdByUserId, ownerAdminId)
     }
 
     fun updatedTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null) =
         repository.updateTask(taskId, request, ownerAdminId)
 
     fun deletedTask(taskId: String, ownerAdminId: String? = null) = repository.deleteTask(taskId, ownerAdminId)
+
+    fun taskBoard(ownerAdminId: String) = repository.getTaskBoard(ownerAdminId)
+
+    fun placedTaskOnBoard(
+        taskId: String,
+        ownerAdminId: String,
+        boardDate: String,
+        positionX: Double,
+        positionY: Double,
+    ): com.requena.supportdesk.server.domain.model.ServerTaskBoardPlacementSnapshot {
+        val parsedDate = runCatching { LocalDate.parse(boardDate.trim()) }
+            .getOrElse { throw ServerValidationException("Board date must use YYYY-MM-DD format") }
+        val today = LocalDate.now(ZoneId.of(TASK_BOARD_TIME_ZONE))
+        if (parsedDate.isBefore(today)) {
+            throw ServerValidationException("Past days cannot be planned")
+        }
+        if (!positionX.isFinite() || positionX !in 0.0..1.0 ||
+            !positionY.isFinite() || positionY !in 0.0..1.0
+        ) {
+            throw ServerValidationException("Board position must be between 0 and 1")
+        }
+        return repository.upsertTaskBoardPlacement(
+            taskId = taskId,
+            ownerAdminId = ownerAdminId,
+            boardDate = parsedDate.toString(),
+            positionX = positionX,
+            positionY = positionY,
+        )
+    }
+
+    fun removedTaskFromBoard(taskId: String, ownerAdminId: String) =
+        repository.deleteTaskBoardPlacement(taskId, ownerAdminId)
 
     fun timeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null) =
         repository.getTimeLogs(clientId, taskId, ownerAdminId)
@@ -244,4 +282,5 @@ class SupportDeskService(
             throw ServerValidationException("You cannot schedule tasks on previous days")
         }
     }
+
 }

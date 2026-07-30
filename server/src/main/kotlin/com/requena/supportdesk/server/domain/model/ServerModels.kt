@@ -222,6 +222,8 @@ data class ServerTaskLabelSnapshot(
 data class ServerTaskSnapshot(
     val id: String,
     val ownerAdminId: String,
+    val createdByUserId: String,
+    val createdByUserName: String,
     val title: String,
     val description: String,
     val clientId: String? = null,
@@ -235,6 +237,22 @@ data class ServerTaskSnapshot(
     val loggedSeconds: Int = loggedMinutes * 60,
     val createdAt: String,
     val updatedAt: String,
+)
+
+data class ServerTaskBoardPlacementSnapshot(
+    val taskId: String,
+    val boardDate: String,
+    val positionX: Double,
+    val positionY: Double,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+data class ServerTaskBoardSnapshot(
+    val today: String,
+    val timeZone: String,
+    val refreshAfterSeconds: Long,
+    val placements: List<ServerTaskBoardPlacementSnapshot>,
 )
 
 data class ServerTimeLogSnapshot(

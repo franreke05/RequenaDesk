@@ -18,6 +18,8 @@ import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardPlacementSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
 import com.requena.supportdesk.server.domain.model.ServerWorkSegmentSnapshot
@@ -359,6 +361,8 @@ fun tasksJson(tasks: List<ServerTaskSnapshot>) = buildJsonArray {
 fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("id", task.id)
     put("ownerAdminId", task.ownerAdminId)
+    put("createdByUserId", task.createdByUserId)
+    put("createdByUserName", task.createdByUserName)
     put("title", task.title)
     put("description", task.description)
     put("clientId", task.clientId)
@@ -372,6 +376,24 @@ fun taskJson(task: ServerTaskSnapshot) = buildJsonObject {
     put("loggedSeconds", task.loggedSeconds)
     put("createdAt", task.createdAt)
     put("updatedAt", task.updatedAt)
+}
+
+fun taskBoardJson(board: ServerTaskBoardSnapshot) = buildJsonObject {
+    put("today", board.today)
+    put("timeZone", board.timeZone)
+    put("refreshAfterSeconds", board.refreshAfterSeconds)
+    put("placements", buildJsonArray {
+        board.placements.forEach { add(taskBoardPlacementJson(it)) }
+    })
+}
+
+fun taskBoardPlacementJson(placement: ServerTaskBoardPlacementSnapshot) = buildJsonObject {
+    put("taskId", placement.taskId)
+    put("boardDate", placement.boardDate)
+    put("positionX", placement.positionX)
+    put("positionY", placement.positionY)
+    put("createdAt", placement.createdAt)
+    put("updatedAt", placement.updatedAt)
 }
 
 fun timeLogsJson(logs: List<ServerTimeLogSnapshot>) = buildJsonArray {

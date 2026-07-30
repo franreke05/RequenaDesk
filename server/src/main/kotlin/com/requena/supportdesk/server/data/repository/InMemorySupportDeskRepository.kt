@@ -32,6 +32,8 @@ import com.requena.supportdesk.server.domain.model.ServerDailyMinutesSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDashboardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerDeviceRegistration
 import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardPlacementSnapshot
+import com.requena.supportdesk.server.domain.model.ServerTaskBoardSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
@@ -50,6 +52,8 @@ import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketPriorityRequest
 import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
+import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
+import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
@@ -129,6 +133,8 @@ class InMemorySupportDeskRepository(
         ServerTaskSnapshot(
             id = "task-1",
             ownerAdminId = "user-admin",
+            createdByUserId = "user-client",
+            createdByUserName = "Ana Northwind",
             title = "Revisar build de escritorio",
             description = "Validar arranque limpio",
             clientId = "client-1",
@@ -146,6 +152,8 @@ class InMemorySupportDeskRepository(
         ServerTaskSnapshot(
             id = "task-2",
             ownerAdminId = "user-admin-2",
+            createdByUserId = "user-admin-2",
+            createdByUserName = "Admin Sanchez",
             title = "Enviar seguimiento",
             description = "Preparar siguiente iteracion",
             clientId = "client-2",
@@ -163,6 +171,8 @@ class InMemorySupportDeskRepository(
         ServerTaskSnapshot(
             id = "task-3",
             ownerAdminId = "user-admin",
+            createdByUserId = "user-admin",
+            createdByUserName = "Admin Requena",
             title = "Planificar semana",
             description = "Ordenar prioridades internas",
             clientId = null,
@@ -183,6 +193,7 @@ class InMemorySupportDeskRepository(
         "task-2" to "user-admin-2",
         "task-3" to "user-admin",
     )
+    private val taskBoardPlacements = mutableMapOf<String, ServerTaskBoardPlacementSnapshot>()
     private val refreshTokens = mutableMapOf<String, String>()
     private val timeLogs = mutableListOf(
         ServerTimeLogSnapshot(
@@ -795,8 +806,16 @@ class InMemorySupportDeskRepository(
                 (labelId == null || task.labelId == labelId)
         }
 
-    override fun createTask(request: CreateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot {
+    override fun createTask(
+        request: CreateTaskRequest,
+        createdByUserId: String,
+        ownerAdminId: String?,
+    ): ServerTaskSnapshot {
         val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
+        val creator = adminAccounts.firstOrNull { account ->
+            account.userId == createdByUserId &&
+                (account.userId == resolvedOwnerAdminId || account.clientId?.let(clientOwners::get) == resolvedOwnerAdminId)
+        } ?: throw ServerNotFoundException("Task creator not found")
         val label = labels.firstOrNull { it.id == request.labelId && it.ownerAdminId == resolvedOwnerAdminId }
             ?: throw ServerNotFoundException("Label not found")
         val client = request.clientId?.let { clientId ->
@@ -807,6 +826,8 @@ class InMemorySupportDeskRepository(
         val task = ServerTaskSnapshot(
             id = "task-${tasks.size + 1}",
             ownerAdminId = resolvedOwnerAdminId,
+            createdByUserId = creator.userId,
+            createdByUserName = creator.name,
             title = request.title,
             description = request.description,
             clientId = client?.id,
@@ -854,6 +875,7 @@ class InMemorySupportDeskRepository(
             updatedAt = "2026-04-16T10:00:00Z",
         )
         tasks[index] = updated
+        if (updated.completed) taskBoardPlacements.remove(taskId)
         return updated
     }
 
@@ -861,7 +883,53 @@ class InMemorySupportDeskRepository(
         val index = requireTaskIndex(taskId, ownerAdminId)
         tasks.removeAt(index)
         taskOwners.remove(taskId)
+        taskBoardPlacements.remove(taskId)
         timeLogs.removeAll { it.taskId == taskId }
+    }
+
+    override fun getTaskBoard(ownerAdminId: String): ServerTaskBoardSnapshot {
+        val boundary = madridTaskBoardDayBoundary()
+        val today = boundary.today.toString()
+        val visibleTaskIds = tasks.asSequence()
+            .filter { it.ownerAdminId == ownerAdminId && !it.completed }
+            .map { it.id }
+            .toSet()
+        return ServerTaskBoardSnapshot(
+            today = today,
+            timeZone = TASK_BOARD_TIME_ZONE,
+            refreshAfterSeconds = boundary.refreshAfterSeconds,
+            placements = taskBoardPlacements.values
+                .filter { it.taskId in visibleTaskIds && it.boardDate >= today }
+                .sortedWith(compareBy(ServerTaskBoardPlacementSnapshot::boardDate, ServerTaskBoardPlacementSnapshot::updatedAt)),
+        )
+    }
+
+    override fun upsertTaskBoardPlacement(
+        taskId: String,
+        ownerAdminId: String,
+        boardDate: String,
+        positionX: Double,
+        positionY: Double,
+    ): ServerTaskBoardPlacementSnapshot {
+        val task = tasks.firstOrNull { it.id == taskId && it.ownerAdminId == ownerAdminId }
+            ?: throw ServerNotFoundException("Task not found")
+        if (task.completed) throw ServerConflictException("Completed tasks cannot be placed on the board")
+        val now = Instant.now().toString()
+        val placement = ServerTaskBoardPlacementSnapshot(
+            taskId = taskId,
+            boardDate = boardDate,
+            positionX = positionX,
+            positionY = positionY,
+            createdAt = taskBoardPlacements[taskId]?.createdAt ?: now,
+            updatedAt = now,
+        )
+        taskBoardPlacements[taskId] = placement
+        return placement
+    }
+
+    override fun deleteTaskBoardPlacement(taskId: String, ownerAdminId: String) {
+        requireTaskIndex(taskId, ownerAdminId)
+        taskBoardPlacements.remove(taskId)
     }
 
     override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?): List<ServerTimeLogSnapshot> =

@@ -49,6 +49,15 @@ class PostgresSupportDeskDataSource(
                     to_regclass('public.users') IS NOT NULL
                     AND to_regclass('public.clients') IS NOT NULL
                     AND to_regclass('public.tickets') IS NOT NULL
+                    AND to_regclass('public.task_board_placements') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'tasks'
+                          AND column_name = 'created_by_user_id'
+                          AND is_nullable = 'NO'
+                    )
                 """.trimIndent(),
             ).use { statement ->
                 statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }

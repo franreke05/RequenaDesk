@@ -169,6 +169,13 @@ data class UpdateTaskRequest(
 )
 
 @Serializable
+data class UpdateTaskBoardPlacementRequest(
+    val boardDate: String = "",
+    val positionX: Double = Double.NaN,
+    val positionY: Double = Double.NaN,
+)
+
+@Serializable
 data class StartWorkSessionRequest(
     val taskId: String = "",
 )
