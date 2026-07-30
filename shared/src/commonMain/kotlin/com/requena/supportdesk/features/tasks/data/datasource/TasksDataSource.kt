@@ -6,12 +6,13 @@ import com.requena.supportdesk.core.network.requireSuccess
 import com.requena.supportdesk.core.network.supportDeskBaseUrl
 import com.requena.supportdesk.features.tasks.data.dto.CreateTaskLabelRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.CreateTaskRequestDto
-import com.requena.supportdesk.features.tasks.data.dto.CreateTimeLogRequestDto
+import com.requena.supportdesk.features.tasks.data.dto.StartWorkSessionRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLabelDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLogDto
 import com.requena.supportdesk.features.tasks.data.dto.UpdateTaskLabelRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.UpdateTaskRequestDto
+import com.requena.supportdesk.features.tasks.data.dto.WorkSessionDto
 import io.ktor.client.HttpClient
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -29,7 +30,13 @@ interface TasksDataSource {
     suspend fun createLabel(request: CreateTaskLabelRequestDto): TaskLabelDto
     suspend fun updateLabel(labelId: String, request: UpdateTaskLabelRequestDto): TaskLabelDto
     suspend fun deleteLabel(labelId: String)
-    suspend fun createTimeLog(request: CreateTimeLogRequestDto): TaskLogDto
+    suspend fun getActiveWorkSession(): WorkSessionDto?
+    suspend fun getWorkSessionsForTask(taskId: String): List<WorkSessionDto>
+    suspend fun startWorkSession(request: StartWorkSessionRequestDto): WorkSessionDto
+    suspend fun pauseWorkSession(sessionId: String): WorkSessionDto
+    suspend fun resumeWorkSession(sessionId: String): WorkSessionDto
+    suspend fun stopWorkSession(sessionId: String): WorkSessionDto
+    suspend fun checkpointWorkSession(sessionId: String): WorkSessionDto
 }
 
 class RemoteTasksDataSource(
@@ -72,8 +79,26 @@ class RemoteTasksDataSource(
         httpClient.delete("${supportDeskBaseUrl()}/admin/labels/$labelId").requireSuccess()
     }
 
-    override suspend fun createTimeLog(request: CreateTimeLogRequestDto): TaskLogDto =
-        httpClient.post("${supportDeskBaseUrl()}/admin/time-logs") {
+    override suspend fun getActiveWorkSession(): WorkSessionDto? =
+        httpClient.get("${supportDeskBaseUrl()}/admin/work-sessions/active").requireApiData()
+
+    override suspend fun getWorkSessionsForTask(taskId: String): List<WorkSessionDto> =
+        httpClient.get("${supportDeskBaseUrl()}/admin/tasks/$taskId/work-sessions").requireApiData()
+
+    override suspend fun startWorkSession(request: StartWorkSessionRequestDto): WorkSessionDto =
+        httpClient.post("${supportDeskBaseUrl()}/admin/work-sessions") {
             setBody(jsonRequestBody(request))
         }.requireApiData()
+
+    override suspend fun pauseWorkSession(sessionId: String): WorkSessionDto =
+        httpClient.post("${supportDeskBaseUrl()}/admin/work-sessions/$sessionId/pause").requireApiData()
+
+    override suspend fun resumeWorkSession(sessionId: String): WorkSessionDto =
+        httpClient.post("${supportDeskBaseUrl()}/admin/work-sessions/$sessionId/resume").requireApiData()
+
+    override suspend fun stopWorkSession(sessionId: String): WorkSessionDto =
+        httpClient.post("${supportDeskBaseUrl()}/admin/work-sessions/$sessionId/stop").requireApiData()
+
+    override suspend fun checkpointWorkSession(sessionId: String): WorkSessionDto =
+        httpClient.post("${supportDeskBaseUrl()}/admin/work-sessions/$sessionId/checkpoint").requireApiData()
 }

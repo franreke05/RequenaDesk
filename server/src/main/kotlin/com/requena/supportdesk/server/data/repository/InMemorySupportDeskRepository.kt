@@ -12,8 +12,8 @@ import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
-import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.StartWorkSessionRequest
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -37,6 +37,8 @@ import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSegmentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSessionSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
@@ -870,34 +872,177 @@ class InMemorySupportDeskRepository(
                 (taskId == null || log.taskId == taskId)
         }
 
-    override fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String?): ServerTimeLogSnapshot {
-        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
-        val task = tasks.firstOrNull { it.id == request.taskId }
-            ?: throw ServerNotFoundException("Task not found")
-        requireTaskOwnership(task.id, resolvedOwnerAdminId)
-        val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
-        val log = ServerTimeLogSnapshot(
-            id = "time-log-${timeLogs.size + 1}",
-            ownerAdminId = resolvedOwnerAdminId,
-            taskId = request.taskId,
+    private data class LocalWorkSegment(
+        val id: String,
+        val startedAt: java.time.Instant,
+        var endedAt: java.time.Instant? = null,
+    )
+
+    private data class LocalWorkSession(
+        val id: String,
+        val taskId: String,
+        val ownerAdminId: String,
+        val clientId: String?,
+        val authorId: String,
+        val startedAt: java.time.Instant,
+        var endedAt: java.time.Instant? = null,
+        var status: String = "ACTIVE",
+        val billable: Boolean,
+        val segments: MutableList<LocalWorkSegment> = mutableListOf(),
+        var lastCheckpointAt: java.time.Instant? = null,
+    )
+
+    private val workSessions = mutableListOf<LocalWorkSession>()
+    private var workSessionCounter = 0
+    private var workSegmentCounter = 0
+
+    override fun activeWorkSession(ownerAdminId: String): ServerWorkSessionSnapshot? =
+        workSessions.firstOrNull { it.ownerAdminId == ownerAdminId && it.status != "FINISHED" }?.let(::workSessionSnapshot)
+
+    override fun workSessionsForTask(taskId: String, ownerAdminId: String): List<ServerWorkSessionSnapshot> {
+        requireTaskOwnership(taskId, ownerAdminId)
+        return workSessions.filter { it.taskId == taskId && it.ownerAdminId == ownerAdminId }
+            .sortedByDescending { it.startedAt }
+            .map(::workSessionSnapshot)
+    }
+
+    override fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String): ServerWorkSessionSnapshot {
+        val task = tasks.firstOrNull { it.id == request.taskId } ?: throw ServerNotFoundException("Task not found")
+        requireTaskOwnership(task.id, ownerAdminId)
+        val existing = workSessions.firstOrNull { it.ownerAdminId == ownerAdminId && it.status != "FINISHED" }
+        if (existing != null) {
+            val activeTaskTitle = tasks.firstOrNull { it.id == existing.taskId }?.title ?: existing.taskId
+            throw ServerConflictException("Ya hay un temporizador activo en la tarea '$activeTaskTitle'. Detenlo o pausalo antes de iniciar uno nuevo.")
+        }
+        val now = java.time.Instant.now()
+        val session = LocalWorkSession(
+            id = "work-session-${++workSessionCounter}",
+            taskId = task.id,
+            ownerAdminId = ownerAdminId,
             clientId = task.clientId,
-            authorId = request.authorId,
-            authorName = adminAccounts.firstOrNull { it.userId == request.authorId }?.name ?: "Admin",
-            minutes = resolvedSeconds / 60,
-            seconds = resolvedSeconds,
-            workDate = request.workDate,
-            note = request.note,
-            billable = request.billable,
-            createdAt = "2026-04-16T10:00:00Z",
+            authorId = authorId,
+            startedAt = now,
+            billable = task.clientId != null,
+            segments = mutableListOf(LocalWorkSegment(id = "work-segment-${++workSegmentCounter}", startedAt = now)),
         )
-        timeLogs.add(0, log)
-        val taskIndex = tasks.indexOfFirst { it.id == task.id }
-        tasks[taskIndex] = task.copy(
-            loggedMinutes = (task.loggedSeconds + resolvedSeconds) / 60,
-            loggedSeconds = task.loggedSeconds + resolvedSeconds,
-            updatedAt = "2026-04-16T10:00:00Z",
+        workSessions.add(session)
+        return workSessionSnapshot(session)
+    }
+
+    override fun pausedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot {
+        val session = requireWorkSession(sessionId, ownerAdminId)
+        if (session.status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+        if (session.status == "ACTIVE") {
+            session.segments.lastOrNull { it.endedAt == null }?.endedAt = java.time.Instant.now()
+            session.status = "PAUSED"
+        }
+        return workSessionSnapshot(session)
+    }
+
+    override fun resumedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot {
+        val session = requireWorkSession(sessionId, ownerAdminId)
+        if (session.status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+        if (session.status == "PAUSED") {
+            session.segments.add(LocalWorkSegment(id = "work-segment-${++workSegmentCounter}", startedAt = java.time.Instant.now()))
+            session.status = "ACTIVE"
+        }
+        return workSessionSnapshot(session)
+    }
+
+    override fun stoppedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot {
+        val session = requireWorkSession(sessionId, ownerAdminId)
+        if (session.status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+        val now = java.time.Instant.now()
+        session.segments.lastOrNull { it.endedAt == null }?.endedAt = now
+        session.status = "FINISHED"
+        session.endedAt = now
+
+        val madrid = java.time.ZoneId.of("Europe/Madrid")
+        val perDaySeconds = linkedMapOf<String, Long>()
+        session.segments.forEach { segment ->
+            val end = segment.endedAt ?: return@forEach
+            var cursor = segment.startedAt
+            while (cursor.isBefore(end)) {
+                val localDate = java.time.LocalDateTime.ofInstant(cursor, madrid).toLocalDate()
+                val nextMidnight = localDate.plusDays(1).atStartOfDay(madrid).toInstant()
+                val sliceEnd = if (nextMidnight.isBefore(end)) nextMidnight else end
+                val seconds = java.time.Duration.between(cursor, sliceEnd).seconds
+                perDaySeconds.merge(localDate.toString(), seconds, Long::plus)
+                cursor = sliceEnd
+            }
+        }
+        var totalSeconds = 0L
+        perDaySeconds.forEach { (date, seconds) ->
+            if (seconds <= 0) return@forEach
+            totalSeconds += seconds
+            timeLogs.add(
+                0,
+                ServerTimeLogSnapshot(
+                    id = "time-log-${timeLogs.size + 1}",
+                    ownerAdminId = ownerAdminId,
+                    taskId = session.taskId,
+                    clientId = session.clientId,
+                    authorId = session.authorId,
+                    authorName = adminAccounts.firstOrNull { it.userId == session.authorId }?.name ?: "Admin",
+                    minutes = (seconds / 60).toInt(),
+                    seconds = seconds.toInt(),
+                    workDate = date,
+                    note = "Sesion de trabajo",
+                    billable = session.billable,
+                    createdAt = now.toString(),
+                    sessionId = session.id,
+                ),
+            )
+        }
+        if (totalSeconds > 0) {
+            val taskIndex = tasks.indexOfFirst { it.id == session.taskId }
+            if (taskIndex >= 0) {
+                val current = tasks[taskIndex]
+                val updatedSeconds = current.loggedSeconds + totalSeconds.toInt()
+                tasks[taskIndex] = current.copy(
+                    loggedMinutes = updatedSeconds / 60,
+                    loggedSeconds = updatedSeconds,
+                    updatedAt = now.toString(),
+                )
+            }
+        }
+        return workSessionSnapshot(session)
+    }
+
+    override fun checkpointedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot {
+        val session = requireWorkSession(sessionId, ownerAdminId)
+        session.lastCheckpointAt = java.time.Instant.now()
+        return workSessionSnapshot(session)
+    }
+
+    private fun requireWorkSession(sessionId: String, ownerAdminId: String): LocalWorkSession =
+        workSessions.firstOrNull { it.id == sessionId && it.ownerAdminId == ownerAdminId }
+            ?: throw ServerNotFoundException("Work session not found")
+
+    private fun workSessionSnapshot(session: LocalWorkSession): ServerWorkSessionSnapshot {
+        val closedSeconds = session.segments.filter { it.endedAt != null }
+            .sumOf { java.time.Duration.between(it.startedAt, it.endedAt).seconds }
+        return ServerWorkSessionSnapshot(
+            id = session.id,
+            ownerAdminId = session.ownerAdminId,
+            taskId = session.taskId,
+            clientId = session.clientId,
+            authorId = session.authorId,
+            startedAt = session.startedAt.toString(),
+            endedAt = session.endedAt?.toString(),
+            status = session.status,
+            billable = session.billable,
+            timeSource = "SERVER",
+            businessTimezone = "Europe/Madrid",
+            lastCheckpointAt = session.lastCheckpointAt?.toString(),
+            createdAt = session.startedAt.toString(),
+            updatedAt = (session.lastCheckpointAt ?: session.endedAt ?: session.startedAt).toString(),
+            segments = session.segments.map {
+                ServerWorkSegmentSnapshot(id = it.id, sessionId = session.id, startedAt = it.startedAt.toString(), endedAt = it.endedAt?.toString())
+            },
+            closedSegmentsSeconds = closedSeconds,
+            openSegmentStartedAt = session.segments.firstOrNull { it.endedAt == null }?.startedAt?.toString(),
         )
-        return log
     }
 
     override fun getDashboard(clientId: String?, labelId: String?, ownerAdminId: String?): ServerDashboardSnapshot {
@@ -916,7 +1061,8 @@ class InMemorySupportDeskRepository(
             selectedClientMinutes = filteredLogs.sumOf { it.minutes },
             selectedClientBillableMinutes = filteredLogs.filter { it.billable }.sumOf { it.minutes },
             dailyMinutes = filteredLogs
-                .groupBy { it.workDate }
+                .mapNotNull { log -> log.workDate?.let { date -> date to log } }
+                .groupBy({ it.first }, { it.second })
                 .map { (date, logs) -> ServerDailyMinutesSnapshot(date, logs.sumOf { it.minutes }) }
                 .sortedBy { it.workDate },
             availableTasks = filteredTasks,

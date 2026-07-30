@@ -8,10 +8,10 @@ import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
-import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.LogoutRequest
 import com.requena.supportdesk.server.domain.model.RefreshSessionRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.StartWorkSessionRequest
 import com.requena.supportdesk.server.domain.model.ServerValidationException
 import com.requena.supportdesk.server.domain.model.ServerSession
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
@@ -215,10 +215,20 @@ class SupportDeskService(
     fun timeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null) =
         repository.getTimeLogs(clientId, taskId, ownerAdminId)
 
-    fun createdTimeLog(request: CreateTimeLogRequest, ownerAdminId: String? = null): com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot {
-        validateWorkDate(request.workDate)
-        return repository.createTimeLog(request, ownerAdminId)
-    }
+    fun activeWorkSession(ownerAdminId: String) = repository.activeWorkSession(ownerAdminId)
+
+    fun workSessionsForTask(taskId: String, ownerAdminId: String) = repository.workSessionsForTask(taskId, ownerAdminId)
+
+    fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String) =
+        repository.startedWorkSession(request, ownerAdminId, authorId)
+
+    fun pausedWorkSession(sessionId: String, ownerAdminId: String) = repository.pausedWorkSession(sessionId, ownerAdminId)
+
+    fun resumedWorkSession(sessionId: String, ownerAdminId: String) = repository.resumedWorkSession(sessionId, ownerAdminId)
+
+    fun stoppedWorkSession(sessionId: String, ownerAdminId: String) = repository.stoppedWorkSession(sessionId, ownerAdminId)
+
+    fun checkpointedWorkSession(sessionId: String, ownerAdminId: String) = repository.checkpointedWorkSession(sessionId, ownerAdminId)
 
     fun dashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
         repository.getDashboard(clientId, labelId, ownerAdminId)
@@ -232,14 +242,6 @@ class SupportDeskService(
             .getOrElse { throw ServerValidationException("Task due date must use YYYY-MM-DD format") }
         if (parsedDate.isBefore(LocalDate.now())) {
             throw ServerValidationException("You cannot schedule tasks on previous days")
-        }
-    }
-
-    private fun validateWorkDate(workDate: String) {
-        val parsedDate = runCatching { LocalDate.parse(workDate.trim()) }
-            .getOrElse { throw ServerValidationException("Work date must use YYYY-MM-DD format") }
-        if (parsedDate != LocalDate.now()) {
-            throw ServerValidationException("Time can only be logged on the current day")
         }
     }
 }

@@ -2,18 +2,18 @@ package com.requena.supportdesk.features.tasks.data.repository
 
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.WorkSession
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tasks.data.datasource.TasksDataSource
 import com.requena.supportdesk.features.tasks.data.dto.CreateTaskLabelRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.CreateTaskRequestDto
-import com.requena.supportdesk.features.tasks.data.dto.CreateTimeLogRequestDto
+import com.requena.supportdesk.features.tasks.data.dto.StartWorkSessionRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.UpdateTaskLabelRequestDto
 import com.requena.supportdesk.features.tasks.data.dto.UpdateTaskRequestDto
 import com.requena.supportdesk.features.tasks.data.mapper.TasksMapper
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
-import com.requena.supportdesk.features.tasks.domain.model.TaskTimeLogDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskUpdateInput
 import com.requena.supportdesk.features.tasks.domain.repository.TasksRepository
 
@@ -113,20 +113,52 @@ class TasksRepositoryImpl(
         onFailure = { AppResult.Error(message = it.message ?: "No se pudo borrar la etiqueta.", cause = it) },
     )
 
-    override suspend fun createTimeLog(input: TaskTimeLogDraft): AppResult<TaskLog> = runCatching {
-        dataSource.createTimeLog(
-            CreateTimeLogRequestDto(
-                taskId = input.taskId,
-                authorId = input.authorId,
-                workDate = input.workDate,
-                minutes = input.minutes,
-                seconds = input.seconds,
-                note = input.note,
-                billable = input.billable,
-            ),
-        ).let(TasksMapper::fromTaskLogDto)
+    override suspend fun getActiveWorkSession(): AppResult<WorkSession?> = runCatching {
+        dataSource.getActiveWorkSession()?.let(TasksMapper::fromWorkSessionDto)
     }.fold(
         onSuccess = { AppResult.Success(it) },
-        onFailure = { AppResult.Error(message = it.message ?: "No se pudo registrar el tiempo.", cause = it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo recuperar el temporizador activo.", cause = it) },
+    )
+
+    override suspend fun getWorkSessionsForTask(taskId: String): AppResult<List<WorkSession>> = runCatching {
+        dataSource.getWorkSessionsForTask(taskId).map(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo cargar el historial de sesiones.", cause = it) },
+    )
+
+    override suspend fun startWorkSession(taskId: String): AppResult<WorkSession> = runCatching {
+        dataSource.startWorkSession(StartWorkSessionRequestDto(taskId)).let(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo iniciar el contador.", cause = it) },
+    )
+
+    override suspend fun pauseWorkSession(sessionId: String): AppResult<WorkSession> = runCatching {
+        dataSource.pauseWorkSession(sessionId).let(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo pausar el contador.", cause = it) },
+    )
+
+    override suspend fun resumeWorkSession(sessionId: String): AppResult<WorkSession> = runCatching {
+        dataSource.resumeWorkSession(sessionId).let(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo reanudar el contador.", cause = it) },
+    )
+
+    override suspend fun stopWorkSession(sessionId: String): AppResult<WorkSession> = runCatching {
+        dataSource.stopWorkSession(sessionId).let(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo detener el contador.", cause = it) },
+    )
+
+    override suspend fun checkpointWorkSession(sessionId: String): AppResult<WorkSession> = runCatching {
+        dataSource.checkpointWorkSession(sessionId).let(TasksMapper::fromWorkSessionDto)
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(message = it.message ?: "No se pudo guardar el checkpoint.", cause = it) },
     )
 }

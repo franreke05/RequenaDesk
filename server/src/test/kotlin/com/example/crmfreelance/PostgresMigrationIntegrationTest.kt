@@ -45,7 +45,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(12, dataSource.migrate())
+                assertEquals(13, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",
@@ -60,6 +60,8 @@ class PostgresMigrationIntegrationTest {
                     "task_labels",
                     "tasks",
                     "time_logs",
+                    "work_sessions",
+                    "work_segments",
                     "client_component_entitlements",
                     "client_contacts",
                     "client_activities",
@@ -287,24 +289,55 @@ class PostgresMigrationIntegrationTest {
                     assertEquals(HttpStatusCode.Created, taskResponse.status)
                     val taskId = extractField(taskResponse.bodyAsText(), "id")
 
-                    val timeLogResponse = client.post("/admin/time-logs") {
+                    val startSessionResponse = client.post("/admin/work-sessions") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")
                         contentType(ContentType.Application.Json)
-                        setBody(
-                            """
-                            {
-                              "taskId":"$taskId",
-                              "workDate":"${LocalDate.now()}",
-                              "minutes":20,
-                              "seconds":1200,
-                              "note":"Integration log",
-                              "billable":true
-                            }
-                            """.trimIndent(),
-                        )
+                        setBody("""{"taskId":"$taskId"}""")
                     }
-                    assertEquals(HttpStatusCode.Created, timeLogResponse.status)
+                    assertEquals(HttpStatusCode.Created, startSessionResponse.status)
+                    val sessionId = extractField(startSessionResponse.bodyAsText(), "id")
+                    assertTrue(startSessionResponse.bodyAsText().contains("\"status\":\"ACTIVE\""))
 
+                    val secondStartAttempt = client.post("/admin/work-sessions") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"taskId":"$taskId"}""")
+                    }
+                    assertEquals(HttpStatusCode.Conflict, secondStartAttempt.status)
+
+                    val pauseResponse = client.post("/admin/work-sessions/$sessionId/pause") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, pauseResponse.status)
+                    assertTrue(pauseResponse.bodyAsText().contains("\"status\":\"PAUSED\""))
+
+                    val resumeResponse = client.post("/admin/work-sessions/$sessionId/resume") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, resumeResponse.status)
+                    assertTrue(resumeResponse.bodyAsText().contains("\"status\":\"ACTIVE\""))
+
+                    val checkpointResponse = client.post("/admin/work-sessions/$sessionId/checkpoint") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, checkpointResponse.status)
+
+                    val stopResponse = client.post("/admin/work-sessions/$sessionId/stop") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, stopResponse.status)
+                    assertTrue(stopResponse.bodyAsText().contains("\"status\":\"FINISHED\""))
+
+                    // A second stop must not be silently re-applied (idempotency of the terminal transition).
+                    val secondStopAttempt = client.post("/admin/work-sessions/$sessionId/stop") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.Conflict, secondStopAttempt.status)
+
+                    val timeLogsResponse = client.get("/admin/time-logs?taskId=$taskId") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }
+                    assertEquals(HttpStatusCode.OK, timeLogsResponse.status)
                 }
 
                 assertEquals(0, dataSource.migrate())

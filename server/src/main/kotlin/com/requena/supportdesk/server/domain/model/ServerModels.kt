@@ -246,10 +246,44 @@ data class ServerTimeLogSnapshot(
     val authorName: String,
     val minutes: Int,
     val seconds: Int = minutes * 60,
-    val workDate: String,
+    // Null only for the migrated "historic time without a daily breakdown" bucket
+    // (see V13 migration): a real, immutable duration with no invented date.
+    val workDate: String? = null,
     val note: String,
     val billable: Boolean,
     val createdAt: String,
+    val sessionId: String? = null,
+    val isHistoricMigrated: Boolean = false,
+)
+
+data class ServerWorkSegmentSnapshot(
+    val id: String,
+    val sessionId: String,
+    val startedAt: String,
+    val endedAt: String? = null,
+)
+
+data class ServerWorkSessionSnapshot(
+    val id: String,
+    val ownerAdminId: String,
+    val taskId: String,
+    val clientId: String? = null,
+    val authorId: String,
+    val startedAt: String,
+    val endedAt: String? = null,
+    val status: String,
+    val billable: Boolean,
+    val timeSource: String,
+    val businessTimezone: String,
+    val lastCheckpointAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val segments: List<ServerWorkSegmentSnapshot> = emptyList(),
+    // Precomputed server-side (SQL SUM over closed segments) so clients never need to
+    // parse/sum segment timestamps themselves - only to tick the still-open segment.
+    val closedSegmentsSeconds: Long = 0,
+    // Start timestamp of the currently open segment, or null when paused/finished.
+    val openSegmentStartedAt: String? = null,
 )
 
 data class ServerDailyMinutesSnapshot(

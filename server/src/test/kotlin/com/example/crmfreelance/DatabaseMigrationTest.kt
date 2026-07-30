@@ -104,6 +104,20 @@ class DatabaseMigrationTest {
         assertTrue(sales.contains("REVOKE ALL PRIVILEGES ON TABLE public.business_catalog_stock_summary"))
     }
 
+    @Test
+    fun workSessionsMigrationCreatesSessionsSegmentsAndProtectsThem() {
+        val migration = migrationText("db/migration/V13__work_sessions_and_segments.sql")
+
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS work_sessions"))
+        assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS work_segments"))
+        assertTrue(migration.contains("idx_work_sessions_single_active_per_owner"))
+        assertTrue(migration.contains("idx_work_segments_single_open_per_session"))
+        assertTrue(migration.contains("idx_time_logs_one_historic_per_task"))
+        assertTrue(migration.contains("ALTER TABLE public.work_sessions ENABLE ROW LEVEL SECURITY"))
+        assertTrue(migration.contains("ALTER TABLE public.work_segments ENABLE ROW LEVEL SECURITY"))
+        assertFalse(migration.contains("invoice", ignoreCase = true))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

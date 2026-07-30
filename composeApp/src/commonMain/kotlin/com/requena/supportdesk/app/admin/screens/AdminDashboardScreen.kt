@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,6 +70,7 @@ import com.requena.supportdesk.designsystem.components.inputs.FilterBar
 import com.requena.supportdesk.designsystem.components.inputs.FilterOption
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskClockDuration
+import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
@@ -94,7 +96,7 @@ fun AdminDashboardScreen(
         initialIsoDate = tasksState.selectedDay ?: tasksState.todayIsoDate,
     )
     val monthLogs = remember(tasksState.logs, calendarState.monthKey) {
-        tasksState.logs.filter { it.workDate.take(7) == calendarState.monthKey }
+        tasksState.logs.filter { it.workDate?.take(7) == calendarState.monthKey }
     }
     val globalSeconds = monthLogs.sumOf { it.seconds }
     val globalBillableSeconds = monthLogs.filter { it.billable }.sumOf { it.seconds }
@@ -795,6 +797,7 @@ private fun DashboardCalendarCard(
     onSelectDay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var dayDetailsIsoDate by remember { mutableStateOf<String?>(null) }
     val maxMinutes = max(1, tasksState.logs.maxOfOrNull { it.minutes } ?: 0)
     val cells = remember(
         tasksState.logs,
@@ -869,9 +872,17 @@ private fun DashboardCalendarCard(
                             maxMinutes = maxMinutes,
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                onSelectDay(day.isoDate)
-                                if (!day.inCurrentMonth) {
-                                    calendarState.jumpTo(day.year, day.month)
+                                // Viewing a day's breakdown is always allowed (including past
+                                // days); selecting it as the tracking day stays restricted to
+                                // today-or-future, unchanged from the existing behavior.
+                                if (day.minutes > 0 || day.scheduledTasks > 0) {
+                                    dayDetailsIsoDate = day.isoDate
+                                }
+                                if (!day.isPast) {
+                                    onSelectDay(day.isoDate)
+                                    if (!day.inCurrentMonth) {
+                                        calendarState.jumpTo(day.year, day.month)
+                                    }
                                 }
                             },
                         )
@@ -880,6 +891,105 @@ private fun DashboardCalendarCard(
             }
         }
     }
+
+    DayDetailsDialog(
+        isoDate = dayDetailsIsoDate,
+        tasksState = tasksState,
+        onDismiss = { dayDetailsIsoDate = null },
+    )
+}
+
+private data class DayTaskBreakdown(
+    val taskId: String,
+    val title: String,
+    val minutes: Int,
+    val billable: Boolean,
+)
+
+@Composable
+private fun DayDetailsDialog(
+    isoDate: String?,
+    tasksState: TasksUiState,
+    onDismiss: () -> Unit,
+) {
+    if (isoDate == null) return
+    val dayLogs = remember(tasksState.logs, isoDate) {
+        tasksState.logs.filter { it.workDate == isoDate }
+    }
+    val totalMinutes = dayLogs.sumOf { it.minutes }
+    val breakdown = remember(dayLogs, tasksState.tasks) {
+        dayLogs.groupBy { it.taskId }
+            .map { (taskId, taskLogs) ->
+                DayTaskBreakdown(
+                    taskId = taskId,
+                    title = tasksState.tasks.firstOrNull { it.id == taskId }?.title ?: "Tarea eliminada",
+                    minutes = taskLogs.sumOf { it.minutes },
+                    billable = taskLogs.any { it.billable },
+                )
+            }
+            .sortedByDescending { it.minutes }
+    }
+    val month = remember(isoDate) { isoDate.split("-").getOrNull(1)?.toIntOrNull() ?: 1 }
+    val day = remember(isoDate) { isoDate.split("-").getOrNull(2)?.toIntOrNull() ?: 1 }
+    val year = remember(isoDate) { isoDate.split("-").getOrNull(0) ?: "" }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "$day de ${SPANISH_MONTH_NAMES[month - 1]} de $year",
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Total del dia: ${formatSupportDeskDuration(totalMinutes)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (breakdown.isEmpty()) {
+                    Text(
+                        text = "Sin horas registradas este dia.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    breakdown.forEach { entry ->
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = entry.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = formatSupportDeskDuration(entry.minutes),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Text(
+                                text = if (entry.billable) "Facturable" else "Interno / no facturable",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (entry.billable) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            SecondaryButton(text = "Cerrar", onClick = onDismiss)
+        },
+    )
 }
 
 @Composable
@@ -924,7 +1034,12 @@ private fun CompactCalendarDayCell(
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .background(animatedBackgroundColor, RoundedCornerShape(8.dp))
             .hoverable(interactionSource, enabled = !day.isPast)
-            .clickable(interactionSource = interactionSource, indication = null, enabled = !day.isPast, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = !day.isPast || day.minutes > 0 || day.scheduledTasks > 0,
+                onClick = onClick,
+            )
             .padding(horizontal = 6.dp, vertical = 5.dp),
     ) {
         Text(

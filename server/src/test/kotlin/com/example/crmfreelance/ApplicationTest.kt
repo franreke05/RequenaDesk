@@ -686,30 +686,36 @@ class ApplicationTest {
     }
 
     @Test
-    fun testTimeLogsRejectPastDays() = testApplication {
+    fun testWorkSessionsRouteRejectsBlankTaskId() = testApplication {
         application { testModule() }
-        val pastDate = LocalDate.now().minusDays(1).toString()
 
-        val response = client.post("/admin/time-logs") {
+        val response = client.post("/admin/work-sessions") {
             bearer(client.accessToken())
             contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "taskId":"task-1",
-                  "authorId":"another-user",
-                  "workDate":"$pastDate",
-                  "minutes":15,
-                  "seconds":900,
-                  "note":"Intento invalido",
-                  "billable":true
-                }
-                """.trimIndent(),
-            )
+            setBody("""{"taskId":""}""")
         }
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
-        assertTrue(response.bodyAsText().contains("current day"))
+    }
+
+    @Test
+    fun testWorkSessionsRouteRejectsASecondActiveTimerForTheSameAdmin() = testApplication {
+        application { testModule() }
+        val token = client.accessToken()
+
+        val first = client.post("/admin/work-sessions") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody("""{"taskId":"task-1"}""")
+        }
+        assertEquals(HttpStatusCode.Created, first.status)
+
+        val second = client.post("/admin/work-sessions") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody("""{"taskId":"task-3"}""")
+        }
+        assertEquals(HttpStatusCode.Conflict, second.status)
     }
 
     @Test
@@ -811,30 +817,23 @@ class ApplicationTest {
     }
 
     @Test
-    fun testTimeLogsRouteUsesAuthenticatedAuthor() = testApplication {
+    fun testWorkSessionsRouteUsesAuthenticatedAuthorAndOwner() = testApplication {
         application { testModule() }
         val token = client.accessToken()
 
-        val response = client.post("/admin/time-logs") {
+        // StartWorkSessionRequest only carries taskId - there is no author/date field a caller
+        // could spoof; both are always derived from the authenticated identity and the server clock.
+        val response = client.post("/admin/work-sessions") {
             bearer(token)
             contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "taskId":"task-1",
-                  "authorId":"spoofed-user",
-                  "workDate":"${LocalDate.now()}",
-                  "minutes":15,
-                  "seconds":900,
-                  "note":"Tiempo real",
-                  "billable":true
-                }
-                """.trimIndent(),
-            )
+            setBody("""{"taskId":"task-1"}""")
         }
 
         assertEquals(HttpStatusCode.Created, response.status)
-        assertTrue(response.bodyAsText().contains("\"authorId\":\"user-admin\""))
+        val body = response.bodyAsText()
+        assertTrue(body.contains("\"authorId\":\"user-admin\""))
+        assertTrue(body.contains("\"ownerAdminId\":\"user-admin\""))
+        assertTrue(body.contains("\"status\":\"ACTIVE\""))
     }
 
     @Test

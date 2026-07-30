@@ -64,7 +64,7 @@ fun ClientServiceScreen(
     val currentMonthPrefix = today.take(7)
 
     val currentMonthMinutes = remember(allEntries, currentMonthPrefix) {
-        allEntries.filter { it.workDate.take(7) == currentMonthPrefix }.sumOf { it.minutes }
+        allEntries.filter { it.workDate?.take(7) == currentMonthPrefix }.sumOf { it.minutes }
     }
     val minutesDelta = currentMonthMinutes - lastMonthMinutes
 
@@ -82,7 +82,7 @@ fun ClientServiceScreen(
             var y = yr
             while (m <= 0) { m += 12; y-- }
             val prefix = "$y-${m.toString().padStart(2, '0')}"
-            monthAbbrev(m) to allEntries.filter { it.workDate.take(7) == prefix }.sumOf { it.minutes }
+            monthAbbrev(m) to allEntries.filter { it.workDate?.take(7) == prefix }.sumOf { it.minutes }
         }.reversed()
     }
 
@@ -110,7 +110,7 @@ fun ClientServiceScreen(
             Triple(
                 "$fullName $y",
                 tickets.count { it.createdAt.take(7) == prefix },
-                allEntries.filter { it.workDate.take(7) == prefix }.sumOf { it.minutes },
+                allEntries.filter { it.workDate?.take(7) == prefix }.sumOf { it.minutes },
             )
         }
     }

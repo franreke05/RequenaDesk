@@ -169,14 +169,8 @@ data class UpdateTaskRequest(
 )
 
 @Serializable
-data class CreateTimeLogRequest(
+data class StartWorkSessionRequest(
     val taskId: String = "",
-    val authorId: String = "",
-    val workDate: String = "",
-    val minutes: Int = 0,
-    val seconds: Int = minutes * 60,
-    val note: String = "",
-    val billable: Boolean = false,
 )
 
 @Serializable

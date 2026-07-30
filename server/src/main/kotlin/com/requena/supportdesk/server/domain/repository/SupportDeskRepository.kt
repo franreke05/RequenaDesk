@@ -8,8 +8,8 @@ import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
-import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.StartWorkSessionRequest
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -29,6 +29,7 @@ import com.requena.supportdesk.server.domain.model.ServerTicketFieldUpdate
 import com.requena.supportdesk.server.domain.model.ServerTicketMessageCreated
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSessionSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
@@ -103,8 +104,16 @@ interface SupportDeskRepository {
     fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
     fun deleteTask(taskId: String, ownerAdminId: String? = null)
     fun getTimeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null): List<ServerTimeLogSnapshot>
-    fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String? = null): ServerTimeLogSnapshot
     fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot
     fun getAttachment(id: String): ServerAttachmentSnapshot?
     fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration
+
+    /** The tenant's single non-finished (ACTIVE/PAUSED) session, if any - used for recovery on app start. */
+    fun activeWorkSession(ownerAdminId: String): ServerWorkSessionSnapshot?
+    fun workSessionsForTask(taskId: String, ownerAdminId: String): List<ServerWorkSessionSnapshot>
+    fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String): ServerWorkSessionSnapshot
+    fun pausedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
+    fun resumedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
+    fun stoppedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
+    fun checkpointedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
 }

@@ -24,7 +24,7 @@ class InvoicePdfStorageJvmTest {
                 invoicesDirectory = directory,
                 issuerProfile = InvoiceIssuerProfile(name = "OryKai software"),
             )
-            val savedInvoice = storage.saveInvoice(testInvoice())
+            val savedInvoice = storage.saveInvoice(testInvoice(), "FAC-2026-TEST0001")
             val pdf = directory.resolve(savedInvoice.fileName)
 
             assertTrue(Files.isRegularFile(pdf))
@@ -57,7 +57,7 @@ class InvoicePdfStorageJvmTest {
                 invoicesDirectory = directory,
                 issuerProfile = InvoiceIssuerProfile(name = "OryKai software"),
             )
-            val savedInvoice = storage.saveInvoice(testInvoice())
+            val savedInvoice = storage.saveInvoice(testInvoice(), "FAC-2026-TEST0002")
 
             storage.deleteSavedInvoice(savedInvoice.fileName)
 

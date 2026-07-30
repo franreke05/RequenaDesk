@@ -1,6 +1,8 @@
 package com.requena.supportdesk.features.invoices.presentation.viewmodel
 
 import com.requena.supportdesk.core.common.BaseViewModel
+import com.requena.supportdesk.features.invoices.data.ledger.DuplicateBillingException
+import com.requena.supportdesk.features.invoices.data.ledger.InvoiceBillingLedger
 import com.requena.supportdesk.features.invoices.data.storage.InvoicePdfStorage
 import com.requena.supportdesk.features.invoices.presentation.effect.InvoicesUiEffect
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
@@ -16,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 
 class InvoicesViewModel(
     private val invoicePdfStorage: InvoicePdfStorage,
+    private val invoiceBillingLedger: InvoiceBillingLedger,
 ) : BaseViewModel() {
 
     private val _state = MutableStateFlow(InvoicesUiState())
@@ -26,14 +29,19 @@ class InvoicesViewModel(
 
     init {
         refreshSavedInvoices()
+        refreshLedgerState()
     }
 
     fun onEvent(event: InvoicesUiEvent) {
         when (event) {
-            InvoicesUiEvent.RefreshSavedInvoices -> refreshSavedInvoices()
+            InvoicesUiEvent.RefreshSavedInvoices -> {
+                refreshSavedInvoices()
+                refreshLedgerState()
+            }
             is InvoicesUiEvent.OpenSavedInvoice -> openSavedInvoice(event.fileName)
             is InvoicesUiEvent.DeleteSavedInvoice -> deleteSavedInvoice(event.fileName)
             is InvoicesUiEvent.GenerateInvoice -> generateInvoice(event)
+            is InvoicesUiEvent.VoidInvoice -> voidInvoice(event.fileName, event.reason)
         }
     }
 
@@ -42,9 +50,18 @@ class InvoicesViewModel(
         launch {
             _state.update { it.copy(isGenerating = true, errorMessage = null) }
             try {
-                val savedInvoice = invoicePdfStorage.saveInvoice(event.input)
+                // Ledger first: never bill the same unit twice, even at the cost of a rare
+                // billed-but-no-PDF state if PDF generation itself then fails below.
+                val invoiceNumber = invoiceBillingLedger.nextInvoiceNumber(event.input.issuedAt)
+                if (event.selectedLogIds.isNotEmpty()) {
+                    invoiceBillingLedger.recordIssued(invoiceNumber, event.selectedLogIds)
+                }
+                val savedInvoice = invoicePdfStorage.saveInvoice(event.input, invoiceNumber)
                 val savedInvoices = invoicePdfStorage.listSavedInvoices()
-                _state.update { it.copy(isGenerating = false, savedInvoices = savedInvoices) }
+                val billedLogIds = invoiceBillingLedger.billedLogIds()
+                _state.update {
+                    it.copy(isGenerating = false, savedInvoices = savedInvoices, billedLogIds = billedLogIds)
+                }
                 _effects.send(
                     InvoicesUiEffect.ShowMessage(
                         "${savedInvoice.fileName} guardada en Escritorio/Facturas OryKai.",
@@ -52,12 +69,58 @@ class InvoicesViewModel(
                 )
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: DuplicateBillingException) {
+                val message = error.message ?: "Alguna de las unidades seleccionadas ya esta facturada."
+                _state.update { it.copy(isGenerating = false, errorMessage = message) }
+                _effects.send(InvoicesUiEffect.ShowMessage(message))
             } catch (error: Throwable) {
                 val detail = error.message?.takeIf { it.isNotBlank() }
                 val message = detail?.let { "No se pudo crear el PDF local: $it" }
                     ?: "No se pudo crear el PDF local. Revisa los logs invoice_pdf.*."
                 _state.update { it.copy(isGenerating = false, errorMessage = message) }
                 _effects.send(InvoicesUiEffect.ShowMessage(message))
+            }
+        }
+    }
+
+    private fun voidInvoice(fileName: String, reason: String?) {
+        if (state.value.voidingInvoiceFileName != null) return
+        val invoiceNumber = fileName.substringBefore("_")
+        launch {
+            _state.update { it.copy(voidingInvoiceFileName = fileName, errorMessage = null) }
+            try {
+                val releasedLogIds = invoiceBillingLedger.recordVoided(invoiceNumber, reason)
+                val billedLogIds = invoiceBillingLedger.billedLogIds()
+                val voidedInvoiceNumbers = invoiceBillingLedger.voidedInvoiceNumbers()
+                _state.update {
+                    it.copy(
+                        voidingInvoiceFileName = null,
+                        billedLogIds = billedLogIds,
+                        voidedInvoiceNumbers = voidedInvoiceNumbers,
+                    )
+                }
+                val message = if (releasedLogIds.isEmpty()) {
+                    "Factura anulada."
+                } else {
+                    "Factura anulada. ${releasedLogIds.size} unidad(es) de tiempo vuelven a estar pendientes."
+                }
+                _effects.send(InvoicesUiEffect.ShowMessage(message))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val message = error.message ?: "No se pudo anular la factura."
+                _state.update { it.copy(voidingInvoiceFileName = null, errorMessage = message) }
+                _effects.send(InvoicesUiEffect.ShowMessage(message))
+            }
+        }
+    }
+
+    private fun refreshLedgerState() {
+        launch {
+            runCatching {
+                invoiceBillingLedger.billedLogIds() to invoiceBillingLedger.voidedInvoiceNumbers()
+            }.onSuccess { (billedLogIds, voidedInvoiceNumbers) ->
+                _state.update { it.copy(billedLogIds = billedLogIds, voidedInvoiceNumbers = voidedInvoiceNumbers) }
             }
         }
     }

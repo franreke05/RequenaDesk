@@ -92,6 +92,7 @@ import com.requena.supportdesk.designsystem.components.inputs.SearchField
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.designsystem.theme.formatSupportDeskPreciseDuration
 import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.tasks.presentation.event.TasksUiEvent
@@ -165,10 +166,12 @@ fun AdminTasksScreen(
                 todayIsoDate = tasksState.todayIsoDate,
                 isLoading = tasksState.isLoading,
                 errorMessage = tasksState.errorMessage,
+                tasksState = tasksState,
                 onUpdateTask = { taskId, title, description, categoryId, dueDate, clientId ->
                     onTasksEvent(TasksUiEvent.UpdateTask(taskId, title, description, categoryId, dueDate, clientId))
                 },
                 onToggleCompleted = { onTasksEvent(TasksUiEvent.ToggleTaskCompletion(it)) },
+                onLoadTaskSessions = { onTasksEvent(TasksUiEvent.LoadTaskSessions(it)) },
                 modifier = paneModifier,
             )
         }
@@ -920,8 +923,10 @@ private fun TaskEditorPane(
     todayIsoDate: String,
     isLoading: Boolean,
     errorMessage: String?,
+    tasksState: TasksUiState,
     onUpdateTask: (String, String, String, String, String?, String?) -> Unit,
     onToggleCompleted: (String) -> Unit,
+    onLoadTaskSessions: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -1010,6 +1015,12 @@ private fun TaskEditorPane(
             errorMessage?.takeIf { it.isNotBlank() }?.let { TaskInlineError(it) }
             TaskClientSummary(linkedClient)
             TaskMetadata(task)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            TaskHistorySection(
+                task = task,
+                tasksState = tasksState,
+                onLoadTaskSessions = onLoadTaskSessions,
+            )
         }
     }
 }
@@ -1208,6 +1219,134 @@ private fun TaskMetadata(task: WorkTask) {
                 TaskMetadataItem("Tiempo registrado", formatSupportDeskDuration(task.loggedMinutes))
                 TaskMetadataItem("Creada", formatSupportDeskDateTime(task.createdAt))
                 TaskMetadataItem("Actualizada", formatSupportDeskDateTime(task.updatedAt))
+            }
+        }
+    }
+}
+
+/**
+ * Total / facturable / interno for the task, then its real work grouped by local day (newest
+ * first; the migrated historic bucket, if any, has no date and sorts last). Each day expands to
+ * show the sessions that touched it; a session with more than one segment (it was paused and
+ * resumed) expands further to show its tramos. Facturado/pendiente is not split here yet - that
+ * needs the local invoice-billing ledger, which lives in the Invoices screen's ViewModel; a
+ * documented follow-up, not implemented in this pass.
+ */
+@Composable
+private fun TaskHistorySection(
+    task: WorkTask,
+    tasksState: TasksUiState,
+    onLoadTaskSessions: (String) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    var expandedDayKeys by remember(task.id) { mutableStateOf(emptySet<String>()) }
+    var expandedSessionIds by remember(task.id) { mutableStateOf(emptySet<String>()) }
+
+    val totalSeconds = tasksState.trackedSecondsFor(task)
+    val billableMinutes = tasksState.billableSecondsFor(task.id) / 60
+    val internalMinutes = tasksState.internalSecondsFor(task.id) / 60
+    val logsByDay = remember(tasksState.logs, task.id) { tasksState.logsByDayFor(task.id) }
+    val sessionsForTask = if (tasksState.taskSessionsForTaskId == task.id) tasksState.taskSessions else emptyList()
+
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        Text("Historial", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = "Total: ${formatSupportDeskPreciseDuration(totalSeconds)} · " +
+                "Facturable: ${formatSupportDeskDuration(billableMinutes)} · " +
+                "Interno: ${formatSupportDeskDuration(internalMinutes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (logsByDay.isEmpty()) {
+            Text(
+                "Todavia no hay tiempo registrado para esta tarea.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            logsByDay.forEach { (workDate, dayLogs) ->
+                val dayKey = workDate ?: "HISTORIC"
+                val expanded = dayKey in expandedDayKeys
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val willExpand = !expanded
+                                expandedDayKeys = if (expanded) expandedDayKeys - dayKey else expandedDayKeys + dayKey
+                                if (willExpand) onLoadTaskSessions(task.id)
+                            }
+                            .padding(vertical = spacing.xs),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = workDate ?: "Tiempo historico sin desglose",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(formatSupportDeskDuration(dayLogs.sumOf { it.minutes }), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (expanded) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(start = spacing.lg)) {
+                            dayLogs.forEach { log ->
+                                val session = sessionsForTask.firstOrNull { it.id == log.sessionId }
+                                val sessionExpanded = log.sessionId != null && log.sessionId in expandedSessionIds
+                                Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                log.isHistoricMigrated -> "Migrado (sin horario detallado)"
+                                                session != null -> "${formatSupportDeskDateTime(session.startedAt)} - " +
+                                                    (session.endedAt?.let(::formatSupportDeskDateTime) ?: "en curso")
+                                                else -> "Sesion"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Text(formatSupportDeskDuration(log.minutes), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text(
+                                        text = if (log.billable) "Facturable" else "Interno / no facturable",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (log.billable) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                    if (session != null && session.segments.size > 1) {
+                                        Text(
+                                            text = if (sessionExpanded) "Ocultar tramos" else "Ver tramos (${session.segments.size})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clickable {
+                                                val id = requireNotNull(log.sessionId)
+                                                expandedSessionIds = if (sessionExpanded) {
+                                                    expandedSessionIds - id
+                                                } else {
+                                                    expandedSessionIds + id
+                                                }
+                                            },
+                                        )
+                                        if (sessionExpanded) {
+                                            session.segments.forEach { segment ->
+                                                Text(
+                                                    text = "${formatSupportDeskDateTime(segment.startedAt)} - " +
+                                                        (segment.endedAt?.let(::formatSupportDeskDateTime) ?: "en curso"),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(start = spacing.sm),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.requena.supportdesk.features.invoices.presentation.viewmodel
 
+import com.requena.supportdesk.features.invoices.data.ledger.DuplicateBillingException
+import com.requena.supportdesk.features.invoices.data.ledger.InvoiceBillingLedger
 import com.requena.supportdesk.features.invoices.data.storage.InvoicePdfStorage
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
@@ -21,11 +23,12 @@ class InvoicesViewModelJvmTest {
     fun generateEventSavesLocallyRefreshesTheLibraryAndEmitsOneSuccessEffect() = runBlocking {
         val input = testInvoice()
         val storage = RecordingInvoicePdfStorage()
-        val viewModel = InvoicesViewModel(storage)
+        val ledger = RecordingInvoiceBillingLedger()
+        val viewModel = InvoicesViewModel(storage, ledger)
 
         try {
             val effect = async { withTimeout(TEST_TIMEOUT_MILLIS) { viewModel.effects.first() } }
-            viewModel.onEvent(InvoicesUiEvent.GenerateInvoice(input))
+            viewModel.onEvent(InvoicesUiEvent.GenerateInvoice(input, selectedLogIds = listOf("log-1", "log-2")))
 
             val completedState = withTimeout(TEST_TIMEOUT_MILLIS) {
                 viewModel.state.first { state ->
@@ -36,6 +39,7 @@ class InvoicesViewModelJvmTest {
             assertEquals(input, storage.savedInput)
             assertEquals(listOf(storage.savedInvoice), completedState.savedInvoices)
             assertEquals(null, completedState.errorMessage)
+            assertEquals(setOf("log-1", "log-2"), completedState.billedLogIds)
             assertTrue(storage.listCalls >= 1)
             assertTrue(assertIs<InvoicesUiEffect.ShowMessage>(effect.await()).message.contains("guardada"))
         } finally {
@@ -44,9 +48,54 @@ class InvoicesViewModelJvmTest {
     }
 
     @Test
+    fun generateEventRejectsUnitsAlreadyBilledAndDoesNotWriteAPdf() = runBlocking {
+        val storage = RecordingInvoicePdfStorage()
+        val ledger = RecordingInvoiceBillingLedger().apply { billed.add("log-1") }
+        val viewModel = InvoicesViewModel(storage, ledger)
+
+        try {
+            val effect = async { withTimeout(TEST_TIMEOUT_MILLIS) { viewModel.effects.first() } }
+            viewModel.onEvent(InvoicesUiEvent.GenerateInvoice(testInvoice(), selectedLogIds = listOf("log-1")))
+
+            val completedState = withTimeout(TEST_TIMEOUT_MILLIS) {
+                viewModel.state.first { state -> !state.isGenerating && state.errorMessage != null }
+            }
+
+            assertEquals(null, storage.savedInput)
+            assertTrue(completedState.errorMessage!!.contains("ya esta facturada", ignoreCase = true))
+            assertTrue(assertIs<InvoicesUiEffect.ShowMessage>(effect.await()).message.contains("facturada", ignoreCase = true))
+        } finally {
+            viewModel.clear()
+        }
+    }
+
+    @Test
+    fun voidEventReleasesBilledUnitsBackToPending() = runBlocking {
+        val storage = RecordingInvoicePdfStorage()
+        val ledger = RecordingInvoiceBillingLedger().apply {
+            billed.addAll(listOf("log-1", "log-2"))
+            issuedInvoiceNumbers["FAC-2026-TEST"] = listOf("log-1", "log-2")
+        }
+        val viewModel = InvoicesViewModel(storage, ledger)
+
+        try {
+            viewModel.onEvent(InvoicesUiEvent.VoidInvoice(fileName = "FAC-2026-TEST_Cliente.pdf", reason = "Importe incorrecto"))
+
+            val completedState = withTimeout(TEST_TIMEOUT_MILLIS) {
+                viewModel.state.first { state -> state.billedLogIds.isEmpty() && state.voidingInvoiceFileName == null }
+            }
+
+            assertTrue(completedState.billedLogIds.isEmpty())
+            assertEquals(setOf("FAC-2026-TEST"), completedState.voidedInvoiceNumbers)
+        } finally {
+            viewModel.clear()
+        }
+    }
+
+    @Test
     fun deleteEventRemovesTheLocalInvoiceAndRefreshesTheLibrary() = runBlocking {
         val storage = RecordingInvoicePdfStorage().apply { savedInput = testInvoice() }
-        val viewModel = InvoicesViewModel(storage)
+        val viewModel = InvoicesViewModel(storage, RecordingInvoiceBillingLedger())
 
         try {
             viewModel.onEvent(InvoicesUiEvent.DeleteSavedInvoice(storage.savedInvoice.fileName))
@@ -87,7 +136,7 @@ class InvoicesViewModelJvmTest {
             return if (savedInput == null || deletedFileName != null) emptyList() else listOf(savedInvoice)
         }
 
-        override suspend fun saveInvoice(input: CreateInvoiceInput): InvoicePdfFile {
+        override suspend fun saveInvoice(input: CreateInvoiceInput, invoiceNumber: String): InvoicePdfFile {
             savedInput = input
             return savedInvoice
         }
@@ -98,6 +147,38 @@ class InvoicesViewModelJvmTest {
             check(fileName == savedInvoice.fileName)
             deletedFileName = fileName
         }
+    }
+
+    private class RecordingInvoiceBillingLedger : InvoiceBillingLedger {
+        val billed = mutableSetOf<String>()
+        val issuedInvoiceNumbers = mutableMapOf<String, List<String>>()
+        private val voided = mutableSetOf<String>()
+
+        override fun nextInvoiceNumber(issuedAt: String): String = "FAC-2026-TEST"
+
+        override suspend fun billedLogIds(): Set<String> = billed.toSet()
+
+        override suspend fun recordIssued(invoiceNumber: String, logIds: List<String>) {
+            val duplicates = logIds.filter { it in billed }
+            if (duplicates.isNotEmpty()) {
+                throw DuplicateBillingException("Alguna de las unidades de tiempo seleccionadas ya esta facturada.")
+            }
+            billed.addAll(logIds)
+            issuedInvoiceNumbers[invoiceNumber] = logIds
+        }
+
+        override suspend fun recordVoided(invoiceNumber: String, reason: String?): List<String> {
+            if (invoiceNumber in voided) return emptyList()
+            val logIds = issuedInvoiceNumbers[invoiceNumber] ?: return emptyList()
+            voided += invoiceNumber
+            billed.removeAll(logIds.toSet())
+            return logIds
+        }
+
+        override suspend fun isIssuedAndNotVoided(invoiceNumber: String): Boolean =
+            invoiceNumber in issuedInvoiceNumbers && invoiceNumber !in voided
+
+        override suspend fun voidedInvoiceNumbers(): Set<String> = voided.toSet()
     }
 
     private fun testInvoice() = CreateInvoiceInput(

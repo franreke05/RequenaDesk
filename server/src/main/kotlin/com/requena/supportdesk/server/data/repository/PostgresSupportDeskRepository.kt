@@ -9,8 +9,8 @@ import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketMessageRequest
 import com.requena.supportdesk.server.domain.model.CreateTicketRequest
-import com.requena.supportdesk.server.domain.model.CreateTimeLogRequest
 import com.requena.supportdesk.server.domain.model.RegisterDeviceRequest
+import com.requena.supportdesk.server.domain.model.StartWorkSessionRequest
 import com.requena.supportdesk.server.domain.model.ServerAttachmentCreated
 import com.requena.supportdesk.server.domain.model.ServerAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
@@ -41,6 +41,8 @@ import com.requena.supportdesk.server.domain.model.ServerInternalCommentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketEventSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketAttachmentSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSegmentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSessionSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientContactRequest
@@ -1628,14 +1630,16 @@ class PostgresSupportDeskRepository(
                 tl.work_date::text AS work_date,
                 tl.note,
                 tl.billable,
-                tl.created_at
+                tl.created_at,
+                tl.session_id::text AS session_id,
+                tl.is_historic_migrated
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
             JOIN users u ON u.id = tl.author_id
             WHERE (? IS NULL OR tl.client_id::text = ?)
               AND (? IS NULL OR tl.task_id::text = ?)
               AND (? IS NULL OR t.owner_admin_id::text = ?)
-            ORDER BY tl.work_date DESC, tl.created_at DESC
+            ORDER BY tl.work_date DESC NULLS LAST, tl.created_at DESC
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
@@ -1654,92 +1658,364 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createTimeLog(request: CreateTimeLogRequest, ownerAdminId: String?): ServerTimeLogSnapshot = dataSource.withConnection { connection ->
-        connection.autoCommit = false
-        try {
-            val resolvedSeconds = request.seconds.takeIf { it > 0 } ?: (request.minutes * 60)
-            val resolvedMinutes = resolvedSeconds / 60
-            val taskContext = connection.prepareStatement(
-                """
-                SELECT client_id::text AS client_id, owner_admin_id::text AS owner_admin_id
-                FROM tasks
-                WHERE id::text = ?
-                  AND (? IS NULL OR owner_admin_id::text = ?)
-                LIMIT 1
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, request.taskId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
-                statement.executeQuery().use { resultSet ->
-                    if (resultSet.next()) {
-                        resultSet.getString("client_id") to resultSet.getString("owner_admin_id")
-                    } else {
-                        throw ServerNotFoundException("Task not found")
+    override fun activeWorkSession(ownerAdminId: String): ServerWorkSessionSnapshot? = dataSource.withConnection { connection ->
+        val sessionId = connection.prepareStatement(
+            """
+            SELECT id::text AS id FROM work_sessions
+            WHERE owner_admin_id::text = ? AND status IN ('ACTIVE', 'PAUSED')
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, ownerAdminId)
+            statement.executeQuery().use { resultSet -> if (resultSet.next()) resultSet.getString("id") else null }
+        }
+        sessionId?.let { hydrateWorkSession(connection, it) }
+    }
+
+    override fun workSessionsForTask(taskId: String, ownerAdminId: String): List<ServerWorkSessionSnapshot> = dataSource.withConnection { connection ->
+        requireTaskExists(connection, taskId, ownerAdminId)
+        val sessionIds = connection.prepareStatement(
+            """
+            SELECT id::text AS id FROM work_sessions
+            WHERE task_id::text = ? AND owner_admin_id::text = ?
+            ORDER BY started_at DESC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, taskId)
+            statement.setString(2, ownerAdminId)
+            statement.executeQuery().use { resultSet ->
+                buildList { while (resultSet.next()) add(resultSet.getString("id")) }
+            }
+        }
+        sessionIds.map { id -> requireNotNull(hydrateWorkSession(connection, id)) }
+    }
+
+    override fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String): ServerWorkSessionSnapshot =
+        dataSource.withConnection { connection ->
+            connection.autoCommit = false
+            try {
+                val task = connection.prepareStatement(
+                    "SELECT client_id::text AS client_id FROM tasks WHERE id::text = ? AND owner_admin_id::text = ? LIMIT 1",
+                ).use { statement ->
+                    statement.setString(1, request.taskId)
+                    statement.setString(2, ownerAdminId)
+                    statement.executeQuery().use { resultSet ->
+                        if (resultSet.next()) resultSet.getString("client_id") else throw ServerNotFoundException("Task not found")
                     }
                 }
-            }
 
-            val created = connection.prepareStatement(
-                """
-                INSERT INTO time_logs (task_id, client_id, author_id, minutes, seconds, work_date, note, billable)
-                VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, ?, CAST(? AS date), ?, ?)
-                RETURNING id::text AS id, task_id::text AS task_id, client_id::text AS client_id,
-                          author_id::text AS author_id, minutes, seconds, work_date::text AS work_date, note, billable, created_at
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, request.taskId)
-                statement.setString(2, taskContext.first)
-                statement.setString(3, request.authorId)
-                statement.setInt(4, resolvedMinutes)
-                statement.setInt(5, resolvedSeconds)
-                statement.setString(6, request.workDate)
-                statement.setString(7, request.note)
-                statement.setBoolean(8, request.billable)
-                statement.executeQuery().use { resultSet ->
-                    resultSet.next()
-                    val authorName = resolveAuthorName(connection, request.authorId)
-                    ServerTimeLogSnapshot(
-                        id = resultSet.getString("id"),
-                        ownerAdminId = taskContext.second,
-                        taskId = resultSet.getString("task_id"),
-                        clientId = resultSet.getString("client_id"),
-                        authorId = resultSet.getString("author_id"),
-                        authorName = authorName,
-                        minutes = resultSet.getInt("minutes"),
-                        seconds = resultSet.getInt("seconds"),
-                        workDate = resultSet.getString("work_date"),
-                        note = resultSet.getString("note"),
-                        billable = resultSet.getBoolean("billable"),
-                        createdAt = formatTimestamp(resultSet.getObject("created_at")),
-                    )
+                val existingActive = connection.prepareStatement(
+                    """
+                    SELECT ws.id::text AS id, t.title AS title FROM work_sessions ws
+                    JOIN tasks t ON t.id = ws.task_id
+                    WHERE ws.owner_admin_id::text = ? AND ws.status IN ('ACTIVE', 'PAUSED')
+                    LIMIT 1
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, ownerAdminId)
+                    statement.executeQuery().use { resultSet ->
+                        if (resultSet.next()) resultSet.getString("title") else null
+                    }
+                }
+                if (existingActive != null) {
+                    throw ServerConflictException("Ya hay un temporizador activo en la tarea '$existingActive'. Detenlo o pausalo antes de iniciar uno nuevo.")
+                }
+
+                val billable = task != null
+
+                val sessionId = try {
+                    connection.prepareStatement(
+                        """
+                        INSERT INTO work_sessions (task_id, owner_admin_id, client_id, author_id, started_at, status, billable, time_source, business_timezone)
+                        VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), NOW(), 'ACTIVE', ?, 'SERVER', 'Europe/Madrid')
+                        RETURNING id::text AS id
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, request.taskId)
+                        statement.setString(2, ownerAdminId)
+                        statement.setString(3, task)
+                        statement.setString(4, authorId)
+                        statement.setBoolean(5, billable)
+                        statement.executeQuery().use { resultSet -> resultSet.next(); resultSet.getString("id") }
+                    }
+                } catch (error: java.sql.SQLException) {
+                    if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
+                        throw ServerConflictException("Ya hay un temporizador activo. Detenlo o pausalo antes de iniciar uno nuevo.")
+                    }
+                    throw error
+                }
+
+                connection.prepareStatement(
+                    "INSERT INTO work_segments (session_id, started_at) VALUES (CAST(? AS uuid), NOW())",
+                ).use { statement ->
+                    statement.setString(1, sessionId)
+                    statement.executeUpdate()
+                }
+
+                val snapshot = requireNotNull(hydrateWorkSession(connection, sessionId))
+                connection.commit()
+                snapshot
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            } finally {
+                connection.autoCommit = true
+            }
+        }
+
+    override fun pausedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+            if (status == "ACTIVE") {
+                connection.prepareStatement(
+                    "UPDATE work_segments SET ended_at = NOW() WHERE session_id::text = ? AND ended_at IS NULL",
+                ).use { statement ->
+                    statement.setString(1, sessionId)
+                    statement.executeUpdate()
+                }
+                connection.prepareStatement("UPDATE work_sessions SET status = 'PAUSED' WHERE id::text = ?").use { statement ->
+                    statement.setString(1, sessionId)
+                    statement.executeUpdate()
                 }
             }
-
-            connection.prepareStatement(
-                """
-                UPDATE tasks
-                SET logged_minutes = (logged_seconds + ?) / 60,
-                    logged_seconds = logged_seconds + ?
-                WHERE id::text = ?
-                  AND (? IS NULL OR owner_admin_id::text = ?)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInt(1, resolvedSeconds)
-                statement.setInt(2, resolvedSeconds)
-                statement.setString(3, request.taskId)
-                statement.setString(4, ownerAdminId)
-                statement.setString(5, ownerAdminId)
-                statement.executeUpdate()
-            }
+            val snapshot = requireNotNull(hydrateWorkSession(connection, sessionId))
             connection.commit()
-            created
+            snapshot
         } catch (error: Throwable) {
             connection.rollback()
             throw error
         } finally {
             connection.autoCommit = true
         }
+    }
+
+    override fun resumedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+            if (status == "PAUSED") {
+                connection.prepareStatement(
+                    "INSERT INTO work_segments (session_id, started_at) VALUES (CAST(? AS uuid), NOW())",
+                ).use { statement ->
+                    statement.setString(1, sessionId)
+                    statement.executeUpdate()
+                }
+                connection.prepareStatement("UPDATE work_sessions SET status = 'ACTIVE' WHERE id::text = ?").use { statement ->
+                    statement.setString(1, sessionId)
+                    statement.executeUpdate()
+                }
+            }
+            val snapshot = requireNotNull(hydrateWorkSession(connection, sessionId))
+            connection.commit()
+            snapshot
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun stoppedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
+
+            connection.prepareStatement(
+                "UPDATE work_segments SET ended_at = NOW() WHERE session_id::text = ? AND ended_at IS NULL",
+            ).use { statement ->
+                statement.setString(1, sessionId)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "UPDATE work_sessions SET status = 'FINISHED', ended_at = NOW() WHERE id::text = ?",
+            ).use { statement ->
+                statement.setString(1, sessionId)
+                statement.executeUpdate()
+            }
+
+            // Split the session's total real time by LOCAL (Europe/Madrid) calendar day and
+            // write one immutable time_logs row per day touched - this is what makes a
+            // midnight-crossing session (or one left running across several days) divide
+            // correctly without inventing a second session. Done entirely in SQL so Postgres'
+            // own tz database (not hand-rolled arithmetic) handles DST transitions correctly.
+            val perDayMinutes = connection.prepareStatement(
+                """
+                SELECT (d.local_date::date)::text AS local_date,
+                       GREATEST(0, SUM(
+                           EXTRACT(EPOCH FROM (
+                               LEAST(seg.ended_at, ((d.local_date::date + 1)::timestamp AT TIME ZONE 'Europe/Madrid'))
+                               - GREATEST(seg.started_at, ((d.local_date::date)::timestamp AT TIME ZONE 'Europe/Madrid'))
+                           ))
+                       ))::bigint AS seconds
+                FROM work_segments seg
+                CROSS JOIN LATERAL generate_series(
+                    (seg.started_at AT TIME ZONE 'Europe/Madrid')::date,
+                    (seg.ended_at AT TIME ZONE 'Europe/Madrid')::date,
+                    interval '1 day'
+                ) AS d(local_date)
+                WHERE seg.session_id::text = ? AND seg.ended_at IS NOT NULL
+                GROUP BY d.local_date
+                ORDER BY d.local_date
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, sessionId)
+                statement.executeQuery().use { resultSet ->
+                    val perDaySeconds = linkedMapOf<String, Long>()
+                    while (resultSet.next()) {
+                        perDaySeconds[resultSet.getString("local_date")] = resultSet.getLong("seconds")
+                    }
+                    perDaySeconds
+                }
+            }
+
+            val session = requireNotNull(hydrateWorkSession(connection, sessionId))
+            var totalSeconds = 0L
+            perDayMinutes.forEach { (localDate, seconds) ->
+                if (seconds <= 0) return@forEach
+                totalSeconds += seconds
+                connection.prepareStatement(
+                    """
+                    INSERT INTO time_logs (task_id, client_id, author_id, session_id, minutes, seconds, work_date, note, billable)
+                    VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, ?, CAST(? AS date), ?, ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, session.taskId)
+                    statement.setString(2, session.clientId)
+                    statement.setString(3, session.authorId)
+                    statement.setString(4, sessionId)
+                    statement.setInt(5, (seconds / 60).toInt())
+                    statement.setInt(6, seconds.toInt())
+                    statement.setString(7, localDate)
+                    statement.setString(8, "Sesion de trabajo")
+                    statement.setBoolean(9, session.billable)
+                    statement.executeUpdate()
+                }
+            }
+
+            if (totalSeconds > 0) {
+                connection.prepareStatement(
+                    """
+                    UPDATE tasks
+                    SET logged_minutes = (logged_seconds + ?) / 60,
+                        logged_seconds = logged_seconds + ?
+                    WHERE id::text = ?
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setLong(1, totalSeconds)
+                    statement.setLong(2, totalSeconds)
+                    statement.setString(3, session.taskId)
+                    statement.executeUpdate()
+                }
+            }
+
+            val finalSnapshot = requireNotNull(hydrateWorkSession(connection, sessionId))
+            connection.commit()
+            finalSnapshot
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun checkpointedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+        requireSessionOwnership(connection, sessionId, ownerAdminId)
+        connection.prepareStatement("UPDATE work_sessions SET last_checkpoint_at = NOW() WHERE id::text = ?").use { statement ->
+            statement.setString(1, sessionId)
+            statement.executeUpdate()
+        }
+        requireNotNull(hydrateWorkSession(connection, sessionId))
+    }
+
+    private fun requireSessionOwnership(connection: Connection, sessionId: String, ownerAdminId: String): String =
+        connection.prepareStatement(
+            "SELECT status FROM work_sessions WHERE id::text = ? AND owner_admin_id::text = ?",
+        ).use { statement ->
+            statement.setString(1, sessionId)
+            statement.setString(2, ownerAdminId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("status") else throw ServerNotFoundException("Work session not found")
+            }
+        }
+
+    private fun hydrateWorkSession(connection: Connection, sessionId: String): ServerWorkSessionSnapshot? {
+        val session = connection.prepareStatement(
+            """
+            SELECT
+                ws.id::text AS id, ws.owner_admin_id::text AS owner_admin_id, ws.task_id::text AS task_id,
+                ws.client_id::text AS client_id, ws.author_id::text AS author_id, ws.started_at, ws.ended_at,
+                ws.status, ws.billable, ws.time_source, ws.business_timezone, ws.last_checkpoint_at,
+                ws.created_at, ws.updated_at
+            FROM work_sessions ws
+            WHERE ws.id::text = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, sessionId)
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) return null
+                ServerWorkSessionSnapshot(
+                    id = resultSet.getString("id"),
+                    ownerAdminId = resultSet.getString("owner_admin_id"),
+                    taskId = resultSet.getString("task_id"),
+                    clientId = resultSet.getString("client_id"),
+                    authorId = resultSet.getString("author_id"),
+                    startedAt = formatTimestamp(resultSet.getObject("started_at")),
+                    endedAt = resultSet.getObject("ended_at")?.let { formatTimestamp(it) },
+                    status = resultSet.getString("status"),
+                    billable = resultSet.getBoolean("billable"),
+                    timeSource = resultSet.getString("time_source"),
+                    businessTimezone = resultSet.getString("business_timezone"),
+                    lastCheckpointAt = resultSet.getObject("last_checkpoint_at")?.let { formatTimestamp(it) },
+                    createdAt = formatTimestamp(resultSet.getObject("created_at")),
+                    updatedAt = formatTimestamp(resultSet.getObject("updated_at")),
+                )
+            }
+        }
+        val segments = connection.prepareStatement(
+            """
+            SELECT id::text AS id, session_id::text AS session_id, started_at, ended_at
+            FROM work_segments
+            WHERE session_id::text = ?
+            ORDER BY started_at ASC
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, sessionId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            ServerWorkSegmentSnapshot(
+                                id = resultSet.getString("id"),
+                                sessionId = resultSet.getString("session_id"),
+                                startedAt = formatTimestamp(resultSet.getObject("started_at")),
+                                endedAt = resultSet.getObject("ended_at")?.let { formatTimestamp(it) },
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        val closedSeconds = connection.prepareStatement(
+            """
+            SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at))), 0)::bigint AS seconds
+            FROM work_segments
+            WHERE session_id::text = ? AND ended_at IS NOT NULL
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, sessionId)
+            statement.executeQuery().use { resultSet -> resultSet.next(); resultSet.getLong("seconds") }
+        }
+        return session.copy(
+            segments = segments,
+            closedSegmentsSeconds = closedSeconds,
+            openSegmentStartedAt = segments.firstOrNull { it.endedAt == null }?.startedAt,
+        )
     }
 
     override fun getDashboard(clientId: String?, labelId: String?, ownerAdminId: String?): ServerDashboardSnapshot = dataSource.withConnection { connection ->
@@ -2403,6 +2679,8 @@ class PostgresSupportDeskRepository(
         note = resultSet.getString("note") ?: "",
         billable = resultSet.getBoolean("billable"),
         createdAt = formatTimestamp(resultSet.getObject("created_at")),
+        sessionId = resultSet.getString("session_id"),
+        isHistoricMigrated = resultSet.getBoolean("is_historic_migrated"),
     )
 
     private fun resolveAuthorName(connection: Connection, authorId: String): String =
@@ -2946,5 +3224,6 @@ class PostgresSupportDeskRepository(
 
     private companion object {
         const val DEFAULT_ADMIN_OWNER_ID = "22222222-2222-2222-2222-222222222222"
+        const val UNIQUE_VIOLATION_SQL_STATE = "23505"
     }
 }

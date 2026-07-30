@@ -66,14 +66,13 @@ internal class DesktopInvoicePdfStorage(
         }
     }
 
-    override suspend fun saveInvoice(input: CreateInvoiceInput): InvoicePdfFile {
+    override suspend fun saveInvoice(input: CreateInvoiceInput, invoiceNumber: String): InvoicePdfFile {
         val operationId = UUID.randomUUID().toString().take(OPERATION_ID_LENGTH)
         logger.info("invoice_pdf.create.start operationId=$operationId itemCount=${input.items.size}")
 
         return try {
             validate(input)
             val directory = ensureInvoicesDirectory()
-            val invoiceNumber = createInvoiceNumber(input.issuedAt)
             val target = availableTarget(directory, pdfFileName(invoiceNumber, input.clientName))
             logger.info("invoice_pdf.create.write operationId=$operationId target=$target")
 
@@ -147,8 +146,9 @@ internal class DesktopInvoicePdfStorage(
             require(item.quantity.isFinite() && item.quantity > 0.0) { "Las cantidades deben ser mayores que cero." }
             require(item.unitPrice.isFinite() && item.unitPrice >= 0.0) { "El precio unitario no es válido." }
             if (item.kind == InvoiceItemKind.TASK_HOURS) {
-                require(item.quantity == item.quantity.toLong().toDouble()) {
-                    "Las tareas deben facturarse en horas completas."
+                val quarterHours = item.quantity * 4.0
+                require(quarterHours == kotlin.math.round(quarterHours)) {
+                    "Las tareas deben facturarse en incrementos de un cuarto de hora."
                 }
             }
         }
@@ -622,12 +622,6 @@ internal class DesktopInvoicePdfStorage(
         return "${invoiceNumber}_$clientSlug$PDF_EXTENSION"
     }
 
-    private fun createInvoiceNumber(issuedAt: String): String {
-        val year = LocalDate.parse(issuedAt).year.toString()
-        val uniquePart = UUID.randomUUID().toString().take(INVOICE_ID_LENGTH).uppercase(Locale.ROOT)
-        return "FAC-$year-$uniquePart"
-    }
-
     private fun moveAtomically(source: Path, target: Path) {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
@@ -721,7 +715,6 @@ internal class DesktopInvoicePdfStorage(
         const val NOTES_FONT_SIZE = 8.5f
         const val NOTES_LEADING = 11f
         const val MAX_CLIENT_FILE_NAME_LENGTH = 48
-        const val INVOICE_ID_LENGTH = 8
         const val OPERATION_ID_LENGTH = 8
         const val MIN_TAX_PERCENT = 0.0
         const val MAX_TAX_PERCENT = 100.0

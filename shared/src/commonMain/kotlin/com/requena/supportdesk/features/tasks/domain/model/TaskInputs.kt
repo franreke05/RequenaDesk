@@ -22,13 +22,3 @@ data class TaskLabelDraft(
     val colorHex: String,
     val ownerAdminId: String,
 )
-
-data class TaskTimeLogDraft(
-    val taskId: String,
-    val authorId: String,
-    val workDate: String,
-    val minutes: Int,
-    val seconds: Int = minutes * 60,
-    val note: String,
-    val billable: Boolean,
-)

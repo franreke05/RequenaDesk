@@ -49,14 +49,20 @@ import com.requena.supportdesk.features.programs.domain.usecase.RequestProgramsU
 import com.requena.supportdesk.features.programs.presentation.viewmodel.ProgramsViewModel
 import com.requena.supportdesk.features.tasks.data.datasource.RemoteTasksDataSource
 import com.requena.supportdesk.features.tasks.data.repository.TasksRepositoryImpl
+import com.requena.supportdesk.features.tasks.domain.usecase.CheckpointWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskUseCase
-import com.requena.supportdesk.features.tasks.domain.usecase.CreateTimeLogUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.GetActiveWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLabelsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.GetWorkSessionsForTaskUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.PauseWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.ResumeWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.StartWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.StopWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
 import com.requena.supportdesk.features.tickets.data.datasource.RemoteTicketsDataSource
@@ -67,6 +73,7 @@ import com.requena.supportdesk.features.tickets.domain.usecase.CreateTicketUseCa
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
+import com.requena.supportdesk.features.invoices.data.ledger.createInvoiceBillingLedger
 import com.requena.supportdesk.features.invoices.data.storage.createInvoicePdfStorage
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
@@ -113,7 +120,13 @@ object SupportDeskSharedModule {
     private val createTaskLabelUseCase = CreateTaskLabelUseCase(tasksRepository)
     private val updateTaskLabelUseCase = UpdateTaskLabelUseCase(tasksRepository)
     private val deleteTaskLabelUseCase = DeleteTaskLabelUseCase(tasksRepository)
-    private val createTimeLogUseCase = CreateTimeLogUseCase(tasksRepository)
+    private val getActiveWorkSessionUseCase = GetActiveWorkSessionUseCase(tasksRepository)
+    private val startWorkSessionUseCase = StartWorkSessionUseCase(tasksRepository)
+    private val pauseWorkSessionUseCase = PauseWorkSessionUseCase(tasksRepository)
+    private val resumeWorkSessionUseCase = ResumeWorkSessionUseCase(tasksRepository)
+    private val stopWorkSessionUseCase = StopWorkSessionUseCase(tasksRepository)
+    private val checkpointWorkSessionUseCase = CheckpointWorkSessionUseCase(tasksRepository)
+    private val getWorkSessionsForTaskUseCase = GetWorkSessionsForTaskUseCase(tasksRepository)
     private val getDashboardSummaryUseCase = GetDashboardSummaryUseCase(dashboardRepository)
     private val registerDeviceUseCase = RegisterDeviceUseCase(notificationsRepository)
     private val getClientProgramsUseCase = GetClientProgramsUseCase(programsRepository)
@@ -180,6 +193,7 @@ object SupportDeskSharedModule {
 
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
         invoicePdfStorage = createInvoicePdfStorage(),
+        invoiceBillingLedger = createInvoiceBillingLedger(),
     )
 
     fun createTasksViewModel(): TasksViewModel = TasksViewModel(
@@ -192,6 +206,12 @@ object SupportDeskSharedModule {
         createTaskLabelUseCase = createTaskLabelUseCase,
         updateTaskLabelUseCase = updateTaskLabelUseCase,
         deleteTaskLabelUseCase = deleteTaskLabelUseCase,
-        createTimeLogUseCase = createTimeLogUseCase,
+        getActiveWorkSessionUseCase = getActiveWorkSessionUseCase,
+        startWorkSessionUseCase = startWorkSessionUseCase,
+        pauseWorkSessionUseCase = pauseWorkSessionUseCase,
+        resumeWorkSessionUseCase = resumeWorkSessionUseCase,
+        stopWorkSessionUseCase = stopWorkSessionUseCase,
+        checkpointWorkSessionUseCase = checkpointWorkSessionUseCase,
+        getWorkSessionsForTaskUseCase = getWorkSessionsForTaskUseCase,
     )
 }

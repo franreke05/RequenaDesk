@@ -33,4 +33,5 @@ sealed interface TasksUiEvent {
     data class StartTimer(val taskId: String) : TasksUiEvent
     object PauseTimer : TasksUiEvent
     object StopTimer : TasksUiEvent
+    data class LoadTaskSessions(val taskId: String) : TasksUiEvent
 }

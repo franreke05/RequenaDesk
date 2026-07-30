@@ -2,7 +2,6 @@ package com.requena.supportdesk.features.tasks.domain.usecase
 
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
-import com.requena.supportdesk.features.tasks.domain.model.TaskTimeLogDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskUpdateInput
 import com.requena.supportdesk.features.tasks.domain.repository.TasksRepository
 
@@ -60,8 +59,44 @@ class DeleteTaskLabelUseCase(
     suspend operator fun invoke(labelId: String) = repository.deleteLabel(labelId)
 }
 
-class CreateTimeLogUseCase(
+class GetActiveWorkSessionUseCase(
     private val repository: TasksRepository,
 ) {
-    suspend operator fun invoke(input: TaskTimeLogDraft) = repository.createTimeLog(input)
+    suspend operator fun invoke() = repository.getActiveWorkSession()
+}
+
+class GetWorkSessionsForTaskUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(taskId: String) = repository.getWorkSessionsForTask(taskId)
+}
+
+class StartWorkSessionUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(taskId: String) = repository.startWorkSession(taskId)
+}
+
+class PauseWorkSessionUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(sessionId: String) = repository.pauseWorkSession(sessionId)
+}
+
+class ResumeWorkSessionUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(sessionId: String) = repository.resumeWorkSession(sessionId)
+}
+
+class StopWorkSessionUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(sessionId: String) = repository.stopWorkSession(sessionId)
+}
+
+class CheckpointWorkSessionUseCase(
+    private val repository: TasksRepository,
+) {
+    suspend operator fun invoke(sessionId: String) = repository.checkpointWorkSession(sessionId)
 }

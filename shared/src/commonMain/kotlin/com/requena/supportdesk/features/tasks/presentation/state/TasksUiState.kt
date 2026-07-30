@@ -2,6 +2,7 @@ package com.requena.supportdesk.features.tasks.presentation.state
 
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.WorkSession
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.core.time.isFutureIsoDate
@@ -18,6 +19,11 @@ data class TasksUiState(
     val selectedClientFilterId: String? = null,
     val selectedDashboardClientId: String? = null,
     val selectedDashboardCategoryIds: Set<String> = emptySet(),
+    // The single tenant-wide non-finished session, persisted server-side - the source of truth
+    // for the timer. activeTaskId/activeTaskSeconds/isTimerRunning below are convenience
+    // projections of this kept for existing UI call sites; activeTaskSeconds is recomputed each
+    // tick from activeSession's real timestamps, never incremented in place.
+    val activeSession: WorkSession? = null,
     val activeTaskId: String? = null,
     val activeTaskSeconds: Int = 0,
     val isTimerRunning: Boolean = false,
@@ -25,6 +31,10 @@ data class TasksUiState(
     val errorMessage: String? = null,
     val statusMessage: String? = null,
     val lastCreatedTaskId: String? = null,
+    // Finished sessions (with their segments/tramos) for whichever task's history panel is
+    // currently expanded - fetched on demand, not preloaded for every task.
+    val taskSessions: List<WorkSession> = emptyList(),
+    val taskSessionsForTaskId: String? = null,
 ) {
     val todayIsoDate: String
         get() = currentIsoDate()
@@ -83,4 +93,17 @@ data class TasksUiState(
 
     val selectedTaskTrackedSeconds: Int
         get() = selectedTask?.let(::trackedSecondsFor) ?: activeTaskSeconds
+
+    fun billableSecondsFor(taskId: String): Int =
+        logs.filter { it.taskId == taskId && it.billable }.sumOf { it.seconds }
+
+    fun internalSecondsFor(taskId: String): Int =
+        logs.filter { it.taskId == taskId && !it.billable }.sumOf { it.seconds }
+
+    /** Real logs for one task, grouped by local day (null key = migrated historic bucket), newest first. */
+    fun logsByDayFor(taskId: String): List<Pair<String?, List<TaskLog>>> =
+        logs.filter { it.taskId == taskId }
+            .groupBy { it.workDate }
+            .toList()
+            .sortedWith(compareByDescending { (day, _) -> day ?: "" })
 }

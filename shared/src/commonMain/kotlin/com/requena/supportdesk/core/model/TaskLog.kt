@@ -8,8 +8,12 @@ data class TaskLog(
     val authorName: String,
     val minutes: Int,
     val seconds: Int = minutes * 60,
-    val workDate: String,
+    // Null only for the migrated "historic time without a daily breakdown" bucket:
+    // a real, immutable duration with no invented date, excluded from the calendar.
+    val workDate: String? = null,
     val note: String,
     val billable: Boolean,
     val createdAt: String,
+    val sessionId: String? = null,
+    val isHistoricMigrated: Boolean = false,
 )

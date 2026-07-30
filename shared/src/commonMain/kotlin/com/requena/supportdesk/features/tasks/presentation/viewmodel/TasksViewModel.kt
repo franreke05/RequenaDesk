@@ -4,22 +4,31 @@ import com.requena.supportdesk.core.common.BaseViewModel
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.WorkSession
+import com.requena.supportdesk.core.model.WorkSessionStatus
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.result.AppResult
+import com.requena.supportdesk.core.time.currentEpochMillis
 import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.core.time.isPastIsoDate
+import com.requena.supportdesk.core.time.parseIsoInstantToEpochMillis
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
-import com.requena.supportdesk.features.tasks.domain.model.TaskTimeLogDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskUpdateInput
+import com.requena.supportdesk.features.tasks.domain.usecase.CheckpointWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.CreateTaskUseCase
-import com.requena.supportdesk.features.tasks.domain.usecase.CreateTimeLogUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.DeleteTaskUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.GetActiveWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLabelsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTaskLogsUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.GetTasksUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.GetWorkSessionsForTaskUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.PauseWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.ResumeWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.StartWorkSessionUseCase
+import com.requena.supportdesk.features.tasks.domain.usecase.StopWorkSessionUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskLabelUseCase
 import com.requena.supportdesk.features.tasks.domain.usecase.UpdateTaskUseCase
 import com.requena.supportdesk.features.tasks.presentation.effect.TasksUiEffect
@@ -37,6 +46,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
+private const val CHECKPOINT_INTERVAL_MILLIS = 20 * 60 * 1000L
+
 class TasksViewModel(
     private val getTaskLabelsUseCase: GetTaskLabelsUseCase,
     private val getTasksUseCase: GetTasksUseCase,
@@ -47,7 +58,13 @@ class TasksViewModel(
     private val createTaskLabelUseCase: CreateTaskLabelUseCase,
     private val updateTaskLabelUseCase: UpdateTaskLabelUseCase,
     private val deleteTaskLabelUseCase: DeleteTaskLabelUseCase,
-    private val createTimeLogUseCase: CreateTimeLogUseCase,
+    private val getActiveWorkSessionUseCase: GetActiveWorkSessionUseCase,
+    private val startWorkSessionUseCase: StartWorkSessionUseCase,
+    private val pauseWorkSessionUseCase: PauseWorkSessionUseCase,
+    private val resumeWorkSessionUseCase: ResumeWorkSessionUseCase,
+    private val stopWorkSessionUseCase: StopWorkSessionUseCase,
+    private val checkpointWorkSessionUseCase: CheckpointWorkSessionUseCase,
+    private val getWorkSessionsForTaskUseCase: GetWorkSessionsForTaskUseCase,
 ) : BaseViewModel() {
     private val _state = MutableStateFlow(TasksUiState())
     val state: StateFlow<TasksUiState> = _state.asStateFlow()
@@ -55,7 +72,9 @@ class TasksViewModel(
     private val _effects = MutableSharedFlow<TasksUiEffect>(extraBufferCapacity = 4)
     val effects: SharedFlow<TasksUiEffect> = _effects.asSharedFlow()
 
-    private var timerJob: Job? = null
+    private var tickJob: Job? = null
+    private var checkpointJob: Job? = null
+    private val timerMutex = Mutex()
     private var categories = emptyList<TaskCategory>()
     private var tasks = emptyList<WorkTask>()
     private var logs = emptyList<TaskLog>()
@@ -71,6 +90,7 @@ class TasksViewModel(
 
     init {
         onEvent(TasksUiEvent.Load)
+        guardedLaunch(timerMutex) { recoverActiveSession() }
     }
 
     fun onEvent(event: TasksUiEvent) {
@@ -94,9 +114,21 @@ class TasksViewModel(
             is TasksUiEvent.UpdateTask -> updateTask(event)
             is TasksUiEvent.DeleteTask -> deleteTask(event.taskId)
             is TasksUiEvent.ToggleTaskCompletion -> toggleCompletion(event.taskId)
-            is TasksUiEvent.StartTimer -> startTimer(event.taskId)
+            is TasksUiEvent.StartTimer -> startOrResumeTimer(event.taskId)
             TasksUiEvent.PauseTimer -> pauseTimer()
             TasksUiEvent.StopTimer -> stopTimer()
+            is TasksUiEvent.LoadTaskSessions -> loadTaskSessions(event.taskId)
+        }
+    }
+
+    private fun loadTaskSessions(taskId: String) {
+        launch {
+            when (val result = getWorkSessionsForTaskUseCase(taskId)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> _state.update {
+                    it.copy(taskSessions = result.data, taskSessionsForTaskId = taskId)
+                }
+            }
         }
     }
 
@@ -111,6 +143,7 @@ class TasksViewModel(
         selectedClientFilterId: String? = state.value.selectedClientFilterId,
         selectedDashboardClientId: String? = state.value.selectedDashboardClientId,
         selectedDashboardCategoryIds: Set<String> = state.value.selectedDashboardCategoryIds,
+        activeSession: WorkSession? = state.value.activeSession,
         activeTaskId: String? = state.value.activeTaskId,
         activeTaskSeconds: Int = state.value.activeTaskSeconds,
         isTimerRunning: Boolean = state.value.isTimerRunning,
@@ -151,6 +184,7 @@ class TasksViewModel(
             selectedClientFilterId = selectedClientFilterId,
             selectedDashboardClientId = selectedDashboardClientId,
             selectedDashboardCategoryIds = selectedDashboardCategoryIds,
+            activeSession = activeSession,
             activeTaskId = activeTaskId,
             activeTaskSeconds = activeTaskSeconds,
             isTimerRunning = isTimerRunning,
@@ -339,124 +373,143 @@ class TasksViewModel(
         }
     }
 
-    private fun startTimer(taskId: String) {
+    // Entry point for TasksUiEvent.StartTimer. Decides start-vs-resume from the current
+    // persisted session rather than exposing a separate "resume" event, so the existing
+    // Iniciar/Pausar/Detener button wiring in AdminDashboardScreen/MobileWorkspaceApp needs no
+    // changes. A second timer on a different task is rejected (not auto-paused) per spec.
+    private fun startOrResumeTimer(taskId: String) {
         val current = state.value
         if (!current.canTrackSelectedDay) {
             publish(statusMessage = "Solo puedes registrar horas en el dia actual.")
             return
         }
-        if (current.isTimerRunning && current.activeTaskId == taskId) return
-        if (current.isTimerRunning && current.activeTaskId != taskId) {
-            pauseTimer()
+        val activeSession = current.activeSession
+        if (activeSession != null) {
+            if (activeSession.taskId == taskId) {
+                if (activeSession.status == WorkSessionStatus.PAUSED) {
+                    resumeSession(activeSession.id)
+                }
+                return
+            }
+            val activeTaskTitle = tasks.firstOrNull { it.id == activeSession.taskId }?.title ?: "otra tarea"
+            publish(statusMessage = "Hay un temporizador activo en '$activeTaskTitle'. Detenlo o pausalo antes de iniciar uno nuevo.")
+            return
         }
-        val resumeSeconds = if (current.activeTaskId == taskId) current.activeTaskSeconds else 0
-        _state.update {
-            it.copy(
-                activeTaskId = taskId,
-                selectedTaskId = taskId,
-                activeTaskSeconds = resumeSeconds,
-                isTimerRunning = true,
-                statusMessage = "Contador en marcha",
-            )
+        guardedLaunch(timerMutex) {
+            when (val result = startWorkSessionUseCase(taskId)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> applySession(result.data, selectedTaskId = taskId, statusMessage = "Contador en marcha")
+            }
         }
-        timerJob?.cancel()
-        timerJob = viewModelScope.launch {
-            var seconds = state.value.activeTaskSeconds
-            while (true) {
-                delay(1000)
-                seconds += 1
-                _state.update { currentState -> currentState.copy(activeTaskSeconds = seconds) }
+    }
+
+    private fun resumeSession(sessionId: String) {
+        guardedLaunch(timerMutex) {
+            when (val result = resumeWorkSessionUseCase(sessionId)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> applySession(result.data, statusMessage = "Contador en marcha")
             }
         }
     }
 
     private fun pauseTimer() {
-        val current = state.value
-        if (!current.isTimerRunning) return
-        timerJob?.cancel()
-        timerJob = null
-        publish(
-            activeTaskId = current.activeTaskId,
-            activeTaskSeconds = current.activeTaskSeconds,
-            isTimerRunning = false,
-            statusMessage = "Contador en pausa",
-        )
+        val sessionId = state.value.activeSession?.takeIf { it.status == WorkSessionStatus.ACTIVE }?.id ?: return
+        guardedLaunch(timerMutex) {
+            when (val result = pauseWorkSessionUseCase(sessionId)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> applySession(result.data, statusMessage = "Contador en pausa")
+            }
+        }
     }
 
     private fun stopTimer() {
-        val current = state.value
-        val taskId = current.activeTaskId ?: return
-        if (!current.canTrackSelectedDay) {
-            timerJob?.cancel()
-            timerJob = null
-            publish(
-                activeTaskId = null,
-                activeTaskSeconds = 0,
-                isTimerRunning = false,
-                statusMessage = "Solo puedes registrar horas en el dia actual.",
-            )
-            return
-        }
-        timerJob?.cancel()
-        timerJob = null
-
-        val secondsToAdd = current.activeTaskSeconds
-        val minutesToAdd = secondsToAdd / 60
-
-        if (secondsToAdd <= 0) {
-            publish(
-                activeTaskId = null,
-                activeTaskSeconds = 0,
-                isTimerRunning = false,
-                statusMessage = "Contador cancelado",
-            )
-            return
-        }
-
-        val workDate = current.selectedDay ?: currentIsoDate()
-        val authorId = AdminSessionContext.currentUserId()
-        if (authorId == null) {
-            val message = "No se encontro una sesion de administrador activa."
-            handleWorkspaceError(message)
-            publish(
-                activeTaskId = null,
-                activeTaskSeconds = 0,
-                isTimerRunning = false,
-                statusMessage = message,
-            )
-            return
-        }
-        guardedLaunch(workspaceMutex) {
-            when (
-                val result = createTimeLogUseCase(
-                    TaskTimeLogDraft(
-                        taskId = taskId,
-                        authorId = authorId,
-                        workDate = workDate,
-                        minutes = minutesToAdd,
-                        seconds = secondsToAdd,
-                        note = "Registro desde contador",
-                        billable = tasks.firstOrNull { it.id == taskId }?.clientId != null,
-                    ),
-                )
-            ) {
-                is AppResult.Error -> {
-                    handleWorkspaceError(result.message)
-                    publish(
-                        activeTaskId = null,
-                        activeTaskSeconds = 0,
-                        isTimerRunning = false,
-                        statusMessage = result.message,
-                    )
+        val sessionId = state.value.activeSession?.id ?: return
+        guardedLaunch(timerMutex) {
+            when (val result = stopWorkSessionUseCase(sessionId)) {
+                is AppResult.Error -> handleWorkspaceError(result.message)
+                is AppResult.Success -> {
+                    restartTickingFor(result.data)
+                    _state.update {
+                        it.copy(activeSession = null, activeTaskId = null, activeTaskSeconds = 0, isTimerRunning = false)
+                    }
+                    // Stopping just changed the task's accumulated total and its time_logs
+                    // history server-side, so the cached tasks/logs need a real refresh.
+                    guardedLaunch(workspaceMutex) {
+                        loadWorkspace(
+                            activeSession = null,
+                            activeTaskId = null,
+                            activeTaskSeconds = 0,
+                            isTimerRunning = false,
+                            statusMessage = "Contador detenido",
+                        )
+                    }
                 }
-                is AppResult.Success -> loadWorkspace(
-                    selectedDay = workDate,
-                    selectedTaskId = taskId,
-                    activeTaskId = null,
-                    activeTaskSeconds = 0,
-                    isTimerRunning = false,
-                    statusMessage = "Contador detenido",
-                )
+            }
+        }
+    }
+
+    private suspend fun recoverActiveSession() {
+        val result = getActiveWorkSessionUseCase()
+        if (result !is AppResult.Success) return
+        val session = result.data ?: return
+        applySession(session)
+    }
+
+    private suspend fun applySession(session: WorkSession, selectedTaskId: String? = null, statusMessage: String? = null) {
+        restartTickingFor(session)
+        _state.update {
+            it.copy(
+                activeSession = session,
+                activeTaskId = session.taskId,
+                activeTaskSeconds = elapsedSecondsFor(session),
+                isTimerRunning = session.status == WorkSessionStatus.ACTIVE,
+                selectedTaskId = selectedTaskId ?: it.selectedTaskId,
+                statusMessage = statusMessage ?: it.statusMessage,
+            )
+        }
+        if (statusMessage != null) {
+            _effects.emit(TasksUiEffect.ShowMessage(statusMessage))
+        }
+    }
+
+    /**
+     * The visible counter is always recomputed from the session's persisted timestamps
+     * (closedSegmentsSeconds + elapsed-since-openSegmentStartedAt), never incremented in
+     * place - so a missed tick, a recomposition, or a fresh recovery after restart can never
+     * duplicate or drift the displayed duration.
+     */
+    private fun elapsedSecondsFor(session: WorkSession): Int {
+        val openStartMillis = session.openSegmentStartedAt?.let(::parseIsoInstantToEpochMillis)
+        val tickingSeconds = if (session.status == WorkSessionStatus.ACTIVE && openStartMillis != null) {
+            ((currentEpochMillis() - openStartMillis) / 1000).coerceAtLeast(0)
+        } else {
+            0L
+        }
+        return (session.closedSegmentsSeconds + tickingSeconds).toInt()
+    }
+
+    private fun restartTickingFor(session: WorkSession) {
+        tickJob?.cancel()
+        checkpointJob?.cancel()
+        tickJob = null
+        checkpointJob = null
+        if (session.status != WorkSessionStatus.ACTIVE) return
+        tickJob = viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                _state.update { current ->
+                    val latest = current.activeSession
+                    if (latest == null || latest.id != session.id) current
+                    else current.copy(activeTaskSeconds = elapsedSecondsFor(latest))
+                }
+            }
+        }
+        checkpointJob = viewModelScope.launch {
+            while (true) {
+                delay(CHECKPOINT_INTERVAL_MILLIS)
+                // Idempotent heartbeat: only refreshes last_checkpoint_at server-side, never
+                // creates a row or touches duration - safe to retry/repeat indefinitely.
+                runCatching { checkpointWorkSessionUseCase(session.id) }
             }
         }
     }
@@ -468,6 +521,7 @@ class TasksViewModel(
         selectedClientFilterId: String? = state.value.selectedClientFilterId,
         selectedDashboardClientId: String? = state.value.selectedDashboardClientId,
         selectedDashboardCategoryIds: Set<String> = state.value.selectedDashboardCategoryIds,
+        activeSession: WorkSession? = state.value.activeSession,
         activeTaskId: String? = state.value.activeTaskId,
         activeTaskSeconds: Int = state.value.activeTaskSeconds,
         isTimerRunning: Boolean = state.value.isTimerRunning,
@@ -488,6 +542,7 @@ class TasksViewModel(
             else -> null
         }
         val resolvedActiveTaskId = activeTaskId?.takeIf { id -> tasks.any { it.id == id } }
+        val resolvedActiveSession = activeSession?.takeIf { it.taskId == resolvedActiveTaskId }
         val resolvedDashboardCategoryIds = selectedDashboardCategoryIds
             .filterTo(mutableSetOf()) { id -> categories.any { it.id == id } }
 
@@ -502,6 +557,7 @@ class TasksViewModel(
                 selectedClientFilterId = selectedClientFilterId,
                 selectedDashboardClientId = selectedDashboardClientId,
                 selectedDashboardCategoryIds = resolvedDashboardCategoryIds,
+                activeSession = resolvedActiveSession,
                 activeTaskId = resolvedActiveTaskId,
                 activeTaskSeconds = if (resolvedActiveTaskId == null) 0 else activeTaskSeconds,
                 isTimerRunning = resolvedActiveTaskId != null && isTimerRunning,
@@ -556,7 +612,8 @@ class TasksViewModel(
     }
 
     override fun clear() {
-        timerJob?.cancel()
+        tickJob?.cancel()
+        checkpointJob?.cancel()
         super.clear()
     }
 

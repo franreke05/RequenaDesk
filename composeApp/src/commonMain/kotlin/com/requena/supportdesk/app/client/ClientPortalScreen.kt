@@ -301,7 +301,7 @@ fun ClientPortalScreen(
     }
     val openCount = remember(portalTickets) { portalTickets.count { it.status != TicketStatus.CLOSED } }
     val monthlyMinutes = remember(visibleEntries, today) {
-        visibleEntries.filter { it.workDate.take(7) == today.take(7) }.sumOf { it.minutes }
+        visibleEntries.filter { it.workDate?.take(7) == today.take(7) }.sumOf { it.minutes }
     }
     val lastMonthPrefix = remember(today) {
         val y = today.take(4).toIntOrNull() ?: 0
@@ -311,7 +311,7 @@ fun ClientPortalScreen(
         "$prevY-${prevMo.toString().padStart(2, '0')}"
     }
     val lastMonthMinutes = remember(visibleEntries, lastMonthPrefix) {
-        visibleEntries.filter { it.workDate.take(7) == lastMonthPrefix }.sumOf { it.minutes }
+        visibleEntries.filter { it.workDate?.take(7) == lastMonthPrefix }.sumOf { it.minutes }
     }
     val allActivityItems = remember(portalTickets) { buildActivityItems(portalTickets) }
 

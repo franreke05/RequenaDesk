@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -567,6 +568,23 @@ private fun MobileSummaryScreen(
             .take(4)
     }
 
+    // Hoisted so the "Mes" KPI tile and the calendar grid below it always agree on which
+    // month they're both showing - previously this tile ignored the month entirely and summed
+    // every log ever recorded, a real bug fixed by scoping it to the same visibleMonth.
+    val initialMonth = remember(tasksState.selectedDay) {
+        tasksState.selectedDay?.let(::parseCalendarMonth) ?: parseCalendarMonth(tasksState.todayIsoDate)
+    }
+    var visibleMonth by remember { mutableStateOf(initialMonth) }
+    LaunchedEffect(initialMonth.year, initialMonth.month) {
+        visibleMonth = initialMonth
+    }
+    val visibleMonthKey = remember(visibleMonth) {
+        "${visibleMonth.year.toString().padStart(4, '0')}-${visibleMonth.month.toString().padStart(2, '0')}"
+    }
+    val visibleMonthLogs = remember(tasksState.logs, visibleMonthKey) {
+        tasksState.logs.filter { it.workDate?.take(7) == visibleMonthKey }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -574,8 +592,8 @@ private fun MobileSummaryScreen(
         item {
             OverviewHeroCard(
                 todayMinutes = tasksState.selectedDayMinutes,
-                monthMinutes = tasksState.logs.sumOf { it.minutes },
-                billableMinutes = tasksState.logs.filter { it.billable }.sumOf { it.minutes },
+                monthMinutes = visibleMonthLogs.sumOf { it.minutes },
+                billableMinutes = visibleMonthLogs.filter { it.billable }.sumOf { it.minutes },
                 openTasks = tasksState.tasks.count { !it.completed },
                 labelsCount = tasksState.categories.size,
                 selectedDay = tasksState.selectedDay ?: "-",
@@ -584,6 +602,8 @@ private fun MobileSummaryScreen(
         item {
             MobileCalendarCard(
                 tasksState = tasksState,
+                visibleMonth = visibleMonth,
+                onVisibleMonthChange = { visibleMonth = it },
                 onSelectDay = { onTasksEvent(TasksUiEvent.SelectDay(it)) },
             )
         }
@@ -657,17 +677,11 @@ private fun OverviewHeroCard(
 @Composable
 private fun MobileCalendarCard(
     tasksState: TasksUiState,
+    visibleMonth: CalendarMonth,
+    onVisibleMonthChange: (CalendarMonth) -> Unit,
     onSelectDay: (String) -> Unit,
 ) {
-    val initialMonth = remember(tasksState.selectedDay) {
-        tasksState.selectedDay?.let(::parseCalendarMonth) ?: CalendarMonth(2026, 4)
-    }
-    var visibleMonth by remember { mutableStateOf(initialMonth) }
-
-    LaunchedEffect(initialMonth.year, initialMonth.month) {
-        visibleMonth = initialMonth
-    }
-
+    var dayDetailsIsoDate by remember { mutableStateOf<String?>(null) }
     val maxMinutes = maxOf(1, tasksState.logs.maxOfOrNull { it.minutes } ?: 0)
     val cells = remember(tasksState.logs, tasksState.selectedDay, visibleMonth) {
         buildCalendarCells(
@@ -685,12 +699,12 @@ private fun MobileCalendarCard(
                     ActionButton(
                         text = "<",
                         compact = true,
-                        onClick = { visibleMonth = visibleMonth.previous() },
+                        onClick = { onVisibleMonthChange(visibleMonth.previous()) },
                     )
                     ActionButton(
                         text = ">",
                         compact = true,
-                        onClick = { visibleMonth = visibleMonth.next() },
+                        onClick = { onVisibleMonthChange(visibleMonth.next()) },
                     )
                 }
             },
@@ -728,9 +742,12 @@ private fun MobileCalendarCard(
                         maxMinutes = maxMinutes,
                         modifier = Modifier.weight(1f),
                         onClick = {
+                            if (day.minutes > 0) {
+                                dayDetailsIsoDate = day.isoDate
+                            }
                             onSelectDay(day.isoDate)
                             if (!day.inCurrentMonth) {
-                                visibleMonth = CalendarMonth(day.year, day.month)
+                                onVisibleMonthChange(CalendarMonth(day.year, day.month))
                             }
                         },
                     )
@@ -738,6 +755,96 @@ private fun MobileCalendarCard(
             }
         }
     }
+
+    DayDetailsDialog(
+        isoDate = dayDetailsIsoDate,
+        tasksState = tasksState,
+        onDismiss = { dayDetailsIsoDate = null },
+    )
+}
+
+private data class MobileDayTaskBreakdown(
+    val taskId: String,
+    val title: String,
+    val minutes: Int,
+    val billable: Boolean,
+)
+
+@Composable
+private fun DayDetailsDialog(
+    isoDate: String?,
+    tasksState: TasksUiState,
+    onDismiss: () -> Unit,
+) {
+    if (isoDate == null) return
+    val dayLogs = remember(tasksState.logs, isoDate) {
+        tasksState.logs.filter { it.workDate == isoDate }
+    }
+    val totalMinutes = dayLogs.sumOf { it.minutes }
+    val breakdown = remember(dayLogs, tasksState.tasks) {
+        dayLogs.groupBy { it.taskId }
+            .map { (taskId, taskLogs) ->
+                MobileDayTaskBreakdown(
+                    taskId = taskId,
+                    title = tasksState.tasks.firstOrNull { it.id == taskId }?.title ?: "Tarea eliminada",
+                    minutes = taskLogs.sumOf { it.minutes },
+                    billable = taskLogs.any { it.billable },
+                )
+            }
+            .sortedByDescending { it.minutes }
+    }
+    val month = remember(isoDate) { isoDate.split("-").getOrNull(1)?.toIntOrNull() ?: 1 }
+    val day = remember(isoDate) { isoDate.split("-").getOrNull(2)?.toIntOrNull() ?: 1 }
+    val year = remember(isoDate) { isoDate.split("-").getOrNull(0) ?: "" }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("$day de ${SPANISH_MONTH_NAMES[month - 1]} de $year", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Total del dia: ${formatSupportDeskDuration(totalMinutes)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (breakdown.isEmpty()) {
+                    Text(
+                        text = "Sin horas registradas este dia.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    breakdown.forEach { entry ->
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(entry.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(
+                                    formatSupportDeskDuration(entry.minutes),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Text(
+                                text = if (entry.billable) "Facturable" else "Interno / no facturable",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (entry.billable) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            ActionButton(text = "Cerrar", onClick = onDismiss)
+        },
+    )
 }
 
 @Composable

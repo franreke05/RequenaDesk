@@ -20,6 +20,8 @@ import com.requena.supportdesk.server.domain.model.ServerTaskLabelSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTaskSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTicketSnapshot
 import com.requena.supportdesk.server.domain.model.ServerTimeLogSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSegmentSnapshot
+import com.requena.supportdesk.server.domain.model.ServerWorkSessionSnapshot
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -389,6 +391,39 @@ fun timeLogJson(log: ServerTimeLogSnapshot) = buildJsonObject {
     put("note", log.note)
     put("billable", log.billable)
     put("createdAt", log.createdAt)
+    put("sessionId", log.sessionId)
+    put("isHistoricMigrated", log.isHistoricMigrated)
+}
+
+fun workSessionsJson(sessions: List<ServerWorkSessionSnapshot>) = buildJsonArray {
+    sessions.forEach { add(workSessionJson(it)) }
+}
+
+fun workSessionJson(session: ServerWorkSessionSnapshot) = buildJsonObject {
+    put("id", session.id)
+    put("ownerAdminId", session.ownerAdminId)
+    put("taskId", session.taskId)
+    put("clientId", session.clientId)
+    put("authorId", session.authorId)
+    put("startedAt", session.startedAt)
+    put("endedAt", session.endedAt)
+    put("status", session.status)
+    put("billable", session.billable)
+    put("timeSource", session.timeSource)
+    put("businessTimezone", session.businessTimezone)
+    put("lastCheckpointAt", session.lastCheckpointAt)
+    put("createdAt", session.createdAt)
+    put("updatedAt", session.updatedAt)
+    put("closedSegmentsSeconds", session.closedSegmentsSeconds)
+    put("openSegmentStartedAt", session.openSegmentStartedAt)
+    put("segments", buildJsonArray { session.segments.forEach { add(workSegmentJson(it)) } })
+}
+
+fun workSegmentJson(segment: ServerWorkSegmentSnapshot) = buildJsonObject {
+    put("id", segment.id)
+    put("sessionId", segment.sessionId)
+    put("startedAt", segment.startedAt)
+    put("endedAt", segment.endedAt)
 }
 
 fun dailyMinutesJson(entries: List<ServerDailyMinutesSnapshot>) = buildJsonArray {

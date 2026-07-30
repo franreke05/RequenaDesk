@@ -54,7 +54,7 @@ fun ClientAccountScreen(
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     val thisMonthTickets = remember(tickets, today) { tickets.count { it.createdAt.take(7) == today.take(7) } }
-    val thisMonthMinutes = remember(logs, today) { logs.filter { it.workDate.take(7) == today.take(7) }.sumOf { it.minutes } }
+    val thisMonthMinutes = remember(logs, today) { logs.filter { it.workDate?.take(7) == today.take(7) }.sumOf { it.minutes } }
     val initials = remember(clientName) { clientName.initials() }
     val planName = when (client?.serviceTier?.name) {
         "PRIORITY" -> "Plan prioritario"

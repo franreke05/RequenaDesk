@@ -2,10 +2,15 @@ package com.requena.supportdesk.features.tasks.data.mapper
 
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.WorkSegment
+import com.requena.supportdesk.core.model.WorkSession
+import com.requena.supportdesk.core.model.WorkSessionStatus
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.features.tasks.data.dto.TaskDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLabelDto
 import com.requena.supportdesk.features.tasks.data.dto.TaskLogDto
+import com.requena.supportdesk.features.tasks.data.dto.WorkSegmentDto
+import com.requena.supportdesk.features.tasks.data.dto.WorkSessionDto
 
 object TasksMapper {
     fun fromLabelDto(dto: TaskLabelDto): TaskCategory = TaskCategory(
@@ -41,5 +46,34 @@ object TasksMapper {
         note = dto.note,
         billable = dto.billable,
         createdAt = dto.createdAt,
+        sessionId = dto.sessionId,
+        isHistoricMigrated = dto.isHistoricMigrated,
+    )
+
+    fun fromWorkSegmentDto(dto: WorkSegmentDto): WorkSegment = WorkSegment(
+        id = dto.id,
+        sessionId = dto.sessionId,
+        startedAt = dto.startedAt,
+        endedAt = dto.endedAt,
+    )
+
+    fun fromWorkSessionDto(dto: WorkSessionDto): WorkSession = WorkSession(
+        id = dto.id,
+        ownerAdminId = dto.ownerAdminId,
+        taskId = dto.taskId,
+        clientId = dto.clientId,
+        authorId = dto.authorId,
+        startedAt = dto.startedAt,
+        endedAt = dto.endedAt,
+        status = WorkSessionStatus.fromRaw(dto.status),
+        billable = dto.billable,
+        timeSource = dto.timeSource,
+        businessTimezone = dto.businessTimezone,
+        lastCheckpointAt = dto.lastCheckpointAt,
+        createdAt = dto.createdAt,
+        updatedAt = dto.updatedAt,
+        segments = dto.segments.map(::fromWorkSegmentDto),
+        closedSegmentsSeconds = dto.closedSegmentsSeconds,
+        openSegmentStartedAt = dto.openSegmentStartedAt,
     )
 }

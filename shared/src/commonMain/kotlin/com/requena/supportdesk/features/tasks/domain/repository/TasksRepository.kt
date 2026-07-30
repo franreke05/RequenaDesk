@@ -2,11 +2,11 @@ package com.requena.supportdesk.features.tasks.domain.repository
 
 import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
+import com.requena.supportdesk.core.model.WorkSession
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.features.tasks.domain.model.TaskDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskLabelDraft
-import com.requena.supportdesk.features.tasks.domain.model.TaskTimeLogDraft
 import com.requena.supportdesk.features.tasks.domain.model.TaskUpdateInput
 
 interface TasksRepository {
@@ -19,5 +19,11 @@ interface TasksRepository {
     suspend fun createLabel(input: TaskLabelDraft): AppResult<TaskCategory>
     suspend fun updateLabel(labelId: String, input: TaskLabelDraft): AppResult<TaskCategory>
     suspend fun deleteLabel(labelId: String): AppResult<Unit>
-    suspend fun createTimeLog(input: TaskTimeLogDraft): AppResult<TaskLog>
+    suspend fun getActiveWorkSession(): AppResult<WorkSession?>
+    suspend fun getWorkSessionsForTask(taskId: String): AppResult<List<WorkSession>>
+    suspend fun startWorkSession(taskId: String): AppResult<WorkSession>
+    suspend fun pauseWorkSession(sessionId: String): AppResult<WorkSession>
+    suspend fun resumeWorkSession(sessionId: String): AppResult<WorkSession>
+    suspend fun stopWorkSession(sessionId: String): AppResult<WorkSession>
+    suspend fun checkpointWorkSession(sessionId: String): AppResult<WorkSession>
 }

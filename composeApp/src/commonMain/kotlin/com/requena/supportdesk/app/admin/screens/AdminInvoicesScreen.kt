@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,8 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.ClientProgramBillingPreview
 import com.requena.supportdesk.core.model.WorkTask
@@ -38,13 +42,18 @@ import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.components.feedback.ConfirmDialog
 import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
+import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
+import com.requena.supportdesk.features.invoices.domain.model.BillableUnit
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceItemKind
 import com.requena.supportdesk.features.invoices.domain.model.InvoicePdfFile
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceTotals
+import com.requena.supportdesk.features.invoices.domain.model.TaskInvoiceLine
+import com.requena.supportdesk.features.invoices.domain.model.buildTaskInvoiceLine
+import com.requena.supportdesk.features.invoices.domain.model.billableUnitsFor
 import com.requena.supportdesk.features.invoices.domain.model.calculateInvoiceTotals
-import com.requena.supportdesk.features.invoices.domain.model.roundedInvoiceHours
+import com.requena.supportdesk.features.invoices.domain.model.pending
 import com.requena.supportdesk.features.invoices.presentation.event.InvoicesUiEvent
 import com.requena.supportdesk.features.invoices.presentation.state.InvoicesUiState
 import com.requena.supportdesk.features.tasks.presentation.state.TasksUiState
@@ -73,6 +82,7 @@ fun AdminInvoicesScreen(
             onRefresh = { onEvent(InvoicesUiEvent.RefreshSavedInvoices) },
             onOpenInvoice = { onEvent(InvoicesUiEvent.OpenSavedInvoice(it.fileName)) },
             onDeleteInvoice = { onEvent(InvoicesUiEvent.DeleteSavedInvoice(it.fileName)) },
+            onVoidInvoice = { invoice, reason -> onEvent(InvoicesUiEvent.VoidInvoice(invoice.fileName, reason)) },
         )
 
         if (showInvoiceForm) {
@@ -84,7 +94,9 @@ fun AdminInvoicesScreen(
                 programBillingPreview = programBillingPreview,
                 onLoadProgramBillingPreview = onLoadProgramBillingPreview,
                 onCancel = { showInvoiceForm = false },
-                onGenerate = { input -> onEvent(InvoicesUiEvent.GenerateInvoice(input)) },
+                onGenerate = { input, selectedLogIds ->
+                    onEvent(InvoicesUiEvent.GenerateInvoice(input, selectedLogIds))
+                },
             )
         }
     }
@@ -97,9 +109,12 @@ private fun InvoiceLibrary(
     onRefresh: () -> Unit,
     onOpenInvoice: (InvoicePdfFile) -> Unit,
     onDeleteInvoice: (InvoicePdfFile) -> Unit,
+    onVoidInvoice: (InvoicePdfFile, String?) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     var invoicePendingDeletion by rememberSaveable { mutableStateOf<String?>(null) }
+    var invoicePendingVoid by rememberSaveable { mutableStateOf<String?>(null) }
+    var voidReason by rememberSaveable { mutableStateOf("") }
     SectionCard(
         title = "Facturas guardadas",
         subtitle = "PDFs en Escritorio > Facturas OryKai",
@@ -137,10 +152,17 @@ private fun InvoiceLibrary(
                 else -> state.savedInvoices.forEach { invoice ->
                     SavedInvoiceRow(
                         invoice = invoice,
+                        isVoided = state.isVoided(invoice),
                         isDeleting = state.deletingInvoiceFileName == invoice.fileName,
+                        isVoiding = state.voidingInvoiceFileName == invoice.fileName,
                         canDelete = state.deletingInvoiceFileName == null,
+                        canVoid = state.voidingInvoiceFileName == null,
                         onOpen = { onOpenInvoice(invoice) },
                         onDelete = { invoicePendingDeletion = invoice.fileName },
+                        onVoid = {
+                            voidReason = ""
+                            invoicePendingVoid = invoice.fileName
+                        },
                     )
                 }
             }
@@ -156,9 +178,9 @@ private fun InvoiceLibrary(
     invoicePendingDeletion?.let { fileName ->
         ConfirmDialog(
             visible = true,
-            title = "Borrar factura",
-            message = "Se borrará el PDF local «$fileName». Esta acción no se puede deshacer.",
-            confirmText = "Borrar",
+            title = "Borrar PDF",
+            message = "Se borrará únicamente el archivo PDF local «$fileName». La factura y su estado de facturación no cambian: si necesitas liberar el tiempo asociado, anula la factura en lugar de borrar el PDF. Esta acción no se puede deshacer.",
+            confirmText = "Borrar PDF",
             dismissText = "Cancelar",
             onConfirm = {
                 invoicePendingDeletion = null
@@ -167,15 +189,53 @@ private fun InvoiceLibrary(
             onDismiss = { invoicePendingDeletion = null },
         )
     }
+    invoicePendingVoid?.let { fileName ->
+        SectionCard(title = "Anular factura") {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Text(
+                    "Se anulará «$fileName». El tiempo que llevaba asociado volverá a estar pendiente de facturar. La factura y el PDF se conservan para auditoría.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = voidReason,
+                    onValueChange = { voidReason = it },
+                    label = { Text("Motivo (opcional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 1,
+                    maxLines = 3,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    SecondaryButton(
+                        text = "Cancelar",
+                        onClick = { invoicePendingVoid = null },
+                        modifier = Modifier.weight(1f),
+                    )
+                    PrimaryButton(
+                        text = "Anular factura",
+                        onClick = {
+                            state.savedInvoices.firstOrNull { it.fileName == fileName }
+                                ?.let { onVoidInvoice(it, voidReason.ifBlank { null }) }
+                            invoicePendingVoid = null
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun SavedInvoiceRow(
     invoice: InvoicePdfFile,
+    isVoided: Boolean,
     isDeleting: Boolean,
+    isVoiding: Boolean,
     canDelete: Boolean,
+    canVoid: Boolean,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    onVoid: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     Row(
@@ -183,7 +243,17 @@ private fun SavedInvoiceRow(
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(invoice.fileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                Text(invoice.fileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (isVoided) {
+                    Text(
+                        "ANULADA",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
             Text(
                 text = formatFileSize(invoice.sizeBytes),
                 style = MaterialTheme.typography.bodySmall,
@@ -191,8 +261,16 @@ private fun SavedInvoiceRow(
             )
         }
         SecondaryButton(text = "Abrir PDF", onClick = onOpen, enabled = !isDeleting)
+        if (!isVoided) {
+            SecondaryButton(
+                text = "Anular factura",
+                onClick = onVoid,
+                enabled = !isVoiding && canVoid,
+                isLoading = isVoiding,
+            )
+        }
         SecondaryButton(
-            text = "Borrar",
+            text = "Borrar PDF",
             onClick = onDelete,
             enabled = !isDeleting && canDelete,
             isLoading = isDeleting,
@@ -209,11 +287,11 @@ private fun InvoiceForm(
     programBillingPreview: ClientProgramBillingPreview?,
     onLoadProgramBillingPreview: (clientId: String, period: String) -> Unit,
     onCancel: () -> Unit,
-    onGenerate: (CreateInvoiceInput) -> Unit,
+    onGenerate: (CreateInvoiceInput, List<String>) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     var selectedClientId by remember(preselectedClientId) { mutableStateOf(preselectedClientId.orEmpty()) }
-    val selectedTaskIds = remember { mutableStateListOf<String>() }
+    var selectedLogIds by remember { mutableStateOf(emptySet<String>()) }
     val activities = remember { mutableStateListOf<InvoiceActivityDraft>() }
     var nextActivityId by remember { mutableStateOf(0) }
     var issuedAt by remember { mutableStateOf(currentIsoDate()) }
@@ -238,31 +316,41 @@ private fun InvoiceForm(
         }
     }
     val clientTasks = tasksState.tasks.filter { it.clientId == selectedClientId }
-    val selectedTasks = clientTasks.filter { it.id in selectedTaskIds }
-    val availableTasks = clientTasks.filter { it.id !in selectedTaskIds }
-    val tasksWithRecordedHours = availableTasks.filter { task ->
-        roundedInvoiceHours(tasksState.trackedSecondsFor(task)) > 0
+    val clientTaskLogs = remember(tasksState.logs, clientTasks) {
+        val clientTaskIds = clientTasks.map { it.id }.toSet()
+        tasksState.logs.filter { it.taskId in clientTaskIds }
+    }
+    val pendingUnitsByTask = remember(clientTaskLogs, state.billedLogIds) {
+        billableUnitsFor(clientTaskLogs, state.billedLogIds).pending().groupBy { it.taskId }
+    }
+    val allPendingLogIds = remember(pendingUnitsByTask) {
+        pendingUnitsByTask.values.flatten().map { it.logId }.toSet()
+    }
+    // selectedLogIds may still reference units that are no longer pending (billed elsewhere,
+    // or the client changed) - only the intersection is ever actually selectable/summarized.
+    val selectedUnits = remember(pendingUnitsByTask, selectedLogIds) {
+        pendingUnitsByTask.values.flatten().filter { it.logId in selectedLogIds }
+    }
+    val selectedTaskIdsDistinct = selectedUnits.map { it.taskId }.distinct()
+    val taskLines = remember(selectedUnits, selectedTaskIdsDistinct) {
+        selectedTaskIdsDistinct.map { taskId -> buildTaskInvoiceLine(taskId, selectedUnits) }
     }
     val parsedHourlyRate = hourlyRate.toInvoiceDecimalOrNull()
     val rate = parsedHourlyRate ?: 0.0
     val parsedTaxRate = taxPercent.toInvoiceDecimalOrNull()
     val taxRate = parsedTaxRate ?: 0.0
-    val taskItems = selectedTasks.mapIndexed { index, task ->
-        task.toInvoiceItem(
-            hours = roundedInvoiceHours(tasksState.trackedSecondsFor(task)),
-            hourlyRate = rate,
-            sortOrder = index,
-        )
+    val taskItems = taskLines.mapIndexed { index, line ->
+        val task = clientTasks.first { it.id == line.taskId }
+        task.toInvoiceItem(hours = line.decimalHours, hourlyRate = rate, sortOrder = index)
     }
     val activityItems = activities.mapIndexedNotNull { index, draft ->
-        draft.toInvoiceItem(sortOrder = selectedTasks.size + index)
+        draft.toInvoiceItem(sortOrder = taskLines.size + index)
     }
     val invoiceItems = taskItems + activityItems
     val totals = calculateInvoiceTotals(invoiceItems, taxRate)
     val activitiesAreValid = activities.all(InvoiceActivityDraft::isValid)
-    val hasBillableTasks = selectedTasks.isNotEmpty()
+    val hasBillableTasks = taskLines.isNotEmpty()
     val isValid = selectedClient != null && invoiceItems.isNotEmpty() && activitiesAreValid &&
-        selectedTasks.all { task -> roundedInvoiceHours(tasksState.trackedSecondsFor(task)) > 0 } &&
         issuedAt.isNotBlank() && parsedTaxRate != null && taxRate.isFinite() && taxRate in 0.0..100.0 &&
         (!hasBillableTasks || parsedHourlyRate != null && rate.isFinite() && rate > 0.0)
 
@@ -282,38 +370,63 @@ private fun InvoiceForm(
                 enabled = clients.isNotEmpty(),
                 onSelect = { clientId ->
                     selectedClientId = clientId
-                    selectedTaskIds.clear()
+                    selectedLogIds = emptySet()
                 },
             )
 
-            InvoiceSelector(
-                label = "Agregar tarea",
-                selectedLabel = taskSelectorLabel(selectedClient, clientTasks, availableTasks),
-                options = availableTasks.map { InvoiceOption(it.id, it.title) },
-                enabled = selectedClient != null && availableTasks.isNotEmpty(),
-                onSelect = { taskId -> selectedTaskIds.add(taskId) },
-            )
-
-            if (selectedClient != null && availableTasks.isNotEmpty()) {
-                SecondaryButton(
-                    text = "Agregar todas las tareas con horas",
-                    onClick = {
-                        tasksWithRecordedHours.forEach { task -> selectedTaskIds.add(task.id) }
-                    },
-                    enabled = tasksWithRecordedHours.isNotEmpty(),
-                    fullWidth = true,
-                )
+            if (selectedClient != null) {
+                Text("Tiempo pendiente de facturar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (pendingUnitsByTask.isEmpty()) {
+                    Text(
+                        "Este cliente no tiene tiempo facturable pendiente.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        SecondaryButton(
+                            text = "Seleccionar todo",
+                            onClick = { selectedLogIds = allPendingLogIds },
+                            enabled = selectedLogIds != allPendingLogIds,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SecondaryButton(
+                            text = "Deseleccionar todo",
+                            onClick = { selectedLogIds = emptySet() },
+                            enabled = selectedLogIds.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    TaskUnitSelectionTree(
+                        clientTasks = clientTasks,
+                        pendingUnitsByTask = pendingUnitsByTask,
+                        selectedLogIds = selectedLogIds,
+                        onToggleUnit = { logId, checked ->
+                            selectedLogIds = if (checked) selectedLogIds + logId else selectedLogIds - logId
+                        },
+                        onToggleGroup = { units, checked ->
+                            val ids = units.map { it.logId }.toSet()
+                            selectedLogIds = if (checked) selectedLogIds + ids else selectedLogIds - ids
+                        },
+                    )
+                }
             }
 
-            if (selectedTasks.isNotEmpty()) {
-                Text("Tareas incluidas", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                selectedTasks.forEach { task ->
-                    val hours = roundedInvoiceHours(tasksState.trackedSecondsFor(task))
-                    SelectedInvoiceTaskRow(
-                        task = task,
-                        hours = hours,
+            if (taskLines.isNotEmpty()) {
+                Text("Resumen de la seleccion", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "${selectedTaskIdsDistinct.size} tarea(s) · " +
+                        "${selectedUnits.mapNotNull { it.workDate }.distinct().size} dia(s) · " +
+                        "${selectedUnits.mapNotNull { it.sessionId }.distinct().size} sesion(es)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                taskLines.forEach { line ->
+                    val task = clientTasks.firstOrNull { it.id == line.taskId }
+                    SelectedInvoiceTaskLineRow(
+                        taskTitle = task?.title ?: "Tarea",
+                        line = line,
                         hourlyRate = rate,
-                        onRemove = { selectedTaskIds.remove(task.id) },
                     )
                 }
             }
@@ -482,6 +595,7 @@ private fun InvoiceForm(
                                 items = invoiceItems,
                                 reference = reference.ifBlank { null },
                             ),
+                            selectedUnits.map { it.logId },
                         )
                     },
                     modifier = Modifier.weight(1f),
@@ -547,28 +661,149 @@ private fun InvoiceActivityRow(
 }
 
 @Composable
-private fun SelectedInvoiceTaskRow(
-    task: WorkTask,
-    hours: Int,
+private fun SelectedInvoiceTaskLineRow(
+    taskTitle: String,
+    line: TaskInvoiceLine,
     hourlyRate: Double,
-    onRemove: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(spacing.md),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(task.title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = "$hours h × ${formatEuro(hourlyRate)} = ${formatEuro(hours * hourlyRate)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (hours > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-            )
-        }
-        SecondaryButton(text = "Quitar", onClick = onRemove)
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = spacing.xs)) {
+        Text(taskTitle, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = "Real: ${formatSupportDeskDuration(line.realMinutes)} · Facturable: " +
+                "${decimalHoursLabel(line.decimalHours)} h × ${formatEuro(hourlyRate)} = " +
+                formatEuro(line.decimalHours * hourlyRate),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
+
+/**
+ * Task > day (or the historic bucket) > individual session, reused Checkbox/TriStateCheckbox
+ * components only - matches the tri-state semantics required for hierarchical selection
+ * (checked/unchecked/partially selected) without introducing custom controls.
+ */
+@Composable
+private fun TaskUnitSelectionTree(
+    clientTasks: List<WorkTask>,
+    pendingUnitsByTask: Map<String, List<BillableUnit>>,
+    selectedLogIds: Set<String>,
+    onToggleUnit: (String, Boolean) -> Unit,
+    onToggleGroup: (List<BillableUnit>, Boolean) -> Unit,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    var expandedTaskIds by remember { mutableStateOf(emptySet<String>()) }
+    var expandedDayKeys by remember { mutableStateOf(emptySet<String>()) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        clientTasks.forEach { task ->
+            val units = pendingUnitsByTask[task.id].orEmpty()
+            if (units.isEmpty()) return@forEach
+            val selectedCount = units.count { it.logId in selectedLogIds }
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expandedTaskIds = expandedTaskIds.toggled(task.id) }
+                        .padding(vertical = spacing.xs),
+                ) {
+                    TriStateCheckbox(
+                        state = triState(selectedCount, units.size),
+                        onClick = { onToggleGroup(units, selectedCount < units.size) },
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(task.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "Pendiente: ${formatSupportDeskDuration(units.sumOf { it.minutes })} ($selectedCount/${units.size} seleccionado)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = if (task.id in expandedTaskIds) "Ocultar dias" else "Ver dias",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                if (task.id in expandedTaskIds) {
+                    val byDay = units.groupBy { it.workDate ?: HISTORIC_UNIT_KEY }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(start = spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        byDay.forEach { (dayKey, dayUnits) ->
+                            val fullDayKey = "${task.id}|$dayKey"
+                            val daySelectedCount = dayUnits.count { it.logId in selectedLogIds }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = dayUnits.size > 1) {
+                                        expandedDayKeys = expandedDayKeys.toggled(fullDayKey)
+                                    }
+                                    .padding(vertical = 2.dp),
+                            ) {
+                                TriStateCheckbox(
+                                    state = triState(daySelectedCount, dayUnits.size),
+                                    onClick = { onToggleGroup(dayUnits, daySelectedCount < dayUnits.size) },
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (dayKey == HISTORIC_UNIT_KEY) "Tiempo historico sin desglose" else dayKey,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        text = formatSupportDeskDuration(dayUnits.sumOf { it.minutes }),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (dayUnits.size > 1) {
+                                    Text(
+                                        text = if (fullDayKey in expandedDayKeys) "Ocultar sesiones" else "Ver sesiones",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            if (dayUnits.size > 1 && fullDayKey in expandedDayKeys) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(start = spacing.lg)) {
+                                    dayUnits.forEach { unit ->
+                                        Row(modifier = Modifier.fillMaxWidth()) {
+                                            Checkbox(
+                                                checked = unit.logId in selectedLogIds,
+                                                onCheckedChange = { checked -> onToggleUnit(unit.logId, checked) },
+                                            )
+                                            Text(
+                                                text = "Sesion - ${formatSupportDeskDuration(unit.minutes)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.padding(top = 12.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun triState(selectedCount: Int, total: Int): ToggleableState = when {
+    selectedCount <= 0 -> ToggleableState.Off
+    selectedCount >= total -> ToggleableState.On
+    else -> ToggleableState.Indeterminate
+}
+
+private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
+
+private fun decimalHoursLabel(hours: Double): String = hours.toFixedString(2).replace('.', ',')
+
+private const val HISTORIC_UNIT_KEY = "__HISTORIC__"
 
 @Composable
 private fun InvoiceSummary(
@@ -667,28 +902,17 @@ private data class InvoiceActivityDraft(
 }
 
 private fun WorkTask.toInvoiceItem(
-    hours: Int,
+    hours: Double,
     hourlyRate: Double,
     sortOrder: Int,
 ): CreateInvoiceItemInput = CreateInvoiceItemInput(
     description = title,
     detail = description.ifBlank { null },
-    quantity = hours.toDouble(),
+    quantity = hours,
     unitPrice = hourlyRate,
     sortOrder = sortOrder,
     kind = InvoiceItemKind.TASK_HOURS,
 )
-
-private fun taskSelectorLabel(
-    selectedClient: Client?,
-    clientTasks: List<WorkTask>,
-    availableTasks: List<WorkTask>,
-): String = when {
-    selectedClient == null -> "Selecciona primero un cliente"
-    clientTasks.isEmpty() -> "Este cliente no tiene tareas"
-    availableTasks.isEmpty() -> "Todas las tareas están incluidas"
-    else -> "Seleccionar tarea"
-}
 
 private fun formatEuro(value: Double): String = "${value.toFixedString(2).replace('.', ',')} EUR"
 
