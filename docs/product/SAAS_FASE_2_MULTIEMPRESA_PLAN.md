@@ -1,5 +1,20 @@
 # Fase 2 — Multiempresa: empresas, miembros y roles, migración de OryKai, alta y onboarding
 
+> **Estado (23-oct-2026): implementada en `feat/multiempresa`, sin desplegar.**
+> Commits: `73a43b1` aislamiento por empresa (V17, JWT) · `23fb369` alta, invitaciones, `/org` y
+> permisos · `b3870c5` app (alta, onboarding, Ajustes) · `a778297` flecos (V18 facturas locales
+> solo para OryKai, tickets filtrados en SQL, roles y bajas al momento, barra inferior con «Más»).
+> Despliegue: `docs/V17_V18_MULTIEMPRESA_DEPLOYMENT.md`.
+>
+> Diferencias con el plan: las sesiones de trabajo (temporizador) siguen siendo por persona;
+> el borrador del onboarding vive en el servidor (cada paso se guarda) en lugar de en local;
+> los tokens se validan contra el estado del usuario con una caché de 30 s.
+>
+> Pendiente para fases siguientes: verificación de email y recuperación de contraseña (necesitan
+> proveedor de email), numeración de tickets por empresa (sigue global `RDS-000001`), selector si
+> una persona pertenece a varias empresas, la app móvil (iOS/Android) no tiene alta ni Ajustes,
+> y la compilación de iOS no se ha comprobado (solo se compila en macOS).
+
 ## Contexto
 El plan SaaS aprobado (`docs/product/SAAS_TODO_EN_UNO_PLAN.md` §5, §10) pide que cada empresa tenga su propio espacio. Hoy no existe esa entidad:
 - Todo cuelga de `owner_admin_id` (el usuario admin).
