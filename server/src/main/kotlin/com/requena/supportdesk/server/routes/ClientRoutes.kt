@@ -31,7 +31,7 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.plugins.ratelimit.rateLimit
 
-fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
+fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService, plans: com.requena.supportdesk.server.domain.service.OrganizationPlanService? = null) {
     route("/admin") {
         get("/clients") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
@@ -60,6 +60,7 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             ) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid client payload"))
             }
+            plans?.ensureClientCapacity(organizationId)
             call.respondJson(
                 HttpStatusCode.Created,
                 successResponse("/admin/clients", clientProvisioningJson(service.createdClient(request, organizationId))),

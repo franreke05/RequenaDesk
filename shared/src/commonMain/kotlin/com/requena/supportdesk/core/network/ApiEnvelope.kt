@@ -34,7 +34,7 @@ suspend inline fun <reified T> HttpResponse.requireApiData(): T {
         val message = runCatching {
             supportDeskNetworkJson.decodeFromString<ApiErrorEnvelope>(payload).message
         }.getOrDefault("El servidor respondió con estado ${status.value}.")
-        error(message)
+        error(planAwareMessage(message))
     }
     return supportDeskNetworkJson.decodeFromString<ApiEnvelope<T>>(payload).data
 }
@@ -45,7 +45,7 @@ suspend fun HttpResponse.requireSuccess() {
         val message = runCatching {
             supportDeskNetworkJson.decodeFromString<ApiErrorEnvelope>(payload).message
         }.getOrDefault("El servidor respondió con estado ${status.value}.")
-        error(message)
+        error(planAwareMessage(message))
     }
 }
 
@@ -54,3 +54,17 @@ inline fun <reified T> jsonRequestBody(value: T): TextContent =
         text = supportDeskNetworkJson.encodeToString(value),
         contentType = ContentType.Application.Json,
     )
+
+/**
+ * Plan gates (402) and plan limits (409) can come from any screen: show them in Spanish with
+ * a pointer to Ajustes › Plan y pagos. Other messages pass through unchanged.
+ */
+@PublishedApi
+internal fun planAwareMessage(message: String): String {
+    val normalized = message.lowercase()
+    return if ("not included in your plan" in normalized || "limit of your plan" in normalized) {
+        com.requena.supportdesk.features.plan.planMessage(message)
+    } else {
+        message
+    }
+}

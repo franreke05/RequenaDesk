@@ -16,3 +16,8 @@ class ServerValidationException(
 class ServerForbiddenException(
     override val message: String,
 ) : RuntimeException(message)
+
+/** The company plan does not include this module (HTTP 402). Data is kept; upgrading restores it. */
+class ServerModuleNotIncludedException(
+    val module: String,
+) : RuntimeException("Module not included in your plan: $module")

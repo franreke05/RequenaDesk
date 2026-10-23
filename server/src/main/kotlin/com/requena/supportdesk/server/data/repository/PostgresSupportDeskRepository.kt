@@ -63,6 +63,7 @@ import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.domain.repository.OrganizationRepository
+import com.requena.supportdesk.server.domain.repository.OrganizationPlanRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import com.requena.supportdesk.server.security.ClientAccessCodeGenerator
 import java.sql.Connection
@@ -109,7 +110,9 @@ internal fun ResultSet.toAuthIdentity() = ServerAuthIdentity(
 
 class PostgresSupportDeskRepository(
     private val dataSource: PostgresSupportDeskDataSource,
-) : SupportDeskRepository, OrganizationRepository by PostgresOrganizationRepository(dataSource) {
+) : SupportDeskRepository,
+    OrganizationRepository by PostgresOrganizationRepository(dataSource),
+    OrganizationPlanRepository by PostgresOrganizationPlanRepository(dataSource) {
 
     override fun identityForUser(userId: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
         connection.prepareStatement(

@@ -53,6 +53,7 @@ import com.requena.supportdesk.features.onboarding.OnboardingStep
 import com.requena.supportdesk.features.onboarding.OnboardingUiEvent
 import com.requena.supportdesk.features.onboarding.OnboardingUiState
 import com.requena.supportdesk.features.onboarding.OnboardingViewModel
+import com.requena.supportdesk.features.plan.recommendedPlan
 
 private val TEAM_SIZES = listOf("Solo yo", "2-5", "6-20", "Más de 20")
 
@@ -208,6 +209,17 @@ private fun GoalsStep(state: OnboardingUiState, onEvent: (OnboardingUiEvent) -> 
             "Te recomendamos: " + state.recommended.joinToString(" · ") { it.label },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary,
+        )
+        val planName = when (recommendedPlan(state.goals, state.teamSize)) {
+            "TEAM" -> "Equipo"
+            "PRO" -> "Pro"
+            "AUTONOMO" -> "Autónomo"
+            else -> "Gratis"
+        }
+        Text(
+            "Plan que encaja contigo: $planName. Ahora tienes 14 días de Pro gratis; lo eliges después en Ajustes › Plan y pagos.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

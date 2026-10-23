@@ -24,6 +24,9 @@ fun Application.configureMonitoring() {
         exception<ServerValidationException> { call, cause ->
             call.respondJson(HttpStatusCode.BadRequest, errorResponse(cause.message))
         }
+        exception<com.requena.supportdesk.server.domain.model.ServerModuleNotIncludedException> { call, cause ->
+            call.respondJson(HttpStatusCode.PaymentRequired, errorResponse(cause.message.orEmpty()))
+        }
         exception<com.requena.supportdesk.server.domain.model.ServerForbiddenException> { call, cause ->
             call.respondJson(HttpStatusCode.Forbidden, errorResponse(cause.message))
         }

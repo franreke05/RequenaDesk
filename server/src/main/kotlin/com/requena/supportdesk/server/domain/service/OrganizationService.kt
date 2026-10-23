@@ -53,6 +53,8 @@ class OrganizationService(
     private val clock: Clock = Clock.systemUTC(),
     // Lets the token check drop its cached view of a member right after a change.
     private val onMemberChanged: (userId: String) -> Unit = {},
+    // Plan limits (phase 3); null in tests that do not care about plans.
+    private val plans: OrganizationPlanService? = null,
 ) {
     // --- Public entry points (no token) -------------------------------------------------
 
@@ -74,8 +76,14 @@ class OrganizationService(
         val email = request.email.trim().requireEmail()
         request.password.requirePassword()
         requireLegalAcceptance(request.acceptTerms, request.acceptPrivacy)
+        val codeHash = PasswordHasher.hashToken(code)
+        // The invitation itself counted as a seat while pending, so it may take that seat now;
+        // the check stops joins that would exceed the plan after a downgrade.
+        repository.pendingInvitationTarget(codeHash)?.let { (organizationId, role) ->
+            plans?.ensureUserCapacityForJoin(organizationId, role)
+        }
         val identity = repository.acceptOrganizationInvitation(
-            codeHash = PasswordHasher.hashToken(code),
+            codeHash = codeHash,
             name = name,
             email = email,
             password = request.password,
@@ -143,6 +151,7 @@ class OrganizationService(
         requireManager(identity)
         val role = request.role.trim().uppercase()
         if (role !in OrganizationRoles.invitable) throw ServerValidationException("Invitations can grant ADMIN, MEMBER or ACCOUNTANT")
+        plans?.ensureUserCapacity(identity.tenant(), role)
         val code = generateInvitationCode()
         val invitation = repository.createOrganizationInvitation(
             organizationId = identity.tenant(),

@@ -5,6 +5,7 @@ import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.ServerConflictException
 import com.requena.supportdesk.server.domain.model.ServerNotFoundException
 import com.requena.supportdesk.server.domain.model.ServerOrganizationInvitationSnapshot
+import com.requena.supportdesk.server.domain.model.TRIAL_DAYS
 import com.requena.supportdesk.server.domain.model.ServerOrganizationMemberSnapshot
 import com.requena.supportdesk.server.domain.model.ServerOrganizationSnapshot
 import com.requena.supportdesk.server.domain.model.UpdateOrganizationRequest
@@ -35,7 +36,37 @@ class PostgresOrganizationRepository(
         val userId = insertStaffUser(connection, name, email, password)
         insertMember(connection, organizationId, userId, "OWNER")
         recordLegalAcceptances(connection, userId, legalVersion)
+        // Every new company starts with the Pro trial (V19); it becomes Free when it ends.
+        connection.prepareStatement(
+            """
+            INSERT INTO organization_subscriptions (organization_id, plan_key, status, trial_ends_at)
+            VALUES (CAST(? AS uuid), 'PRO', 'TRIAL', NOW() + make_interval(days => ?))
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, organizationId)
+            statement.setInt(2, TRIAL_DAYS.toInt())
+            statement.executeUpdate()
+        }
+        connection.prepareStatement(
+            "INSERT INTO organization_plan_events (organization_id, action, to_plan, actor_user_id) VALUES (CAST(? AS uuid), 'TRIAL_STARTED', 'PRO', CAST(? AS uuid))",
+        ).use { statement ->
+            statement.setString(1, organizationId)
+            statement.setString(2, userId)
+            statement.executeUpdate()
+        }
         requireNotNull(identity(connection, userId))
+    }
+
+    override fun pendingInvitationTarget(codeHash: String): Pair<String, String>? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT organization_id::text, role FROM organization_invitations
+            WHERE code_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, codeHash)
+            statement.executeQuery().use { if (it.next()) it.getString(1) to it.getString(2) else null }
+        }
     }
 
     override fun organization(organizationId: String): ServerOrganizationSnapshot = dataSource.withConnection { connection ->

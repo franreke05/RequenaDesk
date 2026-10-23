@@ -62,8 +62,18 @@ import com.requena.supportdesk.features.organization.presentation.OrganizationUi
 import com.requena.supportdesk.features.organization.presentation.OrganizationUiEvent
 import com.requena.supportdesk.features.organization.presentation.OrganizationUiState
 import com.requena.supportdesk.features.organization.presentation.OrganizationViewModel
+import com.requena.supportdesk.features.plan.PlanUiEffect
+import com.requena.supportdesk.features.plan.PlanUiEvent
+import com.requena.supportdesk.features.plan.PlanViewModel
 
-private enum class SettingsTab(val title: String) { COMPANY("Empresa"), TEAM("Usuarios"), APPEARANCE("Apariencia") }
+/** Ajustes tabs. [PLAN] can be opened directly (e.g. from a locked module). */
+enum class SettingsTab(val title: String) {
+    COMPANY("Empresa"),
+    TEAM("Usuarios"),
+    PLAN("Plan y pagos"),
+    OPERATOR("Solicitudes de plan"),
+    APPEARANCE("Apariencia"),
+}
 
 /**
  * Ajustes. Owners and admins see Empresa, Usuarios and Apariencia; members and the gestoría
@@ -72,19 +82,42 @@ private enum class SettingsTab(val title: String) { COMPANY("Empresa"), TEAM("Us
 @Composable
 fun AdminSettingsScreen(
     viewModel: OrganizationViewModel,
+    planViewModel: PlanViewModel,
     modifier: Modifier = Modifier,
+    requestedTab: SettingsTab? = null,
+    onRequestedTabShown: () -> Unit = {},
 ) {
     val user by AdminSessionContext.user.collectAsState()
     val state by viewModel.state.collectAsState()
+    val planState by planViewModel.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             if (effect is OrganizationUiEffect.ShowMessage) snackbar.showSnackbar(effect.message)
         }
     }
+    LaunchedEffect(planViewModel) {
+        planViewModel.onEvent(PlanUiEvent.Load)
+        planViewModel.effects.collect { effect ->
+            if (effect is PlanUiEffect.ShowMessage) snackbar.showSnackbar(effect.message)
+        }
+    }
     val canManage = user?.canManageCompany == true
-    val tabs = if (canManage) SettingsTab.entries else listOf(SettingsTab.COMPANY, SettingsTab.APPEARANCE)
+    val isOperator = canManage && planState.overview?.isPlatformOperator == true
+    val tabs = SettingsTab.entries.filter { tab ->
+        when (tab) {
+            SettingsTab.TEAM -> canManage
+            SettingsTab.OPERATOR -> isOperator
+            else -> true
+        }
+    }
     var selected by rememberSaveable { mutableStateOf(SettingsTab.COMPANY) }
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            selected = requestedTab
+            onRequestedTabShown()
+        }
+    }
     if (selected !in tabs) selected = tabs.first()
 
     Box(modifier = modifier) {
@@ -101,6 +134,8 @@ fun AdminSettingsScreen(
                 when (selected) {
                     SettingsTab.COMPANY -> CompanyTab(state, canManage, viewModel::onEvent)
                     SettingsTab.TEAM -> TeamTab(state, user, viewModel::onEvent)
+                    SettingsTab.PLAN -> PlanTab(planState, canManage, planViewModel::onEvent)
+                    SettingsTab.OPERATOR -> OperatorRequestsTab(planState, planViewModel::onEvent)
                     SettingsTab.APPEARANCE -> AppearanceTab()
                 }
             }

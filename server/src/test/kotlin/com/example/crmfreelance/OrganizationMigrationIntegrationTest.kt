@@ -57,7 +57,7 @@ class OrganizationMigrationIntegrationTest {
             }
             val countsBefore = dataSource.connection.use(::rowCounts)
 
-            assertEquals(2, flyway(dataSource, target = null).migrate().migrationsExecuted)
+            assertEquals(3, flyway(dataSource, target = null).migrate().migrationsExecuted)
 
             dataSource.connection.use { connection ->
                 assertEquals(countsBefore, rowCounts(connection), "no row may be lost")
@@ -100,6 +100,19 @@ class OrganizationMigrationIntegrationTest {
                     listOf("Empresa de Bea" to "false", "OryKai" to "true"),
                     connection.pairs("SELECT name, local_pdf_invoices::text FROM organizations ORDER BY name"),
                 )
+
+                // V19: every existing company is on the free BETA plan; OryKai is the platform operator.
+                assertEquals(
+                    listOf("Empresa de Bea" to "BETA", "OryKai" to "BETA"),
+                    connection.pairs(
+                        "SELECT o.name, s.status FROM organizations o JOIN organization_subscriptions s ON s.organization_id = o.id ORDER BY o.name",
+                    ),
+                )
+                assertEquals(
+                    listOf("Empresa de Bea" to "false", "OryKai" to "true"),
+                    connection.pairs("SELECT name, is_platform_operator::text FROM organizations ORDER BY name"),
+                )
+                assertEquals("5", connection.single("SELECT COUNT(*) FROM subscription_plans"))
             }
         }
     }

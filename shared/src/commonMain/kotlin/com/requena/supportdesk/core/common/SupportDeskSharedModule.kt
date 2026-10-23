@@ -158,6 +158,9 @@ object SupportDeskSharedModule {
     fun createOrganizationViewModel() =
         com.requena.supportdesk.features.organization.presentation.OrganizationViewModel(organizationRepository)
 
+    fun createPlanViewModel() =
+        com.requena.supportdesk.features.plan.PlanViewModel(com.requena.supportdesk.features.plan.RemotePlanRepository(httpClient))
+
     fun createOnboardingViewModel() =
         com.requena.supportdesk.features.onboarding.OnboardingViewModel(organizationRepository)
 
