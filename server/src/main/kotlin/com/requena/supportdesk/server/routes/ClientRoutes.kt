@@ -42,7 +42,11 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         }
         post("/clients") {
             val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val request = call.receiveOrDefault(CreateClientRequest())
+            val received = call.receiveOrDefault(CreateClientRequest())
+            val request = received.copy(billing = received.billing.normalized())
+            request.billing.problem()?.let { problem ->
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse(problem))
+            }
             if (
                 request.companyName.isBlank() ||
                 request.productName.isBlank() ||
@@ -62,9 +66,13 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         patch("/clients/{clientId}") {
             val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
             val clientId = call.parameters["clientId"].orEmpty()
-            val request = call.receiveOrDefault(UpdateClientRequest())
+            val received = call.receiveOrDefault(UpdateClientRequest())
+            val request = received.copy(billing = received.billing?.normalized())
             if (clientId.isBlank()) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
+            }
+            request.billing?.problem()?.let { problem ->
+                return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse(problem))
             }
             if (
                 request.accountStatus?.let { it !in allowedClientStatuses } == true ||

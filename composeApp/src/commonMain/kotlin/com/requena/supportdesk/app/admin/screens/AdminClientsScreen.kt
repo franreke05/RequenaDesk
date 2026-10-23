@@ -618,6 +618,21 @@ private fun ClientQuickInfoRow(client: Client) {
         QuickInfoItem(label = "Empresa", value = client.productName.ifBlank { "—" }, modifier = Modifier.weight(1f))
         QuickInfoItem(label = "Contacto", value = client.contactName, modifier = Modifier.weight(1f))
     }
+    val billing = client.billing
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.xl)) {
+        QuickInfoItem(
+            label = "Razón social",
+            value = billing.legalName.ifBlank { "Sin datos fiscales" },
+            modifier = Modifier.weight(1f),
+        )
+        QuickInfoItem(label = "NIF/CIF", value = billing.taxId.ifBlank { "—" }, modifier = Modifier.weight(1f))
+        QuickInfoItem(
+            label = "Facturación",
+            value = listOf(billing.postalCode, billing.city).filter(String::isNotBlank).joinToString(" ")
+                .ifBlank { billing.email.ifBlank { "—" } },
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 @Composable

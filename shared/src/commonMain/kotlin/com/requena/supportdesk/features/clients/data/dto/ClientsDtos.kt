@@ -18,6 +18,19 @@ data class ClientDto(
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
     val generatedAccessCode: String? = null,
+    val billing: ClientBillingDto = ClientBillingDto(),
+)
+
+@Serializable
+data class ClientBillingDto(
+    val legalName: String = "",
+    val taxId: String = "",
+    val addressLine: String = "",
+    val postalCode: String = "",
+    val city: String = "",
+    val province: String = "",
+    val country: String = "",
+    val email: String = "",
 )
 
 @Serializable
@@ -36,6 +49,7 @@ data class CreateClientRequestDto(
     val accountStatus: String,
     val serviceTier: String,
     val preferredContactChannel: String,
+    val billing: ClientBillingDto = ClientBillingDto(),
 )
 
 @Serializable
@@ -47,6 +61,8 @@ data class UpdateClientRequestDto(
     val accountStatus: String,
     val serviceTier: String,
     val preferredContactChannel: String,
+    // Required (no default) so it is always encoded: the server replaces all fiscal data with it.
+    val billing: ClientBillingDto,
 )
 
 @Serializable

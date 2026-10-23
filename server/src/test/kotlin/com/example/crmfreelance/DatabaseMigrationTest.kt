@@ -150,6 +150,29 @@ class DatabaseMigrationTest {
         assertTrue(migration.contains("REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC"))
     }
 
+    @Test
+    fun v16AddsClientFiscalDataWithoutPersistingInvoices() {
+        val migration = migrationText("db/migration/V16__client_billing_profile.sql")
+
+        listOf(
+            "billing_legal_name",
+            "billing_tax_id",
+            "billing_address_line",
+            "billing_postal_code",
+            "billing_city",
+            "billing_province",
+            "billing_country",
+            "billing_email",
+        ).forEach { column ->
+            assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS $column"), "Missing column $column")
+        }
+        assertTrue(migration.contains("ALTER TABLE public.clients"))
+        assertTrue(migration.contains("clients_billing_tax_id_format_check"))
+        assertFalse(migration.contains("CREATE TABLE", ignoreCase = true))
+        assertFalse(migration.contains("invoice_number", ignoreCase = true))
+        assertFalse(migration.contains("SEQUENCE", ignoreCase = true))
+    }
+
     private fun migrationText(path: String): String {
         val resource = requireNotNull(javaClass.classLoader.getResource(path)) {
             "Missing migration resource: $path"

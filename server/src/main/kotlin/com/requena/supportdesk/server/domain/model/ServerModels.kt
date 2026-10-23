@@ -98,6 +98,19 @@ data class ServerClientSnapshot(
     val activeTicketCount: Int,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+    val billing: ServerClientBilling = ServerClientBilling(),
+)
+
+/** Fiscal data of a client, printed as the recipient of its invoices. */
+data class ServerClientBilling(
+    val legalName: String = "",
+    val taxId: String = "",
+    val addressLine: String = "",
+    val postalCode: String = "",
+    val city: String = "",
+    val province: String = "",
+    val country: String = "",
+    val email: String = "",
 )
 
 /** Plaintext code is returned only by provisioning/regeneration responses; it is never persisted. */

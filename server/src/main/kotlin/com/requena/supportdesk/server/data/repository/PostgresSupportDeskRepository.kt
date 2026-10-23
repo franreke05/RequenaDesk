@@ -23,6 +23,8 @@ import com.requena.supportdesk.server.domain.model.ServerClientProgramsSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientProductSubscriptionSnapshot
 import com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot
+import com.requena.supportdesk.server.domain.model.ServerClientBilling
+import com.requena.supportdesk.server.domain.model.ClientBillingRequest
 import com.requena.supportdesk.server.domain.model.ServerBillingPreviewLineSnapshot
 import com.requena.supportdesk.server.domain.model.ServerProductCatalogSnapshot
 import com.requena.supportdesk.server.domain.model.ServerConflictException
@@ -452,7 +454,8 @@ class PostgresSupportDeskRepository(
                     WHERE tl.client_id = c.id
                       AND (? IS NULL OR ts.owner_admin_id::text = ?)
                       AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
-                ) AS monthly_logged_minutes
+                ) AS monthly_logged_minutes,
+                $CLIENT_BILLING_COLUMNS
             FROM clients c
             WHERE (? IS NULL OR c.owner_admin_id::text = ?)
             ORDER BY c.company_name ASC
@@ -482,6 +485,7 @@ class PostgresSupportDeskRepository(
                                 activeTicketCount = resultSet.getInt("active_ticket_count"),
                                 openTasksCount = resultSet.getInt("open_tasks_count"),
                                 monthlyLoggedMinutes = resultSet.getInt("monthly_logged_minutes"),
+                                billing = resultSet.clientBilling(),
                             ),
                         )
                     }
@@ -534,6 +538,9 @@ class PostgresSupportDeskRepository(
                         monthlyLoggedMinutes = 0,
                     )
                 }
+            }.let { created ->
+                writeClientBilling(connection, created.id, request.billing)
+                created.copy(billing = request.billing.toSnapshot())
             }
             val accessCode = ClientAccessCodeGenerator.generate()
             connection.prepareStatement(
@@ -633,11 +640,13 @@ class PostgresSupportDeskRepository(
                 statement.executeUpdate()
             }
         }
+        request.billing?.let { billing -> writeClientBilling(connection, clientId, billing) }
         updated.copy(
             enabledComponents = clientComponents(connection, clientId),
             activeTicketCount = getActiveTicketCount(connection, clientId),
             openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
             monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+            billing = readClientBilling(connection, clientId),
         )
     }
 
@@ -2350,8 +2359,60 @@ class PostgresSupportDeskRepository(
             activeTicketCount = getActiveTicketCount(connection, clientId),
             openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
             monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+            billing = readClientBilling(connection, clientId),
         )
     }
+
+    /** Replaces all fiscal data of the client; [billing] is already normalized by the route. */
+    private fun writeClientBilling(connection: Connection, clientId: String, billing: ClientBillingRequest) {
+        connection.prepareStatement(
+            """
+            UPDATE clients
+            SET billing_legal_name = ?,
+                billing_tax_id = ?,
+                billing_address_line = ?,
+                billing_postal_code = ?,
+                billing_city = ?,
+                billing_province = ?,
+                billing_country = ?,
+                billing_email = ?,
+                updated_at = NOW()
+            WHERE id::text = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, billing.legalName)
+            statement.setString(2, billing.taxId)
+            statement.setString(3, billing.addressLine)
+            statement.setString(4, billing.postalCode)
+            statement.setString(5, billing.city)
+            statement.setString(6, billing.province)
+            statement.setString(7, billing.country)
+            statement.setString(8, billing.email)
+            statement.setString(9, clientId)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun readClientBilling(connection: Connection, clientId: String): ServerClientBilling =
+        connection.prepareStatement(
+            "SELECT $CLIENT_BILLING_COLUMNS FROM clients c WHERE c.id::text = ? LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.clientBilling() else ServerClientBilling()
+            }
+        }
+
+    private fun ResultSet.clientBilling(): ServerClientBilling = ServerClientBilling(
+        legalName = getString("billing_legal_name").orEmpty(),
+        taxId = getString("billing_tax_id").orEmpty(),
+        addressLine = getString("billing_address_line").orEmpty(),
+        postalCode = getString("billing_postal_code").orEmpty(),
+        city = getString("billing_city").orEmpty(),
+        province = getString("billing_province").orEmpty(),
+        country = getString("billing_country").orEmpty(),
+        email = getString("billing_email").orEmpty(),
+    )
 
     private fun clientComponents(connection: Connection, clientId: String): List<String> =
         connection.prepareStatement(
@@ -3391,5 +3452,7 @@ class PostgresSupportDeskRepository(
     private companion object {
         const val DEFAULT_ADMIN_OWNER_ID = "22222222-2222-2222-2222-222222222222"
         const val UNIQUE_VIOLATION_SQL_STATE = "23505"
+        const val CLIENT_BILLING_COLUMNS = "c.billing_legal_name, c.billing_tax_id, c.billing_address_line, " +
+            "c.billing_postal_code, c.billing_city, c.billing_province, c.billing_country, c.billing_email"
     }
 }

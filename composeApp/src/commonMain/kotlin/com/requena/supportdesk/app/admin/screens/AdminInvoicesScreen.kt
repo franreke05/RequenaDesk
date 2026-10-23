@@ -48,6 +48,7 @@ import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemI
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceIssuer
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceItemKind
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceRecipient
+import com.requena.supportdesk.features.invoices.domain.model.defaultInvoiceRecipient
 import com.requena.supportdesk.features.invoices.domain.model.invoiceLegalProblem
 import com.requena.supportdesk.features.invoices.domain.model.isSpanishPersonalTaxIdValid
 import com.requena.supportdesk.features.invoices.domain.model.InvoicePdfFile
@@ -283,9 +284,10 @@ private fun InvoiceForm(
     val selectedClient = clients.firstOrNull { it.id == selectedClientId }
     // Prefilled from the local store; edits here are saved again when the PDF is generated.
     var issuer by remember(state.issuer) { mutableStateOf(state.issuer ?: InvoiceIssuer()) }
+    // Locally remembered recipient wins; otherwise start from the fiscal data stored with the client.
     val savedRecipient = state.recipientsByClientId[selectedClientId]
-    var recipient by remember(selectedClientId, savedRecipient) {
-        mutableStateOf(savedRecipient ?: InvoiceRecipient(legalName = selectedClient?.companyName.orEmpty()))
+    var recipient by remember(selectedClientId, savedRecipient, selectedClient?.billing) {
+        mutableStateOf(savedRecipient ?: selectedClient?.defaultInvoiceRecipient() ?: InvoiceRecipient())
     }
     LaunchedEffect(selectedClientId) {
         if (selectedClientId.isNotBlank()) onLoadRecipient(selectedClientId)

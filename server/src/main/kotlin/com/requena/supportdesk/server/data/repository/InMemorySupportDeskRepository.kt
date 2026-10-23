@@ -345,6 +345,7 @@ class InMemorySupportDeskRepository(
             activeTicketCount = 0,
             openTasksCount = 0,
             monthlyLoggedMinutes = 0,
+            billing = request.billing.toSnapshot(),
         )
         clients.add(0, created)
         clientOwners[created.id] = resolvedOwnerAdminId
@@ -377,6 +378,7 @@ class InMemorySupportDeskRepository(
             accountStatus = request.accountStatus ?: current.accountStatus,
             serviceTier = request.serviceTier ?: current.serviceTier,
             preferredContactChannel = request.preferredContactChannel ?: current.preferredContactChannel,
+            billing = request.billing?.toSnapshot() ?: current.billing,
         )
         clients[index] = updated
         val accountIndex = adminAccounts.indexOfFirst { account ->

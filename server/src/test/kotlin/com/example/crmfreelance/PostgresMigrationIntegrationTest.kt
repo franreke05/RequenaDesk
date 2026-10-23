@@ -22,6 +22,7 @@ import com.requena.supportdesk.features.business.projects.CreateBusinessProjectI
 import com.requena.supportdesk.features.business.projects.CreateBusinessTaskInput
 import com.requena.supportdesk.features.business.projects.UpdateBusinessTaskInput
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -61,7 +62,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(15, dataSource.migrate())
+                assertEquals(16, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",
@@ -307,7 +308,17 @@ class PostgresMigrationIntegrationTest {
                               "email":"integration@example.com",
                               "accountStatus":"ACTIVE",
                               "serviceTier":"STANDARD",
-                              "preferredContactChannel":"TICKET"
+                              "preferredContactChannel":"TICKET",
+                              "billing":{
+                                "legalName":"Integracion Ficticia S.L.",
+                                "taxId":"b-0000000-0",
+                                "addressLine":"Calle Inventada 1",
+                                "postalCode":"00000",
+                                "city":"Villa Prueba",
+                                "province":"Provincia Prueba",
+                                "country":"España",
+                                "email":"facturas-integracion@example.com"
+                              }
                             }
                             """.trimIndent(),
                         )
@@ -315,6 +326,27 @@ class PostgresMigrationIntegrationTest {
                     assertEquals(HttpStatusCode.Created, clientResponse.status)
                     val createdClientBody = clientResponse.bodyAsText()
                     val clientId = extractField(createdClientBody, "id")
+                    assertTrue(createdClientBody.contains("\"taxId\":\"B00000000\""), createdClientBody)
+                    assertTrue(createdClientBody.contains("\"legalName\":\"Integracion Ficticia S.L.\""), createdClientBody)
+
+                    val billingEditResponse = client.patch("/admin/clients/$clientId") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                        contentType(ContentType.Application.Json)
+                        setBody(
+                            """
+                            {"billing":{"legalName":"Integracion Editada S.L.","taxId":"12345678Z",
+                              "addressLine":"Avenida Ficticia 2","postalCode":"00001","city":"Otra Villa","email":""}}
+                            """.trimIndent(),
+                        )
+                    }
+                    assertEquals(HttpStatusCode.OK, billingEditResponse.status)
+                    assertTrue(billingEditResponse.bodyAsText().contains("\"legalName\":\"Integracion Editada S.L.\""))
+                    val clientsAfterBillingEdit = client.get("/admin/clients") {
+                        header(HttpHeaders.Authorization, "Bearer $accessToken")
+                    }.bodyAsText()
+                    assertTrue(clientsAfterBillingEdit.contains("\"taxId\":\"12345678Z\""), clientsAfterBillingEdit)
+                    assertTrue(clientsAfterBillingEdit.contains("\"city\":\"Otra Villa\""), clientsAfterBillingEdit)
+                    assertFalse(clientsAfterBillingEdit.contains("facturas-integracion@example.com"))
                     val initialAccessCode = extractField(createdClientBody, "generatedAccessCode")
                     assertTrue(initialAccessCode.startsWith("SBS-"))
                     assertEquals(HttpStatusCode.OK, client.post("/auth/login") {

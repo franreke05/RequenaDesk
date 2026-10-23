@@ -14,6 +14,7 @@ data class Client(
     val notes: List<ClientNote> = emptyList(),
     val monthlyHoursSummary: ClientMonthlyHoursSummary? = null,
     val timeEntries: List<TimeEntry> = emptyList(),
+    val billing: ClientBillingProfile = ClientBillingProfile(),
 ) {
     fun hasComponent(component: ClientPortalComponent): Boolean = component in enabledComponents
 }

@@ -174,6 +174,16 @@ fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("activeTicketCount", client.activeTicketCount)
     put("openTasksCount", client.openTasksCount)
     put("monthlyLoggedMinutes", client.monthlyLoggedMinutes)
+    put("billing", buildJsonObject {
+        put("legalName", client.billing.legalName)
+        put("taxId", client.billing.taxId)
+        put("addressLine", client.billing.addressLine)
+        put("postalCode", client.billing.postalCode)
+        put("city", client.billing.city)
+        put("province", client.billing.province)
+        put("country", client.billing.country)
+        put("email", client.billing.email)
+    })
 }
 
 fun clientTicketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {
