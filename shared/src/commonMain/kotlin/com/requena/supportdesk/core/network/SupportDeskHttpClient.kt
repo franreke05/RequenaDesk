@@ -94,6 +94,7 @@ private fun io.ktor.client.HttpClientConfig<*>.installSupportDeskHttpPlugins() {
 }
 
 private fun String.isAuthSessionPath(): Boolean =
-    startsWith("/auth/login") || startsWith("/auth/refresh") || startsWith("/auth/logout")
+    startsWith("/auth/login") || startsWith("/auth/refresh") || startsWith("/auth/logout") ||
+        startsWith("/auth/signup") || startsWith("/auth/join")
 
 private val refreshAttemptKey = AttributeKey<Boolean>("supportdesk.refreshAttempt")

@@ -46,6 +46,7 @@ import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
+import com.requena.supportdesk.features.auth.presentation.state.AuthMode
 import com.requena.supportdesk.features.auth.presentation.state.AuthUiState
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.EyeOff
@@ -84,9 +85,21 @@ fun AdminLoginScreen(
             ) {
                 SectionCard(
                     modifier = Modifier.widthIn(max = 520.dp),
-                    title = "OryKai software",
-                    subtitle = "Accede a tu espacio de trabajo o al portal de soporte.",
+                    title = when (state.mode) {
+                        AuthMode.LOGIN -> "OryKai software"
+                        AuthMode.SIGNUP -> "Crea la cuenta de tu empresa"
+                        AuthMode.JOIN -> "Únete a tu empresa"
+                    },
+                    subtitle = when (state.mode) {
+                        AuthMode.LOGIN -> "Accede a tu espacio de trabajo o al portal de soporte."
+                        AuthMode.SIGNUP -> "Paso 1 de 5 · Tu cuenta. Después configuramos tu negocio en 4 pasos cortos."
+                        AuthMode.JOIN -> "Usa el código que te ha pasado tu empresa. Caduca a los 7 días."
+                    },
                 ) {
+                    if (state.mode != AuthMode.LOGIN) {
+                        AccountCreationForm(state = state, onEvent = onEvent)
+                        return@SectionCard
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                         SupportDeskBadge(
                             text = "Acceso seguro",
@@ -174,6 +187,7 @@ fun AdminLoginScreen(
                             fullWidth = true,
                             isLoading = state.isLoading,
                         )
+                        LoginAlternatives(signupAvailable = state.signupAvailable, onEvent = onEvent)
                     }
                 }
             }

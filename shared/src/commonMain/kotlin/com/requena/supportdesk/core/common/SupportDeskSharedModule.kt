@@ -151,10 +151,21 @@ object SupportDeskSharedModule {
     private val rejectProgramRequestUseCase = RejectProgramRequestUseCase(programsRepository)
     private val getClientProgramBillingPreviewUseCase = GetClientProgramBillingPreviewUseCase(programsRepository)
 
+    private val organizationRepository by lazy {
+        com.requena.supportdesk.features.organization.data.RemoteOrganizationRepository(httpClient)
+    }
+
+    fun createOrganizationViewModel() =
+        com.requena.supportdesk.features.organization.presentation.OrganizationViewModel(organizationRepository)
+
+    fun createOnboardingViewModel() =
+        com.requena.supportdesk.features.onboarding.OnboardingViewModel(organizationRepository)
+
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
         restoreSessionUseCase = restoreSessionUseCase,
         clearSessionUseCase = clearSessionUseCase,
+        authRepository = authRepository,
     )
 
     fun createTicketsViewModel(): TicketsViewModel = TicketsViewModel(

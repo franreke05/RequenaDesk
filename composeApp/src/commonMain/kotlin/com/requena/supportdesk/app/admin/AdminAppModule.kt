@@ -31,6 +31,14 @@ class AdminAppModule {
     private val businessCatalogViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessCatalogViewModel() }
     private val businessQuotesViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessQuotesViewModel() }
     private val businessProjectsViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessProjectsViewModel() }
+    private val organizationViewModelDelegate = lazy { SupportDeskSharedModule.createOrganizationViewModel() }
+    private val onboardingViewModelDelegate = lazy { SupportDeskSharedModule.createOnboardingViewModel() }
+
+    val organizationViewModel: com.requena.supportdesk.features.organization.presentation.OrganizationViewModel
+        get() = organizationViewModelDelegate.value
+
+    val onboardingViewModel: com.requena.supportdesk.features.onboarding.OnboardingViewModel
+        get() = onboardingViewModelDelegate.value
 
     val clientsViewModel: ClientsViewModel
         get() = clientsViewModelDelegate.value
@@ -86,5 +94,7 @@ class AdminAppModule {
         if (businessCatalogViewModelDelegate.isInitialized()) businessCatalogViewModelDelegate.value.clear()
         if (businessQuotesViewModelDelegate.isInitialized()) businessQuotesViewModelDelegate.value.clear()
         if (businessProjectsViewModelDelegate.isInitialized()) businessProjectsViewModelDelegate.value.clear()
+        if (organizationViewModelDelegate.isInitialized()) organizationViewModelDelegate.value.clear()
+        if (onboardingViewModelDelegate.isInitialized()) onboardingViewModelDelegate.value.clear()
     }
 }

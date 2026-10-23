@@ -63,55 +63,76 @@ fun AppearanceDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },
         title = { Text("Apariencia") },
         text = {
-            Column(
+            AppearancePicker(
+                selectedStyle = selectedStyle,
+                selectedMode = selectedMode,
+                previewDark = previewDark,
+                onStyleSelected = onStyleSelected,
+                onModeSelected = onModeSelected,
                 modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(spacing.lg),
-            ) {
-                Text(
-                    "Elige cómo quieres ver RequenaDesk. Se guarda en este equipo.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val cards: @Composable (Modifier) -> Unit = { cardModifier ->
-                        SupportDeskStyle.entries.forEach { style ->
-                            StyleOptionCard(
-                                style = style,
-                                selected = style == selectedStyle,
-                                dark = previewDark,
-                                onClick = { onStyleSelected(style) },
-                                modifier = cardModifier,
-                            )
-                        }
-                    }
-                    if (maxWidth >= 480.dp) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().selectableGroup(),
-                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                        ) { cards(Modifier.weight(1f)) }
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().selectableGroup(),
-                            verticalArrangement = Arrangement.spacedBy(spacing.sm),
-                        ) { cards(Modifier.fillMaxWidth()) }
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    Text("Modo", style = MaterialTheme.typography.titleSmall)
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        val modes = ThemeModePreference.entries
-                        modes.forEachIndexed { index, mode ->
-                            SegmentedButton(
-                                selected = mode == selectedMode,
-                                onClick = { onModeSelected(mode) },
-                                shape = SegmentedButtonDefaults.itemShape(index, modes.size),
-                            ) { Text(mode.label) }
-                        }
-                    }
-                }
-            }
+            )
         },
     )
+}
+
+/** Style cards with live previews plus the System / Light / Dark switch (dialog and onboarding). */
+@Composable
+fun AppearancePicker(
+    selectedStyle: SupportDeskStyle,
+    selectedMode: ThemeModePreference,
+    previewDark: Boolean,
+    onStyleSelected: (SupportDeskStyle) -> Unit,
+    onModeSelected: (ThemeModePreference) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(spacing.lg),
+    ) {
+        Text(
+            "Elige cómo quieres ver RequenaDesk. Se guarda en este equipo.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cards: @Composable (Modifier) -> Unit = { cardModifier ->
+                SupportDeskStyle.entries.forEach { style ->
+                    StyleOptionCard(
+                        style = style,
+                        selected = style == selectedStyle,
+                        dark = previewDark,
+                        onClick = { onStyleSelected(style) },
+                        modifier = cardModifier,
+                    )
+                }
+            }
+            if (maxWidth >= 480.dp) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) { cards(Modifier.weight(1f)) }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth().selectableGroup(),
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) { cards(Modifier.fillMaxWidth()) }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+            Text("Modo", style = MaterialTheme.typography.titleSmall)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                val modes = ThemeModePreference.entries
+                modes.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = mode == selectedMode,
+                        onClick = { onModeSelected(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, modes.size),
+                    ) { Text(mode.label) }
+                }
+            }
+        }
+    }
 }
 
 @Composable
