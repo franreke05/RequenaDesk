@@ -10,8 +10,8 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.time.Instant
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.UUID
 
 actual fun createInvoiceBillingLedger(): InvoiceBillingLedger = DesktopInvoiceBillingLedger()
 
@@ -21,6 +21,8 @@ private data class LedgerLine(
     val invoiceNumber: String,
     val logIds: List<String> = emptyList(),
     val reason: String? = null,
+    /** Issue date printed on the invoice (YYYY-MM-DD); null on entries written before numbering was correlative. */
+    val issuedAt: String? = null,
     val timestamp: String,
 )
 
@@ -30,25 +32,55 @@ internal class DesktopInvoiceBillingLedger(
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun nextInvoiceNumber(issuedAt: String): String {
-        val year = runCatching { LocalDate.parse(issuedAt).year }.getOrElse { LocalDate.now().year }
-        val uniquePart = UUID.randomUUID().toString().take(INVOICE_ID_LENGTH).uppercase(Locale.ROOT)
-        return "FAC-$year-$uniquePart"
-    }
-
     override suspend fun billedLogIds(): Set<String> = mutex.withLock { billedLogIdsLocked() }
 
-    override suspend fun recordIssued(invoiceNumber: String, logIds: List<String>) {
-        if (logIds.isEmpty()) return
-        mutex.withLock {
-            val alreadyBilled = billedLogIdsLocked()
-            val duplicates = logIds.filter { it in alreadyBilled }
-            if (duplicates.isNotEmpty()) {
-                throw DuplicateBillingException(
-                    "Alguna de las unidades de tiempo seleccionadas ya esta facturada (ids: ${duplicates.joinToString()}).",
-                )
-            }
-            appendLine(LedgerLine(type = TYPE_ISSUED, invoiceNumber = invoiceNumber, logIds = logIds, timestamp = Instant.now().toString()))
+    override suspend fun issueInvoice(issuedAt: String, logIds: List<String>): String = mutex.withLock {
+        val issueDate = runCatching { LocalDate.parse(issuedAt) }.getOrElse {
+            throw InvoiceNumberingException("La fecha de emisión debe usar el formato YYYY-MM-DD.")
+        }
+        val entries = readEntries()
+
+        val alreadyBilled = billedLogIdsLocked(entries)
+        val duplicates = logIds.filter { it in alreadyBilled }
+        if (duplicates.isNotEmpty()) {
+            throw DuplicateBillingException(
+                "Alguna de las unidades de tiempo seleccionadas ya esta facturada (ids: ${duplicates.joinToString()}).",
+            )
+        }
+
+        val year = issueDate.year
+        val seriesEntries = entries.filter { it.type == TYPE_ISSUED && correlativeOf(it.invoiceNumber, year) != null }
+        val lastDated = seriesEntries.filter { it.issuedAt != null }.maxByOrNull { correlativeOf(it.invoiceNumber, year)!! }
+        lastDated?.issuedAt?.let(LocalDate::parse)?.takeIf(issueDate::isBefore)?.let { lastDate ->
+            throw InvoiceNumberingException(
+                "La fecha de emisión no puede ser anterior a la de la última factura " +
+                    "(${lastDated.invoiceNumber}, ${lastDate.format(DISPLAY_DATE)}). La numeración debe seguir el orden de fechas.",
+            )
+        }
+
+        val lastNumber = (seriesEntries.mapNotNull { correlativeOf(it.invoiceNumber, year) } + existingPdfNumbers(year))
+            .maxOrNull() ?: 0
+        val invoiceNumber = formatInvoiceNumber(year, lastNumber + 1)
+        appendLine(
+            LedgerLine(
+                type = TYPE_ISSUED,
+                invoiceNumber = invoiceNumber,
+                logIds = logIds,
+                issuedAt = issuedAt,
+                timestamp = Instant.now().toString(),
+            ),
+        )
+        invoiceNumber
+    }
+
+    /** PDFs already in the folder also count, so the series never restarts if the ledger is lost. */
+    private fun existingPdfNumbers(year: Int): List<Int> {
+        val directory = ledgerFile.toAbsolutePath().parent ?: return emptyList()
+        if (!Files.isDirectory(directory)) return emptyList()
+        return Files.list(directory).use { paths ->
+            paths.iterator().asSequence()
+                .mapNotNull { correlativeOf(it.fileName.toString().substringBefore("_").removeSuffix(".pdf"), year) }
+                .toList()
         }
     }
 
@@ -80,8 +112,7 @@ internal class DesktopInvoiceBillingLedger(
         readEntries().filter { it.type == TYPE_VOIDED }.mapTo(mutableSetOf()) { it.invoiceNumber }
     }
 
-    private fun billedLogIdsLocked(): Set<String> {
-        val entries = readEntries()
+    private fun billedLogIdsLocked(entries: List<LedgerLine> = readEntries()): Set<String> {
         val voidedInvoiceNumbers = entries.filter { it.type == TYPE_VOIDED }.mapTo(mutableSetOf()) { it.invoiceNumber }
         return entries.asSequence()
             .filter { it.type == TYPE_ISSUED && it.invoiceNumber !in voidedInvoiceNumbers }
@@ -111,9 +142,22 @@ internal class DesktopInvoiceBillingLedger(
     private companion object {
         const val TYPE_ISSUED = "ISSUED"
         const val TYPE_VOIDED = "VOIDED"
-        const val INVOICE_ID_LENGTH = 8
+        val DISPLAY_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ROOT)
     }
 }
+
+/** Correlative part of a `FAC-<year>-<0001>` number, or null for other years or legacy random numbers. */
+internal fun correlativeOf(invoiceNumber: String, year: Int): Int? =
+    CORRELATIVE_NUMBER.matchEntire(invoiceNumber)
+        ?.takeIf { it.groupValues[1].toInt() == year }
+        ?.groupValues?.get(2)?.toInt()
+
+internal fun formatInvoiceNumber(year: Int, correlative: Int): String =
+    "FAC-$year-${correlative.toString().padStart(CORRELATIVE_DIGITS, '0')}"
+
+// 4-6 digits: the old random numbers had 8 characters, so they never match.
+private val CORRELATIVE_NUMBER = Regex("^FAC-(\\d{4})-(\\d{4,6})$")
+private const val CORRELATIVE_DIGITS = 4
 
 private fun defaultLedgerFile(): Path {
     val homeDirectory = System.getenv("USERPROFILE")

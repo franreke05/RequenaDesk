@@ -39,14 +39,17 @@ import com.requena.supportdesk.core.utils.toFixedString
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
-import com.requena.supportdesk.designsystem.components.feedback.ConfirmDialog
 import com.requena.supportdesk.designsystem.components.layout.InfoRow
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
 import com.requena.supportdesk.features.invoices.domain.model.BillableUnit
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceIssuer
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceItemKind
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceRecipient
+import com.requena.supportdesk.features.invoices.domain.model.invoiceLegalProblem
+import com.requena.supportdesk.features.invoices.domain.model.isSpanishPersonalTaxIdValid
 import com.requena.supportdesk.features.invoices.domain.model.InvoicePdfFile
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceTotals
 import com.requena.supportdesk.features.invoices.domain.model.TaskInvoiceLine
@@ -81,7 +84,6 @@ fun AdminInvoicesScreen(
             onCreateInvoice = { showInvoiceForm = true },
             onRefresh = { onEvent(InvoicesUiEvent.RefreshSavedInvoices) },
             onOpenInvoice = { onEvent(InvoicesUiEvent.OpenSavedInvoice(it.fileName)) },
-            onDeleteInvoice = { onEvent(InvoicesUiEvent.DeleteSavedInvoice(it.fileName)) },
             onVoidInvoice = { invoice, reason -> onEvent(InvoicesUiEvent.VoidInvoice(invoice.fileName, reason)) },
         )
 
@@ -94,6 +96,7 @@ fun AdminInvoicesScreen(
                 programBillingPreview = programBillingPreview,
                 onLoadProgramBillingPreview = onLoadProgramBillingPreview,
                 onCancel = { showInvoiceForm = false },
+                onLoadRecipient = { clientId -> onEvent(InvoicesUiEvent.LoadRecipient(clientId)) },
                 onGenerate = { input, selectedLogIds ->
                     onEvent(InvoicesUiEvent.GenerateInvoice(input, selectedLogIds))
                 },
@@ -108,11 +111,9 @@ private fun InvoiceLibrary(
     onCreateInvoice: () -> Unit,
     onRefresh: () -> Unit,
     onOpenInvoice: (InvoicePdfFile) -> Unit,
-    onDeleteInvoice: (InvoicePdfFile) -> Unit,
     onVoidInvoice: (InvoicePdfFile, String?) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    var invoicePendingDeletion by rememberSaveable { mutableStateOf<String?>(null) }
     var invoicePendingVoid by rememberSaveable { mutableStateOf<String?>(null) }
     var voidReason by rememberSaveable { mutableStateOf("") }
     SectionCard(
@@ -153,12 +154,9 @@ private fun InvoiceLibrary(
                     SavedInvoiceRow(
                         invoice = invoice,
                         isVoided = state.isVoided(invoice),
-                        isDeleting = state.deletingInvoiceFileName == invoice.fileName,
                         isVoiding = state.voidingInvoiceFileName == invoice.fileName,
-                        canDelete = state.deletingInvoiceFileName == null,
                         canVoid = state.voidingInvoiceFileName == null,
                         onOpen = { onOpenInvoice(invoice) },
-                        onDelete = { invoicePendingDeletion = invoice.fileName },
                         onVoid = {
                             voidReason = ""
                             invoicePendingVoid = invoice.fileName
@@ -174,20 +172,6 @@ private fun InvoiceLibrary(
                 )
             }
         }
-    }
-    invoicePendingDeletion?.let { fileName ->
-        ConfirmDialog(
-            visible = true,
-            title = "Borrar PDF",
-            message = "Se borrará únicamente el archivo PDF local «$fileName». La factura y su estado de facturación no cambian: si necesitas liberar el tiempo asociado, anula la factura en lugar de borrar el PDF. Esta acción no se puede deshacer.",
-            confirmText = "Borrar PDF",
-            dismissText = "Cancelar",
-            onConfirm = {
-                invoicePendingDeletion = null
-                state.savedInvoices.firstOrNull { it.fileName == fileName }?.let(onDeleteInvoice)
-            },
-            onDismiss = { invoicePendingDeletion = null },
-        )
     }
     invoicePendingVoid?.let { fileName ->
         SectionCard(title = "Anular factura") {
@@ -229,17 +213,14 @@ private fun InvoiceLibrary(
 private fun SavedInvoiceRow(
     invoice: InvoicePdfFile,
     isVoided: Boolean,
-    isDeleting: Boolean,
     isVoiding: Boolean,
-    canDelete: Boolean,
     canVoid: Boolean,
     onOpen: () -> Unit,
-    onDelete: () -> Unit,
     onVoid: () -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = !isDeleting, onClick = onOpen).padding(vertical = spacing.xs),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = spacing.xs),
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -260,7 +241,7 @@ private fun SavedInvoiceRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        SecondaryButton(text = "Abrir PDF", onClick = onOpen, enabled = !isDeleting)
+        SecondaryButton(text = "Abrir PDF", onClick = onOpen)
         if (!isVoided) {
             SecondaryButton(
                 text = "Anular factura",
@@ -269,12 +250,6 @@ private fun SavedInvoiceRow(
                 isLoading = isVoiding,
             )
         }
-        SecondaryButton(
-            text = "Borrar PDF",
-            onClick = onDelete,
-            enabled = !isDeleting && canDelete,
-            isLoading = isDeleting,
-        )
     }
 }
 
@@ -287,6 +262,7 @@ private fun InvoiceForm(
     programBillingPreview: ClientProgramBillingPreview?,
     onLoadProgramBillingPreview: (clientId: String, period: String) -> Unit,
     onCancel: () -> Unit,
+    onLoadRecipient: (clientId: String) -> Unit,
     onGenerate: (CreateInvoiceInput, List<String>) -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
@@ -295,13 +271,25 @@ private fun InvoiceForm(
     val activities = remember { mutableStateListOf<InvoiceActivityDraft>() }
     var nextActivityId by remember { mutableStateOf(0) }
     var issuedAt by remember { mutableStateOf(currentIsoDate()) }
+    var operationDate by remember { mutableStateOf("") }
     var dueAt by remember { mutableStateOf("") }
     var reference by remember { mutableStateOf("") }
-    var taxPercent by remember { mutableStateOf("0") }
+    var taxPercent by remember { mutableStateOf("21") }
+    var withholdingPercent by remember { mutableStateOf("0") }
+    var taxExemptionNote by remember { mutableStateOf("") }
     var hourlyRate by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
     val selectedClient = clients.firstOrNull { it.id == selectedClientId }
+    // Prefilled from the local store; edits here are saved again when the PDF is generated.
+    var issuer by remember(state.issuer) { mutableStateOf(state.issuer ?: InvoiceIssuer()) }
+    val savedRecipient = state.recipientsByClientId[selectedClientId]
+    var recipient by remember(selectedClientId, savedRecipient) {
+        mutableStateOf(savedRecipient ?: InvoiceRecipient(legalName = selectedClient?.companyName.orEmpty()))
+    }
+    LaunchedEffect(selectedClientId) {
+        if (selectedClientId.isNotBlank()) onLoadRecipient(selectedClientId)
+    }
     val programBillingPeriod = issuedAt.take(7).takeIf { it.length == 7 }
     val programPreviewForSelection = programBillingPreview
         ?.takeIf { it.clientId == selectedClientId && it.period == programBillingPeriod }
@@ -347,11 +335,32 @@ private fun InvoiceForm(
         draft.toInvoiceItem(sortOrder = taskLines.size + index)
     }
     val invoiceItems = taskItems + activityItems
-    val totals = calculateInvoiceTotals(invoiceItems, taxRate)
+    val parsedWithholding = withholdingPercent.toInvoiceDecimalOrNull()
+    val withholdingRate = parsedWithholding ?: 0.0
+    val totals = calculateInvoiceTotals(invoiceItems, taxRate, withholdingRate)
     val activitiesAreValid = activities.all(InvoiceActivityDraft::isValid)
     val hasBillableTasks = taskLines.isNotEmpty()
-    val isValid = selectedClient != null && invoiceItems.isNotEmpty() && activitiesAreValid &&
+    val draftInput = selectedClient?.let { client ->
+        CreateInvoiceInput(
+            clientId = selectedClientId,
+            clientName = client.companyName,
+            issuedAt = issuedAt,
+            dueAt = dueAt.ifBlank { null },
+            notes = notes.ifBlank { null },
+            taxPercent = taxRate,
+            items = invoiceItems,
+            reference = reference.ifBlank { null },
+            issuer = issuer,
+            recipient = recipient,
+            withholdingPercent = withholdingRate,
+            operationDate = operationDate.ifBlank { null },
+            taxExemptionNote = taxExemptionNote.ifBlank { null },
+        )
+    }
+    val legalProblem = draftInput?.let(::invoiceLegalProblem)
+    val isValid = draftInput != null && legalProblem == null && invoiceItems.isNotEmpty() && activitiesAreValid &&
         issuedAt.isNotBlank() && parsedTaxRate != null && taxRate.isFinite() && taxRate in 0.0..100.0 &&
+        parsedWithholding != null &&
         (!hasBillableTasks || parsedHourlyRate != null && rate.isFinite() && rate > 0.0)
 
     SectionCard(
@@ -359,6 +368,8 @@ private fun InvoiceForm(
         subtitle = "Combina tareas por horas y actividades por cantidad en un mismo PDF.",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            IssuerSection(issuer = issuer, onChange = { issuer = it })
+
             InvoiceSelector(
                 label = "Cliente",
                 selectedLabel = when {
@@ -373,6 +384,10 @@ private fun InvoiceForm(
                     selectedLogIds = emptySet()
                 },
             )
+
+            if (selectedClient != null) {
+                RecipientSection(recipient = recipient, onChange = { recipient = it })
+            }
 
             if (selectedClient != null) {
                 Text("Tiempo pendiente de facturar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -535,13 +550,23 @@ private fun InvoiceForm(
                 )
             }
 
-            OutlinedTextField(
-                value = reference,
-                onValueChange = { reference = it },
-                label = { Text("Referencia (opcional)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                OutlinedTextField(
+                    value = operationDate,
+                    onValueChange = { operationDate = it },
+                    label = { Text("Fecha del servicio (si es distinta)") },
+                    placeholder = { Text("p. ej. Octubre 2026") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = reference,
+                    onValueChange = { reference = it },
+                    label = { Text("Referencia (opcional)") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+            }
 
             if (hasBillableTasks) {
                 OutlinedTextField(
@@ -554,14 +579,37 @@ private fun InvoiceForm(
                 )
             }
 
-            OutlinedTextField(
-                value = taxPercent,
-                onValueChange = { taxPercent = it },
-                label = { Text("IVA (%)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                OutlinedTextField(
+                    value = taxPercent,
+                    onValueChange = { taxPercent = it },
+                    label = { Text("IVA (%)") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+                OutlinedTextField(
+                    value = withholdingPercent,
+                    onValueChange = { withholdingPercent = it },
+                    label = { Text("Retención IRPF (%)") },
+                    supportingText = { Text("0 si no aplica · 15 general · 7 nuevos autónomos") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+            }
+
+            if (parsedTaxRate == 0.0) {
+                OutlinedTextField(
+                    value = taxExemptionNote,
+                    onValueChange = { taxExemptionNote = it },
+                    label = { Text("Motivo legal del IVA 0 %") },
+                    placeholder = { Text("p. ej. Operación exenta de IVA según el art. 20 de la Ley 37/1992") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 1,
+                    maxLines = 3,
+                )
+            }
 
             OutlinedTextField(
                 value = notes,
@@ -572,7 +620,15 @@ private fun InvoiceForm(
                 maxLines = 4,
             )
 
-            InvoiceSummary(totals = totals, taxPercent = taxRate)
+            InvoiceSummary(totals = totals, taxPercent = taxRate, withholdingPercent = withholdingRate)
+
+            if (legalProblem != null) {
+                Text(
+                    text = legalProblem,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -584,19 +640,7 @@ private fun InvoiceForm(
                     enabled = isValid,
                     isLoading = state.isGenerating,
                     onClick = {
-                        onGenerate(
-                            CreateInvoiceInput(
-                                clientId = selectedClientId,
-                                clientName = checkNotNull(selectedClient).companyName,
-                                issuedAt = issuedAt,
-                                dueAt = dueAt.ifBlank { null },
-                                notes = notes.ifBlank { null },
-                                taxPercent = taxRate,
-                                items = invoiceItems,
-                                reference = reference.ifBlank { null },
-                            ),
-                            selectedUnits.map { it.logId },
-                        )
+                        draftInput?.let { input -> onGenerate(input, selectedUnits.map { it.logId }) }
                     },
                     modifier = Modifier.weight(1f),
                 )
@@ -809,14 +853,21 @@ private const val HISTORIC_UNIT_KEY = "__HISTORIC__"
 private fun InvoiceSummary(
     totals: InvoiceTotals,
     taxPercent: Double,
+    withholdingPercent: Double,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
     SectionCard(title = "Resumen") {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            InfoRow(label = "Subtotal", value = formatEuro(totals.subtotal))
+            InfoRow(label = "Base imponible", value = formatEuro(totals.subtotal))
             InfoRow(label = "IVA (${taxPercent.toFixedString(2)}%)", value = formatEuro(totals.tax))
+            if (withholdingPercent > 0.0) {
+                InfoRow(
+                    label = "Retención IRPF (${withholdingPercent.toFixedString(2)}%)",
+                    value = "-${formatEuro(totals.withholding)}",
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Total a pagar", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     formatEuro(totals.total),
                     style = MaterialTheme.typography.titleMedium,
@@ -826,6 +877,115 @@ private fun InvoiceSummary(
             }
         }
     }
+}
+
+/**
+ * The self-employed user's fiscal data. Once complete it collapses to a summary, because it is
+ * the same on every invoice and is remembered on this computer.
+ */
+@Composable
+private fun IssuerSection(issuer: InvoiceIssuer, onChange: (InvoiceIssuer) -> Unit) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val missing = issuer.missingRequiredFields()
+    var editing by remember { mutableStateOf(false) }
+    val expanded = editing || missing.isNotEmpty()
+    SectionCard(
+        title = "Tus datos fiscales",
+        subtitle = if (missing.isEmpty()) {
+            "Salen en todas tus facturas. Se guardan solo en este equipo."
+        } else {
+            "Rellénalos una vez: son obligatorios en la factura y se guardan solo en este equipo."
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            if (!expanded) {
+                Text(
+                    listOf(issuer.fullName, issuer.tradeName).filter(String::isNotBlank).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "NIF ${issuer.taxId} · ${issuer.addressLine}, ${issuer.postalCode} ${issuer.city}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SecondaryButton(text = "Editar mis datos", onClick = { editing = true }, fullWidth = true)
+                return@Column
+            }
+            InvoiceTextField(issuer.fullName, { onChange(issuer.copy(fullName = it)) }, "Nombre y apellidos *")
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(issuer.taxId, { onChange(issuer.copy(taxId = it)) }, "NIF *", Modifier.weight(1f))
+                InvoiceTextField(issuer.tradeName, { onChange(issuer.copy(tradeName = it)) }, "Nombre comercial", Modifier.weight(1f))
+            }
+            if (isSpanishPersonalTaxIdValid(issuer.taxId) == false) {
+                Text(
+                    "La letra del NIF no coincide con los números.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            InvoiceTextField(issuer.addressLine, { onChange(issuer.copy(addressLine = it)) }, "Domicilio fiscal (calle y número) *")
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(issuer.postalCode, { onChange(issuer.copy(postalCode = it)) }, "Código postal *", Modifier.weight(1f))
+                InvoiceTextField(issuer.city, { onChange(issuer.copy(city = it)) }, "Población *", Modifier.weight(1f))
+                InvoiceTextField(issuer.province, { onChange(issuer.copy(province = it)) }, "Provincia", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(issuer.email, { onChange(issuer.copy(email = it)) }, "Email", Modifier.weight(1f))
+                InvoiceTextField(issuer.phone, { onChange(issuer.copy(phone = it)) }, "Teléfono", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(issuer.paymentMethod, { onChange(issuer.copy(paymentMethod = it)) }, "Forma de pago", Modifier.weight(1f))
+                InvoiceTextField(issuer.iban, { onChange(issuer.copy(iban = it)) }, "IBAN para el cobro", Modifier.weight(1f))
+            }
+            if (editing && missing.isEmpty()) {
+                SecondaryButton(text = "Listo", onClick = { editing = false }, fullWidth = true)
+            }
+        }
+    }
+}
+
+/** Fiscal data of the selected client: legal name, NIF/CIF, address and billing email. */
+@Composable
+private fun RecipientSection(recipient: InvoiceRecipient, onChange: (InvoiceRecipient) -> Unit) {
+    val spacing = SupportDeskThemeTokens.spacing
+    SectionCard(
+        title = "Datos fiscales del cliente",
+        subtitle = "Obligatorios cuando el cliente es empresa o autónomo. Se recuerdan para la próxima factura.",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(recipient.legalName, { onChange(recipient.copy(legalName = it)) }, "Razón social *", Modifier.weight(2f))
+                InvoiceTextField(recipient.taxId, { onChange(recipient.copy(taxId = it)) }, "NIF/CIF *", Modifier.weight(1f))
+            }
+            InvoiceTextField(recipient.addressLine, { onChange(recipient.copy(addressLine = it)) }, "Dirección *")
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(recipient.postalCode, { onChange(recipient.copy(postalCode = it)) }, "Código postal", Modifier.weight(1f))
+                InvoiceTextField(recipient.city, { onChange(recipient.copy(city = it)) }, "Población *", Modifier.weight(1f))
+                InvoiceTextField(recipient.province, { onChange(recipient.copy(province = it)) }, "Provincia", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                InvoiceTextField(recipient.email, { onChange(recipient.copy(email = it)) }, "Email de facturación", Modifier.weight(2f))
+                InvoiceTextField(recipient.country, { onChange(recipient.copy(country = it)) }, "País", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun InvoiceTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier,
+        singleLine = true,
+    )
 }
 
 @Composable

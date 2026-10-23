@@ -10,10 +10,12 @@ import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 interface InvoicePdfStorage {
     suspend fun listSavedInvoices(): List<InvoicePdfFile>
 
-    /** [invoiceNumber] is generated up front by InvoiceBillingLedger.nextInvoiceNumber. */
+    /** [invoiceNumber] is assigned up front by InvoiceBillingLedger.issueInvoice. */
     suspend fun saveInvoice(input: CreateInvoiceInput, invoiceNumber: String): InvoicePdfFile
     suspend fun openSavedInvoice(fileName: String)
-    suspend fun deleteSavedInvoice(fileName: String)
+
+    // No delete on purpose: an issued invoice must be kept. Mistakes are voided (and later
+    // corrected with a rectifying invoice), never erased.
 }
 
 expect fun createInvoicePdfStorage(): InvoicePdfStorage

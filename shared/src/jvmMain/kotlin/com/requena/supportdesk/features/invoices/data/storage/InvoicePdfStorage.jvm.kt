@@ -3,7 +3,12 @@ package com.requena.supportdesk.features.invoices.data.storage
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceInput
 import com.requena.supportdesk.features.invoices.domain.model.CreateInvoiceItemInput
 import com.requena.supportdesk.features.invoices.domain.model.InvoiceItemKind
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceIssuer
 import com.requena.supportdesk.features.invoices.domain.model.InvoicePdfFile
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceRecipient
+import com.requena.supportdesk.features.invoices.domain.model.InvoiceTotals
+import com.requena.supportdesk.features.invoices.domain.model.invoiceLegalProblem
+import com.requena.supportdesk.features.invoices.domain.model.normalizeTaxId
 import com.requena.supportdesk.features.invoices.domain.model.calculateInvoiceLineAmounts
 import com.requena.supportdesk.features.invoices.domain.model.calculateInvoiceTotals
 import org.apache.pdfbox.pdmodel.PDDocument
@@ -23,24 +28,14 @@ import java.text.Normalizer
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.Properties
 import java.util.UUID
 import java.util.logging.Level
 import java.util.logging.Logger
 
 actual fun createInvoicePdfStorage(): InvoicePdfStorage = DesktopInvoicePdfStorage()
 
-internal data class InvoiceIssuerProfile(
-    val name: String,
-    val taxId: String? = null,
-    val addressLine1: String? = null,
-    val addressLine2: String? = null,
-    val phone: String? = null,
-)
-
 internal class DesktopInvoicePdfStorage(
     private val invoicesDirectory: Path = defaultInvoicesDirectory(),
-    private val issuerProfile: InvoiceIssuerProfile = loadInvoiceIssuerProfile(),
 ) : InvoicePdfStorage {
 
     override suspend fun listSavedInvoices(): List<InvoicePdfFile> {
@@ -111,25 +106,10 @@ internal class DesktopInvoicePdfStorage(
         }
     }
 
-    override suspend fun deleteSavedInvoice(fileName: String) {
-        logger.info("invoice_pdf.delete.start fileName=$fileName")
-        try {
-            val directory = ensureInvoicesDirectory()
-            val invoice = directory.resolve(fileName).normalize()
-            require(invoice.parent == directory && Files.isRegularFile(invoice)) {
-                "La factura seleccionada ya no existe."
-            }
-            Files.delete(invoice)
-            logger.info("invoice_pdf.delete.success fileName=$fileName")
-        } catch (error: Throwable) {
-            logger.log(Level.SEVERE, "invoice_pdf.delete.failure fileName=$fileName", error)
-            throw error
-        }
-    }
-
     private fun validate(input: CreateInvoiceInput) {
         require(input.clientId.isNotBlank()) { "Selecciona un cliente." }
         require(input.clientName.isNotBlank()) { "El cliente no tiene un nombre válido." }
+        invoiceLegalProblem(input)?.let { problem -> throw IllegalArgumentException(problem) }
         require(input.issuedAt.isValidIsoDate()) { "La fecha de emisión debe usar el formato YYYY-MM-DD." }
         input.dueAt?.takeIf(String::isNotBlank)?.let { dueAt ->
             require(dueAt.isValidIsoDate()) { "La fecha de vencimiento debe usar el formato YYYY-MM-DD." }
@@ -156,7 +136,7 @@ internal class DesktopInvoicePdfStorage(
 
     private fun writeInvoicePdf(input: CreateInvoiceInput, invoiceNumber: String, target: Path) {
         val items = input.items.sortedBy(CreateInvoiceItemInput::sortOrder)
-        val totals = calculateInvoiceTotals(items, input.taxPercent)
+        val totals = calculateInvoiceTotals(items, input.taxPercent, input.withholdingPercent)
 
         PDDocument().use { document ->
             fun startPage(): PDPageContentStream {
@@ -166,22 +146,23 @@ internal class DesktopInvoicePdfStorage(
             }
 
             var content = startPage()
+            var cursorY = PAGE_HEIGHT - PDF_TOP_MARGIN
+            fun ensureSpace(needed: Float) {
+                if (cursorY - needed < PDF_BOTTOM_MARGIN) {
+                    content.close()
+                    content = startPage()
+                    cursorY = PAGE_HEIGHT - PDF_TOP_MARGIN
+                }
+            }
             try {
-                var cursorY = drawInvoiceHeader(
-                    content = content,
-                    input = input,
-                    invoiceNumber = invoiceNumber,
-                    issuer = issuerProfile,
-                )
+                cursorY = drawInvoiceHeader(content = content, input = input, invoiceNumber = invoiceNumber)
                 drawTableHeader(content, cursorY)
                 cursorY -= TABLE_HEADER_HEIGHT
 
                 items.forEach { item ->
                     val row = invoiceTableRow(item, input.taxPercent)
                     if (cursorY - row.height < PDF_BOTTOM_MARGIN) {
-                        content.close()
-                        content = startPage()
-                        cursorY = PAGE_HEIGHT - PDF_TOP_MARGIN
+                        ensureSpace(row.height)
                         drawTableHeader(content, cursorY)
                         cursorY -= TABLE_HEADER_HEIGHT
                     }
@@ -189,20 +170,26 @@ internal class DesktopInvoicePdfStorage(
                     cursorY -= row.height
                 }
 
-                if (cursorY - TOTALS_BLOCK_HEIGHT < PDF_BOTTOM_MARGIN) {
-                    content.close()
-                    content = startPage()
-                    cursorY = PAGE_HEIGHT - PDF_TOP_MARGIN
+                val totalLines = totalLines(input, totals)
+                ensureSpace(TOTALS_LINE_HEIGHT * totalLines.size + TOTALS_TOP_GAP)
+                cursorY = drawTotals(content, top = cursorY - TOTALS_TOP_GAP, lines = totalLines)
+
+                input.taxExemptionNote?.takeIf { input.taxPercent == 0.0 && it.isNotBlank() }?.let { note ->
+                    val lines = wrapText(note, PDType1Font.HELVETICA, NOTES_FONT_SIZE, CONTENT_WIDTH)
+                    ensureSpace(NOTES_GAP + NOTES_TITLE_LEADING + lines.size * NOTES_LEADING)
+                    cursorY = drawParagraph(content, cursorY - NOTES_GAP, "MENCIÓN LEGAL DEL IVA", lines)
                 }
-                cursorY = drawTotals(content, top = cursorY, subtotal = totals.subtotal, tax = totals.tax, total = totals.total, taxPercent = input.taxPercent)
+
+                val paymentLines = paymentLines(input)
+                if (paymentLines.isNotEmpty()) {
+                    ensureSpace(NOTES_GAP + NOTES_TITLE_LEADING + paymentLines.size * NOTES_LEADING)
+                    cursorY = drawParagraph(content, cursorY - NOTES_GAP, "FORMA DE PAGO", paymentLines)
+                }
 
                 input.notes?.takeIf(String::isNotBlank)?.let { notes ->
-                    if (cursorY - NOTES_MINIMUM_HEIGHT < PDF_BOTTOM_MARGIN) {
-                        content.close()
-                        content = startPage()
-                        cursorY = PAGE_HEIGHT - PDF_TOP_MARGIN
-                    }
-                    drawNotes(content, top = cursorY - NOTES_GAP, notes = notes)
+                    val lines = wrapText(notes, PDType1Font.HELVETICA, NOTES_FONT_SIZE, CONTENT_WIDTH)
+                    ensureSpace(NOTES_GAP + NOTES_TITLE_LEADING + lines.size * NOTES_LEADING)
+                    cursorY = drawParagraph(content, cursorY - NOTES_GAP, "NOTAS", lines)
                 }
             } finally {
                 content.close()
@@ -211,14 +198,19 @@ internal class DesktopInvoicePdfStorage(
         }
     }
 
+    /**
+     * Issuer on the left, invoice title and dates on the right, then the full-width client
+     * block. Returns the y where the concepts table starts.
+     */
     private fun drawInvoiceHeader(
         content: PDPageContentStream,
         input: CreateInvoiceInput,
         invoiceNumber: String,
-        issuer: InvoiceIssuerProfile,
     ): Float {
-        var issuerY = PAGE_HEIGHT - PDF_TOP_MARGIN
-        issuer.visibleLines().forEachIndexed { index, line ->
+        val top = PAGE_HEIGHT - PDF_TOP_MARGIN
+
+        var issuerY = top
+        input.issuer.visibleLines().forEachIndexed { index, line ->
             drawText(
                 content = content,
                 text = line,
@@ -226,116 +218,54 @@ internal class DesktopInvoicePdfStorage(
                 y = issuerY,
                 font = if (index == 0) PDType1Font.HELVETICA_BOLD else PDType1Font.HELVETICA,
                 fontSize = if (index == 0) ISSUER_NAME_FONT_SIZE else ISSUER_FONT_SIZE,
-                color = TEXT_COLOR,
+                color = if (index == 0) TEXT_COLOR else DETAIL_COLOR,
             )
             issuerY -= if (index == 0) ISSUER_NAME_LEADING else ISSUER_LEADING
         }
 
-        val metadataTop = issuerY - HEADER_TO_METADATA_GAP
-        drawLabelValueBox(
-            content = content,
-            x = PDF_LEFT_MARGIN,
-            top = metadataTop,
-            width = LEFT_METADATA_COLUMN_WIDTH,
-            label = "Fecha",
-            value = input.issuedAt.toPdfDate(),
-        )
-        drawLabelValueBox(
-            content = content,
-            x = PDF_LEFT_MARGIN + LEFT_METADATA_COLUMN_WIDTH + METADATA_COLUMN_GAP,
-            top = metadataTop,
-            width = LEFT_METADATA_COLUMN_WIDTH,
-            label = "Fecha de vencimiento",
-            value = input.dueAt?.toPdfDate().orEmpty(),
-        )
-        val secondRowTop = metadataTop - METADATA_BOX_HEIGHT - METADATA_ROW_GAP
-        drawLabelValueBox(
-            content = content,
-            x = PDF_LEFT_MARGIN,
-            top = secondRowTop,
-            width = LEFT_METADATA_COLUMN_WIDTH,
-            label = "N.º de factura",
-            value = invoiceNumber,
-        )
-        drawLabelValueBox(
-            content = content,
-            x = PDF_LEFT_MARGIN + LEFT_METADATA_COLUMN_WIDTH + METADATA_COLUMN_GAP,
-            top = secondRowTop,
-            width = LEFT_METADATA_COLUMN_WIDTH,
-            label = "Ref",
-            value = input.reference.orEmpty(),
-        )
-        drawClientBox(
-            content = content,
-            x = CLIENT_BOX_X,
-            top = metadataTop,
-            width = CLIENT_BOX_WIDTH,
-            height = CLIENT_BOX_HEIGHT,
-            clientName = input.clientName,
-        )
-        return metadataTop - CLIENT_BOX_HEIGHT - HEADER_TO_TABLE_GAP
+        val rightEdge = PDF_LEFT_MARGIN + CONTENT_WIDTH
+        drawTextRightAligned(content, "FACTURA", rightEdge, top - TITLE_FONT_SIZE + ISSUER_NAME_FONT_SIZE, PDType1Font.HELVETICA_BOLD, TITLE_FONT_SIZE, ACCENT_COLOR)
+        var metaY = top - TITLE_FONT_SIZE - TITLE_GAP
+        buildList {
+            add("N.º de factura" to invoiceNumber)
+            add("Fecha de emisión" to input.issuedAt.toPdfDate())
+            input.operationDate?.takeIf(String::isNotBlank)?.let { add("Fecha de operación" to it.toPdfDateOrSelf()) }
+            input.dueAt?.takeIf(String::isNotBlank)?.let { add("Fecha de vencimiento" to it.toPdfDate()) }
+            input.reference?.takeIf(String::isNotBlank)?.let { add("Referencia" to it) }
+        }.forEach { (label, value) ->
+            drawTextRightAligned(content, value, rightEdge, metaY, PDType1Font.HELVETICA_BOLD, VALUE_FONT_SIZE, TEXT_COLOR)
+            val valueWidth = textWidth(value, PDType1Font.HELVETICA_BOLD, VALUE_FONT_SIZE)
+            drawTextRightAligned(content, "$label:", rightEdge - valueWidth - META_LABEL_GAP, metaY, PDType1Font.HELVETICA, VALUE_FONT_SIZE, DETAIL_COLOR)
+            metaY -= META_LEADING
+        }
+
+        val clientTop = minOf(issuerY, metaY) - HEADER_TO_CLIENT_GAP
+        val clientBottom = drawClientBox(content, top = clientTop, recipient = input.recipient)
+        return clientBottom - HEADER_TO_TABLE_GAP
     }
 
-    private fun drawLabelValueBox(
-        content: PDPageContentStream,
-        x: Float,
-        top: Float,
-        width: Float,
-        label: String,
-        value: String,
-    ) {
-        drawBorder(content, x = x, y = top - METADATA_BOX_HEIGHT, width = width, height = METADATA_BOX_HEIGHT)
-        fillRectangle(content, x = x, y = top - METADATA_LABEL_HEIGHT, width = width, height = METADATA_LABEL_HEIGHT, color = HEADER_FILL_COLOR)
-        drawHorizontalLine(content, x, top - METADATA_LABEL_HEIGHT, x + width)
-        drawText(
-            content = content,
-            text = label,
-            x = x + CELL_PADDING,
-            y = top - METADATA_LABEL_TEXT_OFFSET,
-            font = PDType1Font.HELVETICA_BOLD,
-            fontSize = LABEL_FONT_SIZE,
-            color = TEXT_COLOR,
-        )
-        drawText(
-            content = content,
-            text = value,
-            x = x + CELL_PADDING,
-            y = top - METADATA_VALUE_TEXT_OFFSET,
-            font = PDType1Font.HELVETICA,
-            fontSize = VALUE_FONT_SIZE,
-            color = TEXT_COLOR,
-        )
-    }
-
-    private fun drawClientBox(
-        content: PDPageContentStream,
-        x: Float,
-        top: Float,
-        width: Float,
-        height: Float,
-        clientName: String,
-    ) {
-        drawBorder(content, x = x, y = top - height, width = width, height = height)
-        fillRectangle(content, x = x, y = top - CLIENT_LABEL_HEIGHT, width = width, height = CLIENT_LABEL_HEIGHT, color = HEADER_FILL_COLOR)
-        drawHorizontalLine(content, x, top - CLIENT_LABEL_HEIGHT, x + width)
-        drawText(
-            content = content,
-            text = "CLIENTE",
-            x = x + CELL_PADDING,
-            y = top - CLIENT_LABEL_TEXT_OFFSET,
-            font = PDType1Font.HELVETICA_BOLD,
-            fontSize = CLIENT_LABEL_FONT_SIZE,
-            color = TEXT_COLOR,
-        )
-        drawText(
-            content = content,
-            text = clientName,
-            x = x + CELL_PADDING,
-            y = top - CLIENT_NAME_TEXT_OFFSET,
-            font = PDType1Font.HELVETICA_BOLD,
-            fontSize = CLIENT_NAME_FONT_SIZE,
-            color = TEXT_COLOR,
-        )
+    private fun drawClientBox(content: PDPageContentStream, top: Float, recipient: InvoiceRecipient): Float {
+        val lines = recipient.visibleLines()
+        val height = CLIENT_LABEL_HEIGHT + CELL_PADDING + lines.size * CLIENT_LEADING + CELL_PADDING / 2
+        val bottom = top - height
+        fillRectangle(content, x = PDF_LEFT_MARGIN, y = top - CLIENT_LABEL_HEIGHT, width = CONTENT_WIDTH, height = CLIENT_LABEL_HEIGHT, color = HEADER_FILL_COLOR)
+        drawBorder(content, x = PDF_LEFT_MARGIN, y = bottom, width = CONTENT_WIDTH, height = height)
+        drawHorizontalLine(content, PDF_LEFT_MARGIN, top - CLIENT_LABEL_HEIGHT, PDF_LEFT_MARGIN + CONTENT_WIDTH)
+        drawText(content, "CLIENTE", PDF_LEFT_MARGIN + CELL_PADDING, top - CLIENT_LABEL_TEXT_OFFSET, PDType1Font.HELVETICA_BOLD, LABEL_FONT_SIZE, TEXT_COLOR)
+        var y = top - CLIENT_LABEL_HEIGHT - CELL_PADDING - CLIENT_NAME_FONT_SIZE + 2f
+        lines.forEachIndexed { index, line ->
+            drawText(
+                content = content,
+                text = line,
+                x = PDF_LEFT_MARGIN + CELL_PADDING,
+                y = y,
+                font = if (index == 0) PDType1Font.HELVETICA_BOLD else PDType1Font.HELVETICA,
+                fontSize = if (index == 0) CLIENT_NAME_FONT_SIZE else VALUE_FONT_SIZE,
+                color = TEXT_COLOR,
+            )
+            y -= CLIENT_LEADING
+        }
+        return bottom
     }
 
     private fun drawTableHeader(content: PDPageContentStream, top: Float) {
@@ -377,7 +307,8 @@ internal class DesktopInvoicePdfStorage(
             quantityLabel = if (item.kind == InvoiceItemKind.TASK_HOURS) "horas" else "unidades",
             unitPrice = currency(item.unitPrice),
             taxPercent = "${decimal(taxPercent)}%",
-            total = currency(calculated.total),
+            // Line amount is the taxable base; IVA and IRPF are shown once in the totals block.
+            total = currency(calculated.subtotal),
             height = maxOf(MINIMUM_ROW_HEIGHT, contentHeight),
         )
     }
@@ -407,31 +338,34 @@ internal class DesktopInvoicePdfStorage(
         drawRightAlignedText(content, row.total, invoiceColumns[4], valueY, PDType1Font.HELVETICA_BOLD, ROW_TITLE_FONT_SIZE, TEXT_COLOR)
     }
 
-    private fun drawTotals(
-        content: PDPageContentStream,
-        top: Float,
-        subtotal: Double,
-        tax: Double,
-        total: Double,
-        taxPercent: Double,
-    ): Float {
-        val x = PDF_LEFT_MARGIN + CONTENT_WIDTH - TOTALS_BLOCK_WIDTH
-        val bottom = top - TOTALS_BLOCK_HEIGHT
-        drawBorder(content, x, bottom, TOTALS_BLOCK_WIDTH, TOTALS_BLOCK_HEIGHT)
-        drawHorizontalLine(content, x, top - TOTALS_LINE_HEIGHT, x + TOTALS_BLOCK_WIDTH)
-        drawHorizontalLine(content, x, top - TOTALS_LINE_HEIGHT * 2, x + TOTALS_BLOCK_WIDTH)
-        fillRectangle(content, x, bottom, TOTALS_BLOCK_WIDTH, TOTALS_LINE_HEIGHT, HEADER_FILL_COLOR)
+    private fun totalLines(input: CreateInvoiceInput, totals: InvoiceTotals): List<Pair<String, String>> = buildList {
+        add("Base imponible" to currency(totals.subtotal))
+        add("IVA (${decimal(input.taxPercent)}%)" to currency(totals.tax))
+        if (input.withholdingPercent > 0.0) {
+            add("Retención IRPF (${decimal(input.withholdingPercent)}%)" to "-${currency(totals.withholding)}")
+        }
+        add("TOTAL A PAGAR" to currency(totals.total))
+    }
 
-        drawTotalLine(content, "Base imponible", currency(subtotal), top - TOTALS_LINE_TEXT_OFFSET)
-        drawTotalLine(content, "IVA (${decimal(taxPercent)}%)", currency(tax), top - TOTALS_LINE_HEIGHT - TOTALS_LINE_TEXT_OFFSET)
-        drawTotalLine(
-            content = content,
-            label = "TOTAL",
-            value = currency(total),
-            y = bottom + TOTALS_LINE_TEXT_OFFSET,
-            bold = true,
-        )
+    /** The last line is the highlighted total. Returns the bottom of the block. */
+    private fun drawTotals(content: PDPageContentStream, top: Float, lines: List<Pair<String, String>>): Float {
+        val x = PDF_LEFT_MARGIN + CONTENT_WIDTH - TOTALS_BLOCK_WIDTH
+        val height = TOTALS_LINE_HEIGHT * lines.size
+        val bottom = top - height
+        fillRectangle(content, x, bottom, TOTALS_BLOCK_WIDTH, TOTALS_LINE_HEIGHT, HEADER_FILL_COLOR)
+        drawBorder(content, x, bottom, TOTALS_BLOCK_WIDTH, height)
+        lines.forEachIndexed { index, (label, value) ->
+            val lineTop = top - TOTALS_LINE_HEIGHT * index
+            if (index > 0) drawHorizontalLine(content, x, lineTop, x + TOTALS_BLOCK_WIDTH)
+            drawTotalLine(content, label, value, lineTop - TOTALS_LINE_TEXT_OFFSET, bold = index == lines.lastIndex)
+        }
         return bottom
+    }
+
+    private fun paymentLines(input: CreateInvoiceInput): List<String> = buildList {
+        input.issuer.paymentMethod.takeIf(String::isNotBlank)?.let(::add)
+        input.issuer.iban.takeIf(String::isNotBlank)?.let { add("IBAN: ${formatIban(it)}") }
+        input.dueAt?.takeIf(String::isNotBlank)?.let { add("Vencimiento: ${it.toPdfDate()}") }
     }
 
     private fun drawTotalLine(
@@ -454,14 +388,26 @@ internal class DesktopInvoicePdfStorage(
         )
     }
 
-    private fun drawNotes(content: PDPageContentStream, top: Float, notes: String) {
-        drawText(content, "NOTAS", PDF_LEFT_MARGIN, top, PDType1Font.HELVETICA_BOLD, LABEL_FONT_SIZE, TEXT_COLOR)
+    /** Small titled paragraph below the totals. Returns the y just under the last line. */
+    private fun drawParagraph(content: PDPageContentStream, top: Float, title: String, lines: List<String>): Float {
+        drawText(content, title, PDF_LEFT_MARGIN, top, PDType1Font.HELVETICA_BOLD, LABEL_FONT_SIZE, TEXT_COLOR)
         var y = top - NOTES_TITLE_LEADING
-        wrapText(notes, PDType1Font.HELVETICA, NOTES_FONT_SIZE, CONTENT_WIDTH).forEach { line ->
+        lines.forEach { line ->
             drawText(content, line, PDF_LEFT_MARGIN, y, PDType1Font.HELVETICA, NOTES_FONT_SIZE, DETAIL_COLOR)
             y -= NOTES_LEADING
         }
+        return y + NOTES_LEADING
     }
+
+    private fun drawTextRightAligned(
+        content: PDPageContentStream,
+        text: String,
+        rightX: Float,
+        y: Float,
+        font: PDFont,
+        fontSize: Float,
+        color: Color,
+    ) = drawText(content, text, rightX - textWidth(text, font, fontSize), y, font, fontSize, color)
 
     private fun drawRightAlignedText(
         content: PDPageContentStream,
@@ -655,7 +601,7 @@ internal class DesktopInvoicePdfStorage(
             InvoiceColumn("Cant.", PDF_LEFT_MARGIN + CONCEPT_COLUMN_WIDTH, QUANTITY_COLUMN_WIDTH, alignRight = true),
             InvoiceColumn("Precio uni.", PDF_LEFT_MARGIN + CONCEPT_COLUMN_WIDTH + QUANTITY_COLUMN_WIDTH, UNIT_PRICE_COLUMN_WIDTH, alignRight = true),
             InvoiceColumn("IVA", PDF_LEFT_MARGIN + CONCEPT_COLUMN_WIDTH + QUANTITY_COLUMN_WIDTH + UNIT_PRICE_COLUMN_WIDTH, TAX_COLUMN_WIDTH, alignRight = true),
-            InvoiceColumn("Total", PDF_LEFT_MARGIN + CONCEPT_COLUMN_WIDTH + QUANTITY_COLUMN_WIDTH + UNIT_PRICE_COLUMN_WIDTH + TAX_COLUMN_WIDTH, TOTAL_COLUMN_WIDTH, alignRight = true),
+            InvoiceColumn("Importe", PDF_LEFT_MARGIN + CONCEPT_COLUMN_WIDTH + QUANTITY_COLUMN_WIDTH + UNIT_PRICE_COLUMN_WIDTH + TAX_COLUMN_WIDTH, TOTAL_COLUMN_WIDTH, alignRight = true),
         )
         const val PDF_EXTENSION = ".pdf"
         const val PAGE_HEIGHT = 841.89f
@@ -669,22 +615,15 @@ internal class DesktopInvoicePdfStorage(
         const val ISSUER_FONT_SIZE = 10f
         const val ISSUER_NAME_LEADING = 19f
         const val ISSUER_LEADING = 15f
-        const val HEADER_TO_METADATA_GAP = 24f
-        const val METADATA_BOX_HEIGHT = 50f
-        const val METADATA_LABEL_HEIGHT = 20f
-        const val METADATA_LABEL_TEXT_OFFSET = 14f
-        const val METADATA_VALUE_TEXT_OFFSET = 39f
-        const val METADATA_ROW_GAP = 12f
-        const val METADATA_COLUMN_GAP = 12f
-        const val LEFT_METADATA_COLUMN_WIDTH = 112f
-        const val CLIENT_BOX_X = PDF_LEFT_MARGIN + LEFT_METADATA_COLUMN_WIDTH * 2 + METADATA_COLUMN_GAP * 2
-        const val CLIENT_BOX_WIDTH = 235f
-        const val CLIENT_BOX_HEIGHT = METADATA_BOX_HEIGHT * 2 + METADATA_ROW_GAP
-        const val CLIENT_LABEL_HEIGHT = 25f
-        const val CLIENT_LABEL_TEXT_OFFSET = 18f
-        const val CLIENT_NAME_TEXT_OFFSET = 45f
-        const val CLIENT_LABEL_FONT_SIZE = 14f
+        const val TITLE_FONT_SIZE = 24f
+        const val TITLE_GAP = 14f
+        const val META_LEADING = 15f
+        const val META_LABEL_GAP = 4f
+        const val HEADER_TO_CLIENT_GAP = 22f
+        const val CLIENT_LABEL_HEIGHT = 22f
+        const val CLIENT_LABEL_TEXT_OFFSET = 15f
         const val CLIENT_NAME_FONT_SIZE = 11f
+        const val CLIENT_LEADING = 14f
         const val HEADER_TO_TABLE_GAP = 18f
         const val LABEL_FONT_SIZE = 8.5f
         const val VALUE_FONT_SIZE = 10f
@@ -705,12 +644,11 @@ internal class DesktopInvoicePdfStorage(
         const val QUANTITY_LABEL_LEADING = 11f
         const val MINIMUM_ROW_HEIGHT = 54f
         const val TOTALS_BLOCK_WIDTH = 205f
-        const val TOTALS_BLOCK_HEIGHT = 66f
+        const val TOTALS_TOP_GAP = 12f
         const val TOTALS_LINE_HEIGHT = 22f
         const val TOTALS_LINE_TEXT_OFFSET = 14f
         const val TOTALS_FONT_SIZE = 9.5f
         const val NOTES_GAP = 24f
-        const val NOTES_MINIMUM_HEIGHT = 52f
         const val NOTES_TITLE_LEADING = 15f
         const val NOTES_FONT_SIZE = 8.5f
         const val NOTES_LEADING = 11f
@@ -722,16 +660,10 @@ internal class DesktopInvoicePdfStorage(
         val DETAIL_COLOR = Color(116, 116, 116)
         val BORDER_COLOR = Color(140, 149, 171)
         val HEADER_FILL_COLOR = Color(244, 245, 248)
+        val ACCENT_COLOR = Color(32, 44, 74)
     }
 }
 
-private fun InvoiceIssuerProfile.visibleLines(): List<String> = buildList {
-    add(name)
-    taxId?.takeIf(String::isNotBlank)?.let(::add)
-    addressLine1?.takeIf(String::isNotBlank)?.let(::add)
-    addressLine2?.takeIf(String::isNotBlank)?.let(::add)
-    phone?.takeIf(String::isNotBlank)?.let { phoneNumber -> add("Telf. $phoneNumber") }
-}
 
 private fun String.isValidIsoDate(): Boolean = runCatching { LocalDate.parse(this) }.isSuccess
 
@@ -750,36 +682,6 @@ private fun pdfSafeText(value: String): String = buildString {
     }
 }
 
-private fun loadInvoiceIssuerProfile(): InvoiceIssuerProfile {
-    val properties = Properties()
-    invoicePropertiesCandidates()
-        .firstOrNull(Files::exists)
-        ?.let { path -> Files.newInputStream(path).use(properties::load) }
-    return InvoiceIssuerProfile(
-        name = properties.optionalValue("invoice.issuer.name") ?: "OryKai software",
-        taxId = properties.optionalValue("invoice.issuer.taxId"),
-        addressLine1 = properties.optionalValue("invoice.issuer.addressLine1"),
-        addressLine2 = properties.optionalValue("invoice.issuer.addressLine2"),
-        phone = properties.optionalValue("invoice.issuer.phone"),
-    )
-}
-
-private fun invoicePropertiesCandidates(): List<Path> = buildList {
-    System.getProperty("user.dir")
-        ?.takeIf(String::isNotBlank)
-        ?.let(Paths::get)
-        ?.resolve("supportdesk.properties")
-        ?.let(::add)
-    System.getProperty("user.home")
-        ?.takeIf(String::isNotBlank)
-        ?.let(Paths::get)
-        ?.resolve(".supportdesk")
-        ?.resolve("supportdesk.properties")
-        ?.let(::add)
-}.distinct()
-
-private fun Properties.optionalValue(key: String): String? = getProperty(key)?.trim()?.takeIf(String::isNotBlank)
-
 private fun defaultInvoicesDirectory(): Path {
     val homeDirectory = System.getenv("USERPROFILE")
         ?.takeIf { it.isNotBlank() }
@@ -790,3 +692,35 @@ private fun defaultInvoicesDirectory(): Path {
 
 private val PDF_DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ROOT)
 private const val INVOICES_DIRECTORY_NAME = "Facturas OryKai"
+
+private fun InvoiceIssuer.visibleLines(): List<String> = buildList {
+    add(fullName)
+    tradeName.takeIf(String::isNotBlank)?.let(::add)
+    add("NIF: ${normalizeTaxId(taxId)}")
+    add(addressLine)
+    add(postalCodeCityLine(postalCode, city, province))
+    country.takeIf { it.isNotBlank() && !it.equals(InvoiceIssuer.DEFAULT_COUNTRY, ignoreCase = true) }?.let(::add)
+    listOf(email, phone.takeIf(String::isNotBlank)?.let { "Tel. $it" }.orEmpty())
+        .filter(String::isNotBlank)
+        .takeIf(List<String>::isNotEmpty)
+        ?.let { add(it.joinToString("  ·  ")) }
+}
+
+private fun InvoiceRecipient.visibleLines(): List<String> = buildList {
+    add(legalName)
+    add("NIF/CIF: ${normalizeTaxId(taxId)}")
+    add(addressLine)
+    postalCodeCityLine(postalCode, city, province).takeIf(String::isNotBlank)?.let(::add)
+    country.takeIf { it.isNotBlank() && !it.equals(InvoiceIssuer.DEFAULT_COUNTRY, ignoreCase = true) }?.let(::add)
+    email.takeIf(String::isNotBlank)?.let(::add)
+}
+
+private fun postalCodeCityLine(postalCode: String, city: String, province: String): String {
+    val base = listOf(postalCode, city).filter(String::isNotBlank).joinToString(" ")
+    return if (province.isNotBlank() && !province.equals(city, ignoreCase = true)) "$base ($province)" else base
+}
+
+private fun formatIban(iban: String): String = normalizeTaxId(iban).chunked(4).joinToString(" ")
+
+/** Operation date may be an ISO date or free text such as "Octubre 2026". */
+private fun String.toPdfDateOrSelf(): String = runCatching { LocalDate.parse(this).format(PDF_DATE_FORMATTER) }.getOrDefault(this)
