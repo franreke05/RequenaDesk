@@ -24,7 +24,12 @@ class PostgresDemoBootstrapper(
                     password = adminPassword,
                 )
                 val organizationId = ensureOrganization(connection, primaryAdminId, "OryKai")
-                ensureOrganization(connection, secondAdminId, "Empresa de Admin Sanchez")
+                val secondOrganizationId = ensureOrganization(connection, secondAdminId, "Empresa de Admin Sanchez")
+                // On a fresh database V18/V19 ran before these companies existed: give them what
+                // the migrations give existing companies (OryKai: local invoices + operator; both: BETA).
+                markAsOryKai(connection, organizationId)
+                ensureBetaPlan(connection, organizationId)
+                ensureBetaPlan(connection, secondOrganizationId)
                 val clientId = ensureClient(connection, primaryAdminId, organizationId)
                 val clientUserId = ensureClientUser(connection, clientId, clientPassword)
                 val labelId = ensureTaskLabel(connection, primaryAdminId, organizationId)
@@ -62,6 +67,28 @@ class PostgresDemoBootstrapper(
         setString(1, name)
         setString(2, email)
         setString(3, PasswordHasher.hash(password))
+    }
+
+    private fun markAsOryKai(connection: Connection, organizationId: String) {
+        connection.prepareStatement(
+            "UPDATE organizations SET local_pdf_invoices = TRUE, is_platform_operator = TRUE WHERE id = CAST(? AS uuid)",
+        ).use { statement ->
+            statement.setString(1, organizationId)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun ensureBetaPlan(connection: Connection, organizationId: String) {
+        connection.prepareStatement(
+            """
+            INSERT INTO organization_subscriptions (organization_id, plan_key, status)
+            VALUES (CAST(? AS uuid), 'BETA', 'BETA')
+            ON CONFLICT (organization_id) DO NOTHING
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, organizationId)
+            statement.executeUpdate()
+        }
     }
 
     /** The admin's company (created with the admin as OWNER the first time). */

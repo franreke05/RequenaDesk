@@ -20,6 +20,7 @@ import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
+import com.requena.supportdesk.server.domain.service.OrganizationRoles
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.plugins.ratelimit.rateLimit
@@ -107,6 +108,10 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
         rateLimit(SensitiveOperationRateLimit) {
             post("/program-requests/{requestId}/approve") {
                 val identity = call.requireAdminIdentity(tokenService) ?: return@post
+                // Only owners and admins decide on their clients' programs, not every member.
+                if (!OrganizationRoles.canManage(identity.organizationRole)) {
+                    return@post call.respondJson(HttpStatusCode.Forbidden, errorResponse("Only owners and admins can manage the company"))
+                }
                 val requestId = call.parameters["requestId"].orEmpty()
                 val request = call.receiveOrDefault(ApproveClientProgramRequest())
                 if (
@@ -131,6 +136,10 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
             }
             post("/program-requests/{requestId}/reject") {
                 val identity = call.requireAdminIdentity(tokenService) ?: return@post
+                // Only owners and admins decide on their clients' programs, not every member.
+                if (!OrganizationRoles.canManage(identity.organizationRole)) {
+                    return@post call.respondJson(HttpStatusCode.Forbidden, errorResponse("Only owners and admins can manage the company"))
+                }
                 val requestId = call.parameters["requestId"].orEmpty()
                 val request = call.receiveOrDefault(RejectClientProgramRequest())
                 if (requestId.isBlank() || (request.adminNote?.length ?: 0) > 500) {

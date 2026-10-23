@@ -33,6 +33,9 @@ import com.requena.supportdesk.server.config.ServerEnvironment
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.domain.service.OrganizationService
+import com.requena.supportdesk.server.domain.service.OrganizationPlanService
+import com.requena.supportdesk.server.plugins.configureModuleGate
+import com.requena.supportdesk.server.routes.planRoutes
 import com.requena.supportdesk.server.security.CurrentIdentityResolver
 import com.requena.supportdesk.server.routes.organizationRoutes
 import com.requena.supportdesk.server.plugins.configureMonitoring
@@ -90,11 +93,14 @@ fun Application.configureSupportDeskModule(
         repository = runtime.repository,
         tokenService = tokenService,
     )
+    val planService = OrganizationPlanService(plans = runtime.repository, organizations = runtime.repository)
+    configureModuleGate(tokenService, planService)
     val organizationService = OrganizationService(
         repository = runtime.repository,
         sessions = service,
         signupEnabled = serverEnvironment.signupEnabled,
         onMemberChanged = tokenService::invalidate,
+        plans = planService,
     )
     val financeService = BusinessFinanceService(
         store = runtime.database?.let(::postgresBusinessFinanceStore) ?: InMemoryBusinessFinanceStore(),
@@ -170,9 +176,10 @@ fun Application.configureSupportDeskModule(
         }
         authRoutes(service)
         organizationRoutes(organizationService, tokenService)
+        planRoutes(planService, tokenService)
         ticketRoutes(service, tokenService)
         attachmentRoutes(service, tokenService)
-        clientRoutes(service, tokenService)
+        clientRoutes(service, tokenService, planService)
         clientCrmRoutes(service, tokenService)
         clientPortalRoutes(service, tokenService)
         programRoutes(service, tokenService)

@@ -62,7 +62,7 @@ class PostgresMigrationIntegrationTest {
             )
 
             dataSource.use {
-                assertEquals(18, dataSource.migrate())
+                assertEquals(19, dataSource.migrate())
                 assertTrue(dataSource.isReady())
                 listOf(
                     "clients",

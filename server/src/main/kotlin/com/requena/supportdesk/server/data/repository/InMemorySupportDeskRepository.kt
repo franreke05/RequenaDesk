@@ -55,6 +55,14 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
 import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
+import com.requena.supportdesk.server.domain.model.OrganizationSubscription
+import com.requena.supportdesk.server.domain.model.PlanKeys
+import com.requena.supportdesk.server.domain.model.PlanModules
+import com.requena.supportdesk.server.domain.model.PlanUsage
+import com.requena.supportdesk.server.domain.model.ServerPlanRequest
+import com.requena.supportdesk.server.domain.model.SubscriptionPlan
+import com.requena.supportdesk.server.domain.model.SubscriptionStatus
+import com.requena.supportdesk.server.domain.model.TRIAL_DAYS
 import com.requena.supportdesk.server.domain.model.ServerOrganizationInvitationSnapshot
 import com.requena.supportdesk.server.domain.model.ServerOrganizationMemberSnapshot
 import com.requena.supportdesk.server.domain.model.ServerOrganizationSnapshot
@@ -365,6 +373,12 @@ class InMemorySupportDeskRepository(
             createdAt = Instant.now().toString(),
         )
         addMember(organizationId, account.userId, "OWNER")
+        subscriptions[organizationId] = OrganizationSubscription(
+            organizationId = organizationId,
+            planKey = PlanKeys.PRO,
+            status = SubscriptionStatus.TRIAL,
+            trialEndsAt = Instant.now().plus(TRIAL_DAYS, java.time.temporal.ChronoUnit.DAYS),
+        )
         recordLegal(account.userId, legalVersion)
         return identityOf(account)
     }
@@ -461,6 +475,109 @@ class InMemorySupportDeskRepository(
         }
         if (index < 0) throw ServerNotFoundException("Invitation not found")
         invitations[index] = invitations[index].copy(snapshot = invitations[index].snapshot.copy(revokedAt = Instant.now().toString()))
+    }
+
+    override fun pendingInvitationTarget(codeHash: String): Pair<String, String>? =
+        invitations.firstOrNull { it.codeHash == codeHash && it.snapshot.status() == "PENDING" }
+            ?.let { it.organizationId to it.snapshot.role }
+
+    // --- Plans (V19) ---------------------------------------------------------------------
+
+    private val planCatalog = listOf(
+        SubscriptionPlan(PlanKeys.FREE, "Gratis", 0, 0, 1, 25, setOf(PlanModules.CORE),
+            setOf(PlanModules.WORK, PlanModules.SUPPORT, PlanModules.SALES, PlanModules.AGENDA), true, 10),
+        SubscriptionPlan(PlanKeys.AUTONOMO, "Autónomo", 1200, 1000, 1, null, AUTONOMO_MODULES, emptySet(), true, 20),
+        SubscriptionPlan(PlanKeys.PRO, "Pro", 2900, 2400, 3, null, PRO_MODULES, emptySet(), true, 30),
+        SubscriptionPlan(PlanKeys.TEAM, "Equipo", 4900, 4100, 8, null, PRO_MODULES, emptySet(), true, 40),
+        SubscriptionPlan(PlanKeys.BETA, "Beta", 0, 0, null, null, PRO_MODULES, emptySet(), false, 90),
+    )
+    private val subscriptions = mutableMapOf(
+        ORG_ORYKAI to OrganizationSubscription(ORG_ORYKAI, PlanKeys.BETA, SubscriptionStatus.BETA),
+        ORG_SECOND to OrganizationSubscription(ORG_SECOND, PlanKeys.BETA, SubscriptionStatus.BETA),
+    )
+    private val platformOperators = mutableSetOf(ORG_ORYKAI)
+    private val planRequests = mutableListOf<ServerPlanRequest>()
+    val planEvents = mutableListOf<String>()
+
+    /** Test hook: overwrite a company's stored subscription (e.g. an expired trial). */
+    fun setSubscriptionForTest(subscription: OrganizationSubscription) {
+        subscriptions[subscription.organizationId] = subscription
+    }
+
+    override fun plans(): List<SubscriptionPlan> = planCatalog
+
+    override fun subscription(organizationId: String): OrganizationSubscription? = subscriptions[organizationId]
+
+    override fun planUsage(organizationId: String): PlanUsage {
+        val staff = organizationMembers(organizationId).count { it.isActive && it.role != "ACCOUNTANT" }
+        val pending = invitations.count {
+            it.organizationId == organizationId && it.snapshot.role != "ACCOUNTANT" && it.snapshot.status() == "PENDING"
+        }
+        return PlanUsage(staffUsers = staff + pending, clients = clientOwners.count { it.value == organizationId })
+    }
+
+    override fun isPlatformOperator(organizationId: String): Boolean = organizationId in platformOperators
+
+    override fun changePlan(
+        organizationId: String,
+        planKey: String,
+        status: String,
+        billingPeriod: String?,
+        action: String,
+        actorUserId: String?,
+        priceCents: Int?,
+    ): OrganizationSubscription {
+        val previous = subscriptions[organizationId]
+        val updated = OrganizationSubscription(
+            organizationId = organizationId,
+            planKey = planKey,
+            status = status,
+            billingPeriod = billingPeriod,
+            freeModule = previous?.freeModule,
+        )
+        subscriptions[organizationId] = updated
+        planEvents += "$organizationId:$action:${previous?.planKey}->$planKey"
+        return updated
+    }
+
+    override fun setFreeModule(organizationId: String, module: String, actorUserId: String): OrganizationSubscription {
+        val current = subscriptions[organizationId] ?: OrganizationSubscription(organizationId, PlanKeys.FREE, SubscriptionStatus.ACTIVE)
+        return current.copy(freeModule = module).also { subscriptions[organizationId] = it }
+    }
+
+    override fun createPlanRequest(
+        organizationId: String,
+        planKey: String,
+        billingPeriod: String,
+        quotedMonthlyPriceCents: Int,
+        requestedBy: String,
+    ): ServerPlanRequest {
+        if (planRequests.any { it.organizationId == organizationId && it.status == "REQUESTED" }) {
+            throw ServerConflictException("There is already a pending plan request")
+        }
+        return ServerPlanRequest(
+            id = "plan-request-${planRequests.size + 1}",
+            organizationId = organizationId,
+            organizationName = organization(organizationId).name,
+            planKey = planKey,
+            billingPeriod = billingPeriod,
+            quotedMonthlyPriceCents = quotedMonthlyPriceCents,
+            status = "REQUESTED",
+            requestedByName = adminAccounts.firstOrNull { it.userId == requestedBy }?.name.orEmpty(),
+            createdAt = Instant.now().toString(),
+        ).also { planRequests.add(0, it) }
+    }
+
+    override fun planRequests(organizationId: String?, status: String?): List<ServerPlanRequest> =
+        planRequests.filter { (organizationId == null || it.organizationId == organizationId) && (status == null || it.status == status) }
+
+    override fun planRequest(requestId: String): ServerPlanRequest? = planRequests.firstOrNull { it.id == requestId }
+
+    override fun decidePlanRequest(requestId: String, status: String, decidedBy: String, note: String?): ServerPlanRequest? {
+        val index = planRequests.indexOfFirst { it.id == requestId && it.status == "REQUESTED" }
+        if (index < 0) return null
+        return planRequests[index].copy(status = status, decidedAt = Instant.now().toString(), note = note)
+            .also { planRequests[index] = it }
     }
 
     override fun acceptOrganizationInvitation(
@@ -1492,6 +1609,15 @@ private fun businessBetaCatalog(): List<ServerProductCatalogSnapshot> = listOf(
         iconKey = "file-signature",
         capabilities = listOf("document_drafts", "versions", "signature_requests"),
     ),
+    // Same as V15 in Postgres.
+    businessBetaProgram(
+        key = "BUSINESS_PROJECTS",
+        name = "Proyectos y tareas",
+        description = "Proyectos, tareas, tablero diario y control de horas.",
+        category = "Organizacion",
+        iconKey = "list-checks",
+        capabilities = listOf("projects", "tasks", "daily_board", "time_tracking"),
+    ),
 )
 
 private fun businessBetaProgram(
@@ -1517,3 +1643,8 @@ private fun businessBetaProgram(
 // Fixed ids of the two seeded companies (tests rely on them).
 const val ORG_ORYKAI = "org-orykai"
 const val ORG_SECOND = "org-2"
+
+private val AUTONOMO_MODULES = setOf(
+    PlanModules.CORE, PlanModules.WORK, PlanModules.SALES, PlanModules.BILLING, PlanModules.AGENDA, PlanModules.PORTAL,
+)
+private val PRO_MODULES = AUTONOMO_MODULES + setOf(PlanModules.SUPPORT, PlanModules.DOCUMENTS, PlanModules.REPORTS)

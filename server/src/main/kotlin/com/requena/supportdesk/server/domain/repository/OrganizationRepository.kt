@@ -38,6 +38,9 @@ interface OrganizationRepository {
     fun organizationInvitations(organizationId: String): List<ServerOrganizationInvitationSnapshot>
     fun revokeOrganizationInvitation(organizationId: String, invitationId: String)
 
+    /** Company id and role of a pending, unexpired invitation, or null. Does not consume it. */
+    fun pendingInvitationTarget(codeHash: String): Pair<String, String>?
+
     /** Consumes a pending invitation and creates the staff user with the invitation's role. */
     fun acceptOrganizationInvitation(
         codeHash: String,
