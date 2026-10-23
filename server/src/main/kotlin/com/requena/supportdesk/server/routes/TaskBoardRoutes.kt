@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.UpdateTaskBoardPlacementRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
@@ -21,15 +23,15 @@ import io.ktor.server.routing.route
 fun Route.taskBoardRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin/task-board") {
         get {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@get
             call.respondJson(
-                body = successResponse("/admin/task-board", taskBoardJson(service.taskBoard(ownerAdminId))),
+                body = successResponse("/admin/task-board", taskBoardJson(service.taskBoard(organizationId))),
             )
         }
 
         route("/placements/{taskId}") {
             put {
-                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@put
+                val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@put
                 val taskId = call.parameters["taskId"].orEmpty()
                 if (taskId.isBlank()) {
                     return@put call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
@@ -37,7 +39,7 @@ fun Route.taskBoardRoutes(service: SupportDeskService, tokenService: SupportDesk
                 val request = call.receiveOrDefault(UpdateTaskBoardPlacementRequest())
                 val placement = service.placedTaskOnBoard(
                     taskId = taskId,
-                    ownerAdminId = ownerAdminId,
+                    organizationId = organizationId,
                     boardDate = request.boardDate,
                     positionX = request.positionX,
                     positionY = request.positionY,
@@ -51,12 +53,12 @@ fun Route.taskBoardRoutes(service: SupportDeskService, tokenService: SupportDesk
             }
 
             delete {
-                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+                val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
                 val taskId = call.parameters["taskId"].orEmpty()
                 if (taskId.isBlank()) {
                     return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
                 }
-                service.removedTaskFromBoard(taskId, ownerAdminId)
+                service.removedTaskFromBoard(taskId, organizationId)
                 call.respondJson(
                     body = successResponse(
                         "/admin/task-board/placements/$taskId",

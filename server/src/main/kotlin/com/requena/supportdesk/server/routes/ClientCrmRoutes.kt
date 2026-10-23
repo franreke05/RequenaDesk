@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
 import com.requena.supportdesk.server.domain.model.CreateClientContactRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientActivityRequest
@@ -30,17 +32,17 @@ private val allowedClientActivityTypes = setOf("CALL", "EMAIL", "MEETING", "FOLL
 fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin/clients/{clientId}") {
         get("/contacts") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@get
             val clientId = call.clientIdOrRespond() ?: return@get
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/contacts",
-                    clientContactsJson(service.clientContacts(clientId, ownerAdminId)),
+                    clientContactsJson(service.clientContacts(clientId, organizationId)),
                 ),
             )
         }
         post("/contacts") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@post
             val clientId = call.clientIdOrRespond() ?: return@post
             val request = call.receiveOrDefault(CreateClientContactRequest())
             if (!request.isValidForCreation()) {
@@ -50,12 +52,12 @@ fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDesk
                 status = HttpStatusCode.Created,
                 body = successResponse(
                     "/admin/clients/$clientId/contacts",
-                    clientContactJson(service.createdClientContact(clientId, request, ownerAdminId)),
+                    clientContactJson(service.createdClientContact(clientId, request, organizationId)),
                 ),
             )
         }
         patch("/contacts/{contactId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@patch
             val clientId = call.clientIdOrRespond() ?: return@patch
             val contactId = call.parameters["contactId"].orEmpty()
             val request = call.receiveOrDefault(UpdateClientContactRequest())
@@ -65,18 +67,18 @@ fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDesk
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/contacts/$contactId",
-                    clientContactJson(service.updatedClientContact(clientId, contactId, request, ownerAdminId)),
+                    clientContactJson(service.updatedClientContact(clientId, contactId, request, organizationId)),
                 ),
             )
         }
         delete("/contacts/{contactId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
             val clientId = call.clientIdOrRespond() ?: return@delete
             val contactId = call.parameters["contactId"].orEmpty()
             if (contactId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Contact id is required"))
             }
-            service.deletedClientContact(clientId, contactId, ownerAdminId)
+            service.deletedClientContact(clientId, contactId, organizationId)
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/contacts/$contactId",
@@ -85,12 +87,12 @@ fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDesk
             )
         }
         get("/activities") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@get
             val clientId = call.clientIdOrRespond() ?: return@get
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/activities",
-                    clientActivitiesJson(service.clientActivities(clientId, ownerAdminId)),
+                    clientActivitiesJson(service.clientActivities(clientId, organizationId)),
                 ),
             )
         }
@@ -110,14 +112,14 @@ fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDesk
                             clientId = clientId,
                             request = request,
                             createdById = identity.userId,
-                            ownerAdminId = identity.userId,
+                            organizationId = identity.orgId,
                         ),
                     ),
                 ),
             )
         }
         patch("/activities/{activityId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@patch
             val clientId = call.clientIdOrRespond() ?: return@patch
             val activityId = call.parameters["activityId"].orEmpty()
             val request = call.receiveOrDefault(UpdateClientActivityRequest())
@@ -127,18 +129,18 @@ fun Route.clientCrmRoutes(service: SupportDeskService, tokenService: SupportDesk
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/activities/$activityId",
-                    clientActivityJson(service.updatedClientActivity(clientId, activityId, request, ownerAdminId)),
+                    clientActivityJson(service.updatedClientActivity(clientId, activityId, request, organizationId)),
                 ),
             )
         }
         delete("/activities/{activityId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
             val clientId = call.clientIdOrRespond() ?: return@delete
             val activityId = call.parameters["activityId"].orEmpty()
             if (activityId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Activity id is required"))
             }
-            service.deletedClientActivity(clientId, activityId, ownerAdminId)
+            service.deletedClientActivity(clientId, activityId, organizationId)
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/activities/$activityId",

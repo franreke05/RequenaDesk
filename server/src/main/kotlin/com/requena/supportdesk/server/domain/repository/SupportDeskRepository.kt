@@ -48,6 +48,9 @@ import java.time.Instant
 
 interface SupportDeskRepository {
     fun authenticate(email: String, password: String): ServerAuthIdentity?
+
+    /** Current identity (with company) of an active user; used for tokens minted before V17. */
+    fun identityForUser(userId: String): ServerAuthIdentity?
     fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant)
     fun rotateRefreshToken(refreshToken: String, replacementRefreshToken: String, expiresAt: Instant): ServerAuthIdentity?
     fun revokeRefreshToken(refreshToken: String): Boolean
@@ -58,73 +61,73 @@ interface SupportDeskRepository {
     fun updateTicketStatus(ticketId: String, request: UpdateTicketStatusRequest): ServerTicketFieldUpdate
     fun updateTicketPriority(ticketId: String, request: UpdateTicketPriorityRequest): ServerTicketFieldUpdate
     fun createAttachment(ticketId: String, request: UploadAttachmentRequest): ServerAttachmentCreated
-    fun getClients(ownerAdminId: String? = null): List<ServerClientSnapshot>
-    fun createClient(request: CreateClientRequest, ownerAdminId: String? = null): ServerClientProvisioning
-    fun updateClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null): ServerClientSnapshot
-    fun updateClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null)
-    fun regenerateClientCredentials(clientId: String, ownerAdminId: String? = null): ServerClientAccessCredentials
-    fun updateClientComponents(clientId: String, request: UpdateClientComponentsRequest, ownerAdminId: String? = null): ServerClientSnapshot
+    fun getClients(organizationId: String): List<ServerClientSnapshot>
+    fun createClient(request: CreateClientRequest, organizationId: String): ServerClientProvisioning
+    fun updateClient(clientId: String, request: UpdateClientRequest, organizationId: String): ServerClientSnapshot
+    fun updateClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, organizationId: String)
+    fun regenerateClientCredentials(clientId: String, organizationId: String): ServerClientAccessCredentials
+    fun updateClientComponents(clientId: String, request: UpdateClientComponentsRequest, organizationId: String): ServerClientSnapshot
     fun getClientPrograms(clientId: String): ServerClientProgramsSnapshot
     fun createClientProgramRequests(
         clientId: String,
         requestedByUserId: String,
         request: CreateClientProgramRequestsRequest,
     ): List<ServerClientProgramRequestSnapshot>
-    fun getClientProgramRequests(ownerAdminId: String, status: String? = null): List<ServerClientProgramRequestSnapshot>
+    fun getClientProgramRequests(organizationId: String, status: String? = null): List<ServerClientProgramRequestSnapshot>
     fun approveClientProgramRequest(
         requestId: String,
         request: ApproveClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientProgramRequestSnapshot
     fun rejectClientProgramRequest(
         requestId: String,
         request: RejectClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientProgramRequestSnapshot
     fun getClientBillingPreview(
         clientId: String,
         period: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientBillingPreviewSnapshot
-    fun deleteClient(clientId: String, ownerAdminId: String? = null)
-    fun getClientContacts(clientId: String, ownerAdminId: String? = null): List<ServerClientContactSnapshot>
-    fun createClientContact(clientId: String, request: CreateClientContactRequest, ownerAdminId: String? = null): ServerClientContactSnapshot
-    fun updateClientContact(clientId: String, contactId: String, request: UpdateClientContactRequest, ownerAdminId: String? = null): ServerClientContactSnapshot
-    fun deleteClientContact(clientId: String, contactId: String, ownerAdminId: String? = null)
-    fun getClientActivities(clientId: String, ownerAdminId: String? = null): List<ServerClientActivitySnapshot>
-    fun createClientActivity(clientId: String, request: CreateClientActivityRequest, createdById: String, ownerAdminId: String? = null): ServerClientActivitySnapshot
-    fun updateClientActivity(clientId: String, activityId: String, request: UpdateClientActivityRequest, ownerAdminId: String? = null): ServerClientActivitySnapshot
-    fun deleteClientActivity(clientId: String, activityId: String, ownerAdminId: String? = null)
-    fun getTaskLabels(ownerAdminId: String? = null): List<ServerTaskLabelSnapshot>
-    fun createTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
-    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null): ServerTaskLabelSnapshot
-    fun deleteTaskLabel(labelId: String, ownerAdminId: String? = null)
-    fun getTasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): List<ServerTaskSnapshot>
-    fun createTask(request: CreateTaskRequest, createdByUserId: String, ownerAdminId: String? = null): ServerTaskSnapshot
-    fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null): ServerTaskSnapshot
-    fun deleteTask(taskId: String, ownerAdminId: String? = null)
-    fun getTaskBoard(ownerAdminId: String): ServerTaskBoardSnapshot
+    fun deleteClient(clientId: String, organizationId: String)
+    fun getClientContacts(clientId: String, organizationId: String): List<ServerClientContactSnapshot>
+    fun createClientContact(clientId: String, request: CreateClientContactRequest, organizationId: String): ServerClientContactSnapshot
+    fun updateClientContact(clientId: String, contactId: String, request: UpdateClientContactRequest, organizationId: String): ServerClientContactSnapshot
+    fun deleteClientContact(clientId: String, contactId: String, organizationId: String)
+    fun getClientActivities(clientId: String, organizationId: String): List<ServerClientActivitySnapshot>
+    fun createClientActivity(clientId: String, request: CreateClientActivityRequest, createdById: String, organizationId: String): ServerClientActivitySnapshot
+    fun updateClientActivity(clientId: String, activityId: String, request: UpdateClientActivityRequest, organizationId: String): ServerClientActivitySnapshot
+    fun deleteClientActivity(clientId: String, activityId: String, organizationId: String)
+    fun getTaskLabels(organizationId: String): List<ServerTaskLabelSnapshot>
+    fun createTaskLabel(request: CreateTaskLabelRequest, organizationId: String): ServerTaskLabelSnapshot
+    fun updateTaskLabel(labelId: String, request: UpdateTaskLabelRequest, organizationId: String): ServerTaskLabelSnapshot
+    fun deleteTaskLabel(labelId: String, organizationId: String)
+    fun getTasks(clientId: String? = null, labelId: String? = null, organizationId: String): List<ServerTaskSnapshot>
+    fun createTask(request: CreateTaskRequest, createdByUserId: String, organizationId: String): ServerTaskSnapshot
+    fun updateTask(taskId: String, request: UpdateTaskRequest, organizationId: String): ServerTaskSnapshot
+    fun deleteTask(taskId: String, organizationId: String)
+    fun getTaskBoard(organizationId: String): ServerTaskBoardSnapshot
     fun upsertTaskBoardPlacement(
         taskId: String,
-        ownerAdminId: String,
+        organizationId: String,
         boardDate: String,
         positionX: Double,
         positionY: Double,
     ): ServerTaskBoardPlacementSnapshot
-    fun deleteTaskBoardPlacement(taskId: String, ownerAdminId: String)
-    fun getTimeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null): List<ServerTimeLogSnapshot>
-    fun getDashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null): ServerDashboardSnapshot
+    fun deleteTaskBoardPlacement(taskId: String, organizationId: String)
+    fun getTimeLogs(clientId: String? = null, taskId: String? = null, organizationId: String): List<ServerTimeLogSnapshot>
+    fun getDashboard(clientId: String? = null, labelId: String? = null, organizationId: String): ServerDashboardSnapshot
     fun getAttachment(id: String): ServerAttachmentSnapshot?
     fun registerDevice(request: RegisterDeviceRequest): ServerDeviceRegistration
 
-    /** The tenant's single non-finished (ACTIVE/PAUSED) session, if any - used for recovery on app start. */
-    fun activeWorkSession(ownerAdminId: String): ServerWorkSessionSnapshot?
-    fun workSessionsForTask(taskId: String, ownerAdminId: String): List<ServerWorkSessionSnapshot>
-    fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String): ServerWorkSessionSnapshot
-    fun pausedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
-    fun resumedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
-    fun stoppedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
-    fun checkpointedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot
+    /** The staff user's single non-finished (ACTIVE/PAUSED) session, if any - used for recovery on app start. */
+    fun activeWorkSession(actorUserId: String): ServerWorkSessionSnapshot?
+    fun workSessionsForTask(taskId: String, actorUserId: String): List<ServerWorkSessionSnapshot>
+    fun startedWorkSession(request: StartWorkSessionRequest, actorUserId: String, authorId: String): ServerWorkSessionSnapshot
+    fun pausedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot
+    fun resumedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot
+    fun stoppedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot
+    fun checkpointedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot
 }

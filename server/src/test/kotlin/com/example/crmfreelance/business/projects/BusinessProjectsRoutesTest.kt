@@ -125,7 +125,7 @@ class BusinessProjectsRoutesTest {
     }
 
     private fun clientToken(identity: BusinessProjectsIdentity): String = tokenService.createAccessToken(
-        ServerAuthIdentity(identity.userId, "Cliente", "cliente@example.test", "CLIENT", identity.clientId),
+        ServerAuthIdentity(identity.userId, "Cliente", "cliente@example.test", "CLIENT", identity.clientId, organizationId = "org-test"),
     )
 
     private fun adminToken(): String = tokenService.createAccessToken(
@@ -134,7 +134,7 @@ class BusinessProjectsRoutesTest {
             "Admin",
             "admin@example.test",
             "ADMIN",
-            null,
+            null, organizationId = "org-test", organizationRole = "OWNER",
         ),
     )
 

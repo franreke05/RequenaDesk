@@ -74,16 +74,66 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
+// Resolves a user's company: staff through organization_members, portal users through
+// the client they belong to. Used by every query that builds a ServerAuthIdentity.
+private const val ORGANIZATION_COLUMNS =
+    "org.id::text AS organization_id, om.role AS organization_role, org.name AS organization_name"
+private const val ORGANIZATION_JOINS = """
+    LEFT JOIN organization_members om ON om.user_id = u.id
+    LEFT JOIN clients user_client ON user_client.id = u.client_id
+    LEFT JOIN organizations org ON org.id = COALESCE(om.organization_id, user_client.organization_id)
+"""
+
+// owner_admin_id must reference an active ADMIN (trigger enforce_admin_owner). New rows
+// record the company's primary staff user (its OWNER) there; the tenant is organization_id.
+// Expects the organization id as its single bind parameter.
+private const val ORGANIZATION_PRIMARY_ADMIN = """(
+    SELECT om.user_id FROM organization_members om
+    JOIN users u ON u.id = om.user_id AND u.is_active = TRUE AND u.role = 'ADMIN'
+    WHERE om.organization_id = CAST(? AS uuid)
+    ORDER BY (om.role = 'OWNER') DESC, om.created_at
+    LIMIT 1
+)"""
+
+private fun ResultSet.toAuthIdentity() = ServerAuthIdentity(
+    userId = getString("user_id"),
+    name = getString("name"),
+    email = getString("email"),
+    role = getString("role"),
+    clientId = getString("client_id"),
+    organizationId = getString("organization_id"),
+    organizationRole = getString("organization_role"),
+    organizationName = getString("organization_name"),
+)
+
 class PostgresSupportDeskRepository(
     private val dataSource: PostgresSupportDeskDataSource,
 ) : SupportDeskRepository {
 
+    override fun identityForUser(userId: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT u.id::text AS user_id, u.name, u.email::text AS email, u.role, u.client_id::text AS client_id,
+                   $ORGANIZATION_COLUMNS
+            FROM users u
+            $ORGANIZATION_JOINS
+            WHERE u.id::text = ? AND u.is_active = TRUE
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeQuery().use { resultSet -> if (resultSet.next()) resultSet.toAuthIdentity() else null }
+        }
+    }
+
     override fun authenticate(email: String, password: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id::text AS user_id, name, email::text AS email, role, client_id::text AS client_id, password_hash
-            FROM users
-            WHERE email = ? AND is_active = TRUE
+            SELECT u.id::text AS user_id, u.name, u.email::text AS email, u.role, u.client_id::text AS client_id, u.password_hash,
+                   $ORGANIZATION_COLUMNS
+            FROM users u
+            $ORGANIZATION_JOINS
+            WHERE u.email = ? AND u.is_active = TRUE
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
@@ -91,13 +141,7 @@ class PostgresSupportDeskRepository(
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next() && PasswordHasher.verify(password, resultSet.getString("password_hash"))) {
                     updateLastLogin(connection, resultSet.getString("user_id"))
-                    ServerAuthIdentity(
-                        userId = resultSet.getString("user_id"),
-                        name = resultSet.getString("name"),
-                        email = resultSet.getString("email"),
-                        role = resultSet.getString("role"),
-                        clientId = resultSet.getString("client_id"),
-                    )
+                    resultSet.toAuthIdentity()
                 } else {
                     null
                 }
@@ -133,9 +177,11 @@ class PostgresSupportDeskRepository(
         try {
             val identity = connection.prepareStatement(
                 """
-                SELECT u.id::text AS user_id, u.name, u.email::text AS email, u.role, u.client_id::text AS client_id
+                SELECT u.id::text AS user_id, u.name, u.email::text AS email, u.role, u.client_id::text AS client_id,
+                       $ORGANIZATION_COLUMNS
                 FROM refresh_tokens rt
                 JOIN users u ON u.id = rt.user_id
+                $ORGANIZATION_JOINS
                 WHERE rt.token_hash = ?
                   AND rt.revoked_at IS NULL
                   AND rt.expires_at > NOW()
@@ -146,13 +192,7 @@ class PostgresSupportDeskRepository(
                 statement.setString(1, refreshTokenHash)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) {
-                        ServerAuthIdentity(
-                            userId = resultSet.getString("user_id"),
-                            name = resultSet.getString("name"),
-                            email = resultSet.getString("email"),
-                            role = resultSet.getString("role"),
-                            clientId = resultSet.getString("client_id"),
-                        )
+                        resultSet.toAuthIdentity()
                     } else {
                         null
                     }
@@ -412,7 +452,7 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    override fun getClients(ownerAdminId: String?): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
+    override fun getClients(organizationId: String): List<ServerClientSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -445,28 +485,28 @@ class PostgresSupportDeskRepository(
                     FROM tasks ts
                     WHERE ts.client_id = c.id
                       AND ts.completed = FALSE
-                      AND (? IS NULL OR ts.owner_admin_id::text = ?)
+                      AND (? IS NOT NULL AND ts.organization_id::text = ?)
                 ) AS open_tasks_count,
                 (
                     SELECT COALESCE(SUM(tl.minutes), 0)::integer
                     FROM time_logs tl
                     JOIN tasks ts ON ts.id = tl.task_id
                     WHERE tl.client_id = c.id
-                      AND (? IS NULL OR ts.owner_admin_id::text = ?)
+                      AND (? IS NOT NULL AND ts.organization_id::text = ?)
                       AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
                 ) AS monthly_logged_minutes,
                 $CLIENT_BILLING_COLUMNS
             FROM clients c
-            WHERE (? IS NULL OR c.owner_admin_id::text = ?)
+            WHERE (? IS NOT NULL AND c.organization_id::text = ?)
             ORDER BY c.company_name ASC
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
-            statement.setString(4, ownerAdminId)
-            statement.setString(5, ownerAdminId)
-            statement.setString(6, ownerAdminId)
+            statement.setString(1, organizationId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
+            statement.setString(4, organizationId)
+            statement.setString(5, organizationId)
+            statement.setString(6, organizationId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -494,8 +534,8 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun createClient(request: CreateClientRequest, ownerAdminId: String?): ServerClientProvisioning = dataSource.withConnection { connection ->
-        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
+    override fun createClient(request: CreateClientRequest, organizationId: String): ServerClientProvisioning = dataSource.withConnection { connection ->
+        val resolvedOrganizationId = requireNotNull(organizationId) { "organizationId is required" }
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
@@ -506,20 +546,21 @@ class PostgresSupportDeskRepository(
             val client = connection.prepareStatement(
                 """
                 INSERT INTO clients (
-                    owner_admin_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
+                    owner_admin_id, organization_id, company_name, product_name, contact_name, email, account_status, service_tier, preferred_contact_channel
                 )
-                VALUES (CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
+                VALUES ($ORGANIZATION_PRIMARY_ADMIN, CAST(? AS uuid), ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
                 """.trimIndent(),
             ).use { statement ->
-                statement.setString(1, resolvedOwnerAdminId)
-                statement.setString(2, request.companyName)
-                statement.setString(3, request.productName)
-                statement.setString(4, request.contactName)
-                statement.setString(5, email)
-                statement.setString(6, request.accountStatus)
-                statement.setString(7, request.serviceTier)
-                statement.setString(8, request.preferredContactChannel)
+                statement.setString(1, resolvedOrganizationId)
+                statement.setString(2, resolvedOrganizationId)
+                statement.setString(3, request.companyName)
+                statement.setString(4, request.productName)
+                statement.setString(5, request.contactName)
+                statement.setString(6, email)
+                statement.setString(7, request.accountStatus)
+                statement.setString(8, request.serviceTier)
+                statement.setString(9, request.preferredContactChannel)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     ServerClientSnapshot(
@@ -571,9 +612,9 @@ class PostgresSupportDeskRepository(
     override fun updateClient(
         clientId: String,
         request: UpdateClientRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientSnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val linkedClientUserId = findClientUserId(connection, clientId)
         if (
             linkedClientUserId != null &&
@@ -593,7 +634,7 @@ class PostgresSupportDeskRepository(
                 service_tier = COALESCE(NULLIF(?, ''), service_tier),
                 preferred_contact_channel = COALESCE(NULLIF(?, ''), preferred_contact_channel)
             WHERE id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             RETURNING id::text, owner_admin_id::text, company_name, product_name, contact_name, email::text, account_status, service_tier, preferred_contact_channel
             """.trimIndent(),
         ).use { statement ->
@@ -605,8 +646,8 @@ class PostgresSupportDeskRepository(
             statement.setString(6, request.serviceTier)
             statement.setString(7, request.preferredContactChannel)
             statement.setString(8, clientId)
-            statement.setString(9, ownerAdminId)
-            statement.setString(10, ownerAdminId)
+            statement.setString(9, organizationId)
+            statement.setString(10, organizationId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Client not found")
@@ -644,8 +685,8 @@ class PostgresSupportDeskRepository(
         updated.copy(
             enabledComponents = clientComponents(connection, clientId),
             activeTicketCount = getActiveTicketCount(connection, clientId),
-            openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
-            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+            openTasksCount = getOpenTasksCount(connection, clientId, organizationId),
+            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, organizationId),
             billing = readClientBilling(connection, clientId),
         )
     }
@@ -653,10 +694,10 @@ class PostgresSupportDeskRepository(
     override fun updateClientCredentials(
         clientId: String,
         request: UpdateClientCredentialsRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ) {
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             val email = request.email.trim()
             val existingClientUserId = findClientUserId(connection, clientId)
             if (isEmailAssignedToAnotherUser(connection, email, existingClientUserId)) {
@@ -711,13 +752,13 @@ class PostgresSupportDeskRepository(
 
     override fun regenerateClientCredentials(
         clientId: String,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientAccessCredentials = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
-            val client = clientSnapshot(connection, clientId, ownerAdminId)
+            val client = clientSnapshot(connection, clientId, organizationId)
             val existingClientUserId = findClientUserId(connection, clientId)
             if (isEmailAssignedToAnotherUser(connection, client.email, existingClientUserId)) {
                 throw ServerConflictException("Email is already used by another account")
@@ -771,9 +812,9 @@ class PostgresSupportDeskRepository(
     override fun updateClientComponents(
         clientId: String,
         request: UpdateClientComponentsRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientSnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val components = request.components.distinct().sorted()
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
@@ -799,8 +840,8 @@ class PostgresSupportDeskRepository(
                     statement.executeBatch()
                 }
             }
-            syncLegacyServiceSubscription(connection, clientId, components.contains("SERVICE_SLA"), ownerAdminId)
-            val snapshot = clientSnapshot(connection, clientId, ownerAdminId)
+            syncLegacyServiceSubscription(connection, clientId, components.contains("SERVICE_SLA"), organizationId)
+            val snapshot = clientSnapshot(connection, clientId, organizationId)
             connection.commit()
             snapshot
         } catch (error: Throwable) {
@@ -813,7 +854,7 @@ class PostgresSupportDeskRepository(
 
     override fun getClientPrograms(clientId: String): ServerClientProgramsSnapshot =
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId)
+            requireOwnClientExists(connection, clientId)
             ServerClientProgramsSnapshot(
                 catalog = productCatalog(connection),
                 subscriptions = clientProductSubscriptions(connection, clientId),
@@ -894,22 +935,22 @@ class PostgresSupportDeskRepository(
     }
 
     override fun getClientProgramRequests(
-        ownerAdminId: String,
+        organizationId: String,
         status: String?,
     ): List<ServerClientProgramRequestSnapshot> = dataSource.withConnection { connection ->
-        clientProgramRequests(connection, ownerAdminId = ownerAdminId, status = status)
+        clientProgramRequests(connection, organizationId = organizationId, status = status)
     }
 
     override fun approveClientProgramRequest(
         requestId: String,
         request: ApproveClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientProgramRequestSnapshot = dataSource.withConnection { connection ->
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
-            val pending = clientProgramRequestForOwner(connection, requestId, ownerAdminId, lockForUpdate = true)
+            val pending = clientProgramRequestForOwner(connection, requestId, organizationId, lockForUpdate = true)
                 ?: throw ServerNotFoundException("Program request not found")
             if (pending.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
             val previousSubscriptionStatus = clientProductSubscriptionStatus(connection, pending.clientId, pending.productKey)
@@ -978,12 +1019,12 @@ class PostgresSupportDeskRepository(
         requestId: String,
         request: RejectClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientProgramRequestSnapshot = dataSource.withConnection { connection ->
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
-            val pending = clientProgramRequestForOwner(connection, requestId, ownerAdminId, lockForUpdate = true)
+            val pending = clientProgramRequestForOwner(connection, requestId, organizationId, lockForUpdate = true)
                 ?: throw ServerNotFoundException("Program request not found")
             if (pending.status != "REQUESTED") throw ServerConflictException("Program request has already been decided")
             connection.prepareStatement(
@@ -1026,9 +1067,9 @@ class PostgresSupportDeskRepository(
     override fun getClientBillingPreview(
         clientId: String,
         period: String,
-        ownerAdminId: String,
+        organizationId: String,
     ): ServerClientBillingPreviewSnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val firstDay = LocalDate.parse("$period-01")
         val lastDay = firstDay.plusMonths(1).minusDays(1)
         val lines = connection.prepareStatement(
@@ -1071,9 +1112,9 @@ class PostgresSupportDeskRepository(
         )
     }
 
-    override fun deleteClient(clientId: String, ownerAdminId: String?) {
+    override fun deleteClient(clientId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             if (hasLinkedTickets(connection, clientId)) {
                 throw ServerConflictException("Client has related tickets and cannot be deleted")
             }
@@ -1082,20 +1123,20 @@ class PostgresSupportDeskRepository(
                 UPDATE tasks
                 SET client_id = NULL
                 WHERE client_id::text = ?
-                  AND (? IS NULL OR owner_admin_id::text = ?)
+                  AND (? IS NOT NULL AND organization_id::text = ?)
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
+                statement.setString(2, organizationId)
+                statement.setString(3, organizationId)
                 statement.executeUpdate()
             }
             connection.prepareStatement(
-                "DELETE FROM clients WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
+                "DELETE FROM clients WHERE id::text = ? AND (? IS NOT NULL AND organization_id::text = ?)",
             ).use { statement ->
                 statement.setString(1, clientId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
+                statement.setString(2, organizationId)
+                statement.setString(3, organizationId)
                 if (statement.executeUpdate() == 0) {
                     throw ServerNotFoundException("Client not found")
                 }
@@ -1103,9 +1144,9 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getClientContacts(clientId: String, ownerAdminId: String?): List<ServerClientContactSnapshot> =
+    override fun getClientContacts(clientId: String, organizationId: String): List<ServerClientContactSnapshot> =
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             connection.prepareStatement(
                 """
                 SELECT id::text, client_id::text, full_name, email::text, phone, role, is_primary, created_at, updated_at
@@ -1126,9 +1167,9 @@ class PostgresSupportDeskRepository(
     override fun createClientContact(
         clientId: String,
         request: CreateClientContactRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientContactSnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
@@ -1172,9 +1213,9 @@ class PostgresSupportDeskRepository(
         clientId: String,
         contactId: String,
         request: UpdateClientContactRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientContactSnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
@@ -1224,9 +1265,9 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun deleteClientContact(clientId: String, contactId: String, ownerAdminId: String?) {
+    override fun deleteClientContact(clientId: String, contactId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             connection.prepareStatement(
                 "DELETE FROM client_contacts WHERE id::text = ? AND client_id::text = ?",
             ).use { statement ->
@@ -1237,9 +1278,9 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getClientActivities(clientId: String, ownerAdminId: String?): List<ServerClientActivitySnapshot> =
+    override fun getClientActivities(clientId: String, organizationId: String): List<ServerClientActivitySnapshot> =
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             connection.prepareStatement(
                 """
                 SELECT a.id::text, a.client_id::text, a.contact_id::text, a.activity_type, a.subject, a.details,
@@ -1263,9 +1304,9 @@ class PostgresSupportDeskRepository(
         clientId: String,
         request: CreateClientActivityRequest,
         createdById: String,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientActivitySnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val contactId = request.contactId?.trim()?.takeIf(String::isNotBlank)
         if (contactId != null) requireClientContactExists(connection, clientId, contactId)
         val activityId = connection.prepareStatement(
@@ -1294,9 +1335,9 @@ class PostgresSupportDeskRepository(
         clientId: String,
         activityId: String,
         request: UpdateClientActivityRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientActivitySnapshot = dataSource.withConnection { connection ->
-        requireClientExists(connection, clientId, ownerAdminId)
+        requireClientExists(connection, clientId, organizationId)
         val requestedContactId = request.contactId?.trim()?.takeIf(String::isNotBlank)
         if (requestedContactId != null) requireClientContactExists(connection, clientId, requestedContactId)
         val id = connection.prepareStatement(
@@ -1336,9 +1377,9 @@ class PostgresSupportDeskRepository(
         clientActivitySnapshot(connection, clientId, id)
     }
 
-    override fun deleteClientActivity(clientId: String, activityId: String, ownerAdminId: String?) {
+    override fun deleteClientActivity(clientId: String, activityId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireClientExists(connection, clientId, ownerAdminId)
+            requireClientExists(connection, clientId, organizationId)
             connection.prepareStatement(
                 "DELETE FROM client_activities WHERE id::text = ? AND client_id::text = ?",
             ).use { statement ->
@@ -1349,22 +1390,22 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTaskLabels(ownerAdminId: String?): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
+    override fun getTaskLabels(organizationId: String): List<ServerTaskLabelSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT tl.id::text AS id, tl.owner_admin_id::text AS owner_admin_id, tl.name, tl.color_hex, COUNT(t.id)::integer AS tasks_count
             FROM task_labels tl
             LEFT JOIN tasks t ON t.label_id = tl.id
-                             AND (? IS NULL OR t.owner_admin_id::text = ?)
-            WHERE (? IS NULL OR tl.owner_admin_id::text = ?)
+                             AND (? IS NOT NULL AND t.organization_id::text = ?)
+            WHERE (? IS NOT NULL AND tl.organization_id::text = ?)
             GROUP BY tl.id, tl.owner_admin_id, tl.name, tl.color_hex
             ORDER BY tl.name ASC
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
-            statement.setString(4, ownerAdminId)
+            statement.setString(1, organizationId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
+            statement.setString(4, organizationId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -1385,21 +1426,19 @@ class PostgresSupportDeskRepository(
 
     override fun createTaskLabel(
         request: CreateTaskLabelRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
-        val resolvedOwnerAdminId = ownerAdminId
-            ?: request.ownerAdminId.takeIf { it.isNotBlank() }
-            ?: DEFAULT_ADMIN_OWNER_ID
         connection.prepareStatement(
             """
-            INSERT INTO task_labels (owner_admin_id, name, color_hex)
-            VALUES (CAST(? AS uuid), ?, ?)
+            INSERT INTO task_labels (owner_admin_id, organization_id, name, color_hex)
+            VALUES ($ORGANIZATION_PRIMARY_ADMIN, CAST(? AS uuid), ?, ?)
             RETURNING id::text, owner_admin_id::text, name, color_hex
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, resolvedOwnerAdminId)
-            statement.setString(2, request.name.trim())
-            statement.setString(3, normalizeHex(request.colorHex))
+            statement.setString(1, organizationId)
+            statement.setString(2, organizationId)
+            statement.setString(3, request.name.trim())
+            statement.setString(4, normalizeHex(request.colorHex))
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 ServerTaskLabelSnapshot(
@@ -1416,24 +1455,24 @@ class PostgresSupportDeskRepository(
     override fun updateTaskLabel(
         labelId: String,
         request: UpdateTaskLabelRequest,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerTaskLabelSnapshot = dataSource.withConnection { connection ->
-        requireLabelExists(connection, labelId, ownerAdminId)
+        requireLabelExists(connection, labelId, organizationId)
         connection.prepareStatement(
             """
             UPDATE task_labels
             SET name = COALESCE(NULLIF(?, ''), name),
                 color_hex = COALESCE(NULLIF(?, ''), color_hex)
             WHERE id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             RETURNING id::text, owner_admin_id::text, name, color_hex
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, request.name)
             statement.setString(2, request.colorHex?.let(::normalizeHex))
             statement.setString(3, labelId)
-            statement.setString(4, ownerAdminId)
-            statement.setString(5, ownerAdminId)
+            statement.setString(4, organizationId)
+            statement.setString(5, organizationId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Label not found")
@@ -1443,30 +1482,30 @@ class PostgresSupportDeskRepository(
                     ownerAdminId = resultSet.getString("owner_admin_id"),
                     name = resultSet.getString("name"),
                     colorHex = resultSet.getString("color_hex"),
-                    tasksCount = countTasksForLabel(connection, labelId, ownerAdminId),
+                    tasksCount = countTasksForLabel(connection, labelId, organizationId),
                 )
             }
         }
     }
 
-    override fun deleteTaskLabel(labelId: String, ownerAdminId: String?) {
+    override fun deleteTaskLabel(labelId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireLabelExists(connection, labelId, ownerAdminId)
-            if (hasTasksForLabel(connection, labelId, ownerAdminId)) {
+            requireLabelExists(connection, labelId, organizationId)
+            if (hasTasksForLabel(connection, labelId, organizationId)) {
                 throw ServerConflictException("Label is in use by tasks and cannot be deleted")
             }
             connection.prepareStatement(
-                "DELETE FROM task_labels WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
+                "DELETE FROM task_labels WHERE id::text = ? AND (? IS NOT NULL AND organization_id::text = ?)",
             ).use { statement ->
                 statement.setString(1, labelId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
+                statement.setString(2, organizationId)
+                statement.setString(3, organizationId)
                 statement.executeUpdate()
             }
         }
     }
 
-    override fun getTasks(clientId: String?, labelId: String?, ownerAdminId: String?): List<ServerTaskSnapshot> = dataSource.withConnection { connection ->
+    override fun getTasks(clientId: String?, labelId: String?, organizationId: String): List<ServerTaskSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -1493,7 +1532,7 @@ class PostgresSupportDeskRepository(
             LEFT JOIN clients c ON c.id = t.client_id
             WHERE (? IS NULL OR t.client_id::text = ?)
               AND (? IS NULL OR t.label_id::text = ?)
-              AND (? IS NULL OR t.owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND t.organization_id::text = ?)
             ORDER BY t.completed ASC, t.due_date ASC NULLS LAST, t.updated_at DESC, t.created_at DESC
             """.trimIndent(),
         ).use { statement ->
@@ -1501,8 +1540,8 @@ class PostgresSupportDeskRepository(
             statement.setString(2, clientId)
             statement.setString(3, labelId)
             statement.setString(4, labelId)
-            statement.setString(5, ownerAdminId)
-            statement.setString(6, ownerAdminId)
+            statement.setString(5, organizationId)
+            statement.setString(6, organizationId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -1516,19 +1555,19 @@ class PostgresSupportDeskRepository(
     override fun createTask(
         request: CreateTaskRequest,
         createdByUserId: String,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerTaskSnapshot = dataSource.withConnection { connection ->
-        requireLabelExists(connection, request.labelId, ownerAdminId)
-        val resolvedOwnerAdminId = requireNotNull(ownerAdminId) { "ownerAdminId is required" }
-        requireTaskCreatorBelongsToOwner(connection, createdByUserId, resolvedOwnerAdminId)
-        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOwnerAdminId) }
+        requireLabelExists(connection, request.labelId, organizationId)
+        val resolvedOrganizationId = requireNotNull(organizationId) { "organizationId is required" }
+        requireTaskCreatorBelongsToOwner(connection, createdByUserId, resolvedOrganizationId)
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, resolvedOrganizationId) }
         connection.prepareStatement(
             """
             INSERT INTO tasks (
-                title, description, client_id, owner_admin_id, created_by_user_id,
+                title, description, client_id, owner_admin_id, organization_id, created_by_user_id,
                 label_id, due_date, completed, logged_minutes, logged_seconds
             )
-            VALUES (?, ?, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
+            VALUES (?, ?, CAST(? AS uuid), $ORGANIZATION_PRIMARY_ADMIN, CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS date), FALSE, 0, 0)
             RETURNING
                 id::text AS id,
                 title,
@@ -1545,10 +1584,11 @@ class PostgresSupportDeskRepository(
             statement.setString(1, request.title.trim())
             statement.setString(2, request.description.trim())
             statement.setString(3, request.clientId?.takeIf { it.isNotBlank() })
-            statement.setString(4, resolvedOwnerAdminId)
-            statement.setString(5, createdByUserId)
-            statement.setString(6, request.labelId)
-            statement.setString(7, request.dueDate?.trim()?.takeIf { it.isNotBlank() })
+            statement.setString(4, resolvedOrganizationId)
+            statement.setString(5, resolvedOrganizationId)
+            statement.setString(6, createdByUserId)
+            statement.setString(7, request.labelId)
+            statement.setString(8, request.dueDate?.trim()?.takeIf { it.isNotBlank() })
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 hydrateTaskSnapshot(connection, resultSet)
@@ -1556,10 +1596,10 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun updateTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String?): ServerTaskSnapshot = dataSource.withConnection { connection ->
-        requireTaskExists(connection, taskId, ownerAdminId)
-        request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it, ownerAdminId) }
-        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, ownerAdminId) }
+    override fun updateTask(taskId: String, request: UpdateTaskRequest, organizationId: String): ServerTaskSnapshot = dataSource.withConnection { connection ->
+        requireTaskExists(connection, taskId, organizationId)
+        request.labelId?.takeIf { it.isNotBlank() }?.let { requireLabelExists(connection, it, organizationId) }
+        request.clientId?.takeIf { it.isNotBlank() }?.let { requireClientExists(connection, it, organizationId) }
         connection.prepareStatement(
             """
             UPDATE tasks
@@ -1579,7 +1619,7 @@ class PostgresSupportDeskRepository(
                 END,
                 completed = COALESCE(?, completed)
             WHERE id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             RETURNING
                 id::text AS id,
                 title,
@@ -1613,8 +1653,8 @@ class PostgresSupportDeskRepository(
                 statement.setBoolean(12, request.completed)
             }
             statement.setString(13, taskId)
-            statement.setString(14, ownerAdminId)
-            statement.setString(15, ownerAdminId)
+            statement.setString(14, organizationId)
+            statement.setString(15, organizationId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
                     throw ServerNotFoundException("Task not found")
@@ -1624,15 +1664,15 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun deleteTask(taskId: String, ownerAdminId: String?) {
+    override fun deleteTask(taskId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireTaskExists(connection, taskId, ownerAdminId)
+            requireTaskExists(connection, taskId, organizationId)
             connection.prepareStatement(
-                "DELETE FROM tasks WHERE id::text = ? AND (? IS NULL OR owner_admin_id::text = ?)",
+                "DELETE FROM tasks WHERE id::text = ? AND (? IS NOT NULL AND organization_id::text = ?)",
             ).use { statement ->
                 statement.setString(1, taskId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
+                statement.setString(2, organizationId)
+                statement.setString(3, organizationId)
                 if (statement.executeUpdate() == 0) {
                     throw ServerNotFoundException("Task not found")
                 }
@@ -1640,7 +1680,7 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTaskBoard(ownerAdminId: String): ServerTaskBoardSnapshot = dataSource.withConnection { connection ->
+    override fun getTaskBoard(organizationId: String): ServerTaskBoardSnapshot = dataSource.withConnection { connection ->
         val today = connection.prepareStatement(
             "SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Madrid')::date::text AS today",
         ).use { statement ->
@@ -1660,13 +1700,13 @@ class PostgresSupportDeskRepository(
                 placement.updated_at
             FROM task_board_placements placement
             JOIN tasks task ON task.id = placement.task_id
-            WHERE task.owner_admin_id::text = ?
+            WHERE task.organization_id::text = ?
               AND task.completed = FALSE
               AND placement.board_date >= CAST(? AS date)
             ORDER BY placement.board_date, placement.updated_at, placement.task_id
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
+            statement.setString(1, organizationId)
             statement.setString(2, today)
             statement.executeQuery().use { resultSet ->
                 buildList {
@@ -1684,7 +1724,7 @@ class PostgresSupportDeskRepository(
 
     override fun upsertTaskBoardPlacement(
         taskId: String,
-        ownerAdminId: String,
+        organizationId: String,
         boardDate: String,
         positionX: Double,
         positionY: Double,
@@ -1695,7 +1735,7 @@ class PostgresSupportDeskRepository(
                 SELECT id
                 FROM tasks
                 WHERE id::text = ?
-                  AND owner_admin_id::text = ?
+                  AND organization_id::text = ?
                   AND completed = FALSE
                 FOR UPDATE
             )
@@ -1716,13 +1756,13 @@ class PostgresSupportDeskRepository(
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, taskId)
-            statement.setString(2, ownerAdminId)
+            statement.setString(2, organizationId)
             statement.setString(3, boardDate)
             statement.setDouble(4, positionX)
             statement.setDouble(5, positionY)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) {
-                    requireTaskExists(connection, taskId, ownerAdminId)
+                    requireTaskExists(connection, taskId, organizationId)
                     throw ServerConflictException("Completed tasks cannot be placed on the board")
                 }
                 taskBoardPlacementSnapshot(resultSet)
@@ -1730,26 +1770,26 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun deleteTaskBoardPlacement(taskId: String, ownerAdminId: String) {
+    override fun deleteTaskBoardPlacement(taskId: String, organizationId: String) {
         dataSource.withConnection { connection ->
-            requireTaskExists(connection, taskId, ownerAdminId)
+            requireTaskExists(connection, taskId, organizationId)
             connection.prepareStatement(
                 """
                 DELETE FROM task_board_placements placement
                 USING tasks task
                 WHERE placement.task_id = task.id
                   AND task.id::text = ?
-                  AND task.owner_admin_id::text = ?
+                  AND task.organization_id::text = ?
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, taskId)
-                statement.setString(2, ownerAdminId)
+                statement.setString(2, organizationId)
                 statement.executeUpdate()
             }
         }
     }
 
-    override fun getTimeLogs(clientId: String?, taskId: String?, ownerAdminId: String?): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
+    override fun getTimeLogs(clientId: String?, taskId: String?, organizationId: String): List<ServerTimeLogSnapshot> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
             SELECT
@@ -1772,7 +1812,7 @@ class PostgresSupportDeskRepository(
             JOIN users u ON u.id = tl.author_id
             WHERE (? IS NULL OR tl.client_id::text = ?)
               AND (? IS NULL OR tl.task_id::text = ?)
-              AND (? IS NULL OR t.owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND t.organization_id::text = ?)
             ORDER BY tl.work_date DESC NULLS LAST, tl.created_at DESC
             """.trimIndent(),
         ).use { statement ->
@@ -1780,8 +1820,8 @@ class PostgresSupportDeskRepository(
             statement.setString(2, clientId)
             statement.setString(3, taskId)
             statement.setString(4, taskId)
-            statement.setString(5, ownerAdminId)
-            statement.setString(6, ownerAdminId)
+            statement.setString(5, organizationId)
+            statement.setString(6, organizationId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -1792,7 +1832,7 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun activeWorkSession(ownerAdminId: String): ServerWorkSessionSnapshot? = dataSource.withConnection { connection ->
+    override fun activeWorkSession(actorUserId: String): ServerWorkSessionSnapshot? = dataSource.withConnection { connection ->
         val sessionId = connection.prepareStatement(
             """
             SELECT id::text AS id FROM work_sessions
@@ -1800,14 +1840,14 @@ class PostgresSupportDeskRepository(
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
+            statement.setString(1, actorUserId)
             statement.executeQuery().use { resultSet -> if (resultSet.next()) resultSet.getString("id") else null }
         }
         sessionId?.let { hydrateWorkSession(connection, it) }
     }
 
-    override fun workSessionsForTask(taskId: String, ownerAdminId: String): List<ServerWorkSessionSnapshot> = dataSource.withConnection { connection ->
-        requireTaskExists(connection, taskId, ownerAdminId)
+    override fun workSessionsForTask(taskId: String, actorUserId: String): List<ServerWorkSessionSnapshot> = dataSource.withConnection { connection ->
+        requireTaskExists(connection, taskId, staffOrganizationId(connection, actorUserId))
         val sessionIds = connection.prepareStatement(
             """
             SELECT id::text AS id FROM work_sessions
@@ -1816,7 +1856,7 @@ class PostgresSupportDeskRepository(
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, taskId)
-            statement.setString(2, ownerAdminId)
+            statement.setString(2, actorUserId)
             statement.executeQuery().use { resultSet ->
                 buildList { while (resultSet.next()) add(resultSet.getString("id")) }
             }
@@ -1824,15 +1864,16 @@ class PostgresSupportDeskRepository(
         sessionIds.map { id -> requireNotNull(hydrateWorkSession(connection, id)) }
     }
 
-    override fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String): ServerWorkSessionSnapshot =
+    override fun startedWorkSession(request: StartWorkSessionRequest, actorUserId: String, authorId: String): ServerWorkSessionSnapshot =
         dataSource.withConnection { connection ->
             connection.autoCommit = false
             try {
+                val organizationId = staffOrganizationId(connection, actorUserId)
                 val task = connection.prepareStatement(
-                    "SELECT client_id::text AS client_id FROM tasks WHERE id::text = ? AND owner_admin_id::text = ? LIMIT 1",
+                    "SELECT client_id::text AS client_id FROM tasks WHERE id::text = ? AND organization_id::text = ? LIMIT 1",
                 ).use { statement ->
                     statement.setString(1, request.taskId)
-                    statement.setString(2, ownerAdminId)
+                    statement.setString(2, organizationId)
                     statement.executeQuery().use { resultSet ->
                         if (resultSet.next()) resultSet.getString("client_id") else throw ServerNotFoundException("Task not found")
                     }
@@ -1846,7 +1887,7 @@ class PostgresSupportDeskRepository(
                     LIMIT 1
                     """.trimIndent(),
                 ).use { statement ->
-                    statement.setString(1, ownerAdminId)
+                    statement.setString(1, actorUserId)
                     statement.executeQuery().use { resultSet ->
                         if (resultSet.next()) resultSet.getString("title") else null
                     }
@@ -1860,16 +1901,17 @@ class PostgresSupportDeskRepository(
                 val sessionId = try {
                     connection.prepareStatement(
                         """
-                        INSERT INTO work_sessions (task_id, owner_admin_id, client_id, author_id, started_at, status, billable, time_source, business_timezone)
-                        VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), NOW(), 'ACTIVE', ?, 'SERVER', 'Europe/Madrid')
+                        INSERT INTO work_sessions (task_id, owner_admin_id, organization_id, client_id, author_id, started_at, status, billable, time_source, business_timezone)
+                        VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), NOW(), 'ACTIVE', ?, 'SERVER', 'Europe/Madrid')
                         RETURNING id::text AS id
                         """.trimIndent(),
                     ).use { statement ->
                         statement.setString(1, request.taskId)
-                        statement.setString(2, ownerAdminId)
-                        statement.setString(3, task)
-                        statement.setString(4, authorId)
-                        statement.setBoolean(5, billable)
+                        statement.setString(2, actorUserId)
+                        statement.setString(3, organizationId)
+                        statement.setString(4, task)
+                        statement.setString(5, authorId)
+                        statement.setBoolean(6, billable)
                         statement.executeQuery().use { resultSet -> resultSet.next(); resultSet.getString("id") }
                     }
                 } catch (error: java.sql.SQLException) {
@@ -1897,10 +1939,10 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    override fun pausedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+    override fun pausedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
         connection.autoCommit = false
         try {
-            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            val status = requireSessionOwnership(connection, sessionId, actorUserId)
             if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
             if (status == "ACTIVE") {
                 connection.prepareStatement(
@@ -1925,10 +1967,10 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun resumedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+    override fun resumedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
         connection.autoCommit = false
         try {
-            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            val status = requireSessionOwnership(connection, sessionId, actorUserId)
             if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
             if (status == "PAUSED") {
                 connection.prepareStatement(
@@ -1953,10 +1995,10 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun stoppedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+    override fun stoppedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
         connection.autoCommit = false
         try {
-            val status = requireSessionOwnership(connection, sessionId, ownerAdminId)
+            val status = requireSessionOwnership(connection, sessionId, actorUserId)
             if (status == "FINISHED") throw ServerConflictException("El temporizador ya esta detenido.")
 
             connection.prepareStatement(
@@ -2058,8 +2100,8 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun checkpointedWorkSession(sessionId: String, ownerAdminId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
-        requireSessionOwnership(connection, sessionId, ownerAdminId)
+    override fun checkpointedWorkSession(sessionId: String, actorUserId: String): ServerWorkSessionSnapshot = dataSource.withConnection { connection ->
+        requireSessionOwnership(connection, sessionId, actorUserId)
         connection.prepareStatement("UPDATE work_sessions SET last_checkpoint_at = NOW() WHERE id::text = ?").use { statement ->
             statement.setString(1, sessionId)
             statement.executeUpdate()
@@ -2067,12 +2109,29 @@ class PostgresSupportDeskRepository(
         requireNotNull(hydrateWorkSession(connection, sessionId))
     }
 
-    private fun requireSessionOwnership(connection: Connection, sessionId: String, ownerAdminId: String): String =
+    /** Company of an active staff user; work sessions are per user but their tasks are per company. */
+    private fun staffOrganizationId(connection: Connection, userId: String): String =
+        connection.prepareStatement(
+            """
+            SELECT om.organization_id::text AS organization_id
+            FROM organization_members om
+            JOIN users u ON u.id = om.user_id AND u.is_active = TRUE
+            WHERE om.user_id::text = ?
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.getString("organization_id") else throw ServerNotFoundException("Task not found")
+            }
+        }
+
+    private fun requireSessionOwnership(connection: Connection, sessionId: String, actorUserId: String): String =
         connection.prepareStatement(
             "SELECT status FROM work_sessions WHERE id::text = ? AND owner_admin_id::text = ?",
         ).use { statement ->
             statement.setString(1, sessionId)
-            statement.setString(2, ownerAdminId)
+            statement.setString(2, actorUserId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.getString("status") else throw ServerNotFoundException("Work session not found")
             }
@@ -2152,17 +2211,17 @@ class PostgresSupportDeskRepository(
         )
     }
 
-    override fun getDashboard(clientId: String?, labelId: String?, ownerAdminId: String?): ServerDashboardSnapshot = dataSource.withConnection { connection ->
+    override fun getDashboard(clientId: String?, labelId: String?, organizationId: String): ServerDashboardSnapshot = dataSource.withConnection { connection ->
         val activeClients = connection.prepareStatement(
             """
             SELECT COUNT(*)::integer AS active_clients
             FROM clients
             WHERE account_status = 'ACTIVE'
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
-            statement.setString(2, ownerAdminId)
+            statement.setString(1, organizationId)
+            statement.setString(2, organizationId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("active_clients")
@@ -2177,11 +2236,11 @@ class PostgresSupportDeskRepository(
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
             WHERE DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
-              AND (? IS NULL OR t.owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND t.organization_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
-            statement.setString(1, ownerAdminId)
-            statement.setString(2, ownerAdminId)
+            statement.setString(1, organizationId)
+            statement.setString(2, organizationId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 Triple(
@@ -2202,13 +2261,13 @@ class PostgresSupportDeskRepository(
                 FROM time_logs tl
                 JOIN tasks t ON t.id = tl.task_id
                 WHERE tl.client_id::text = ?
-                  AND (? IS NULL OR t.owner_admin_id::text = ?)
+                  AND (? IS NOT NULL AND t.organization_id::text = ?)
                   AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
-                statement.setString(2, ownerAdminId)
-                statement.setString(3, ownerAdminId)
+                statement.setString(2, organizationId)
+                statement.setString(3, organizationId)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.getInt("total_minutes") to resultSet.getInt("billable_minutes")
@@ -2222,15 +2281,15 @@ class PostgresSupportDeskRepository(
             JOIN tasks t ON t.id = tl.task_id
             WHERE DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
               AND (? IS NULL OR tl.client_id::text = ?)
-              AND (? IS NULL OR t.owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND t.organization_id::text = ?)
             GROUP BY tl.work_date
             ORDER BY tl.work_date ASC
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
             statement.setString(2, clientId)
-            statement.setString(3, ownerAdminId)
-            statement.setString(4, ownerAdminId)
+            statement.setString(3, organizationId)
+            statement.setString(4, organizationId)
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -2256,7 +2315,7 @@ class PostgresSupportDeskRepository(
             selectedClientMinutes = selectedClientTotals.first,
             selectedClientBillableMinutes = selectedClientTotals.second,
             dailyMinutes = dailyMinutes,
-            availableTasks = getTasks(clientId, labelId, ownerAdminId),
+            availableTasks = getTasks(clientId, labelId, organizationId),
         )
     }
 
@@ -2322,7 +2381,7 @@ class PostgresSupportDeskRepository(
     private fun clientSnapshot(
         connection: Connection,
         clientId: String,
-        ownerAdminId: String?,
+        organizationId: String,
     ): ServerClientSnapshot {
         val base = connection.prepareStatement(
             """
@@ -2330,13 +2389,13 @@ class PostgresSupportDeskRepository(
                    email::text, account_status, service_tier, preferred_contact_channel
             FROM clients
             WHERE id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet ->
                 if (!resultSet.next()) throw ServerNotFoundException("Client not found")
                 ServerClientSnapshot(
@@ -2357,8 +2416,8 @@ class PostgresSupportDeskRepository(
         return base.copy(
             enabledComponents = clientComponents(connection, clientId),
             activeTicketCount = getActiveTicketCount(connection, clientId),
-            openTasksCount = getOpenTasksCount(connection, clientId, ownerAdminId),
-            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, ownerAdminId),
+            openTasksCount = getOpenTasksCount(connection, clientId, organizationId),
+            monthlyLoggedMinutes = getClientMonthlyMinutes(connection, clientId, organizationId),
             billing = readClientBilling(connection, clientId),
         )
     }
@@ -2893,19 +2952,19 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    private fun getOpenTasksCount(connection: Connection, clientId: String, ownerAdminId: String? = null): Int =
+    private fun getOpenTasksCount(connection: Connection, clientId: String, organizationId: String): Int =
         connection.prepareStatement(
             """
             SELECT COUNT(*)::integer AS open_tasks_count
             FROM tasks
             WHERE client_id::text = ?
               AND completed = FALSE
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("open_tasks_count")
@@ -2923,20 +2982,20 @@ class PostgresSupportDeskRepository(
             }
         }
 
-    private fun getClientMonthlyMinutes(connection: Connection, clientId: String, ownerAdminId: String? = null): Int =
+    private fun getClientMonthlyMinutes(connection: Connection, clientId: String, organizationId: String): Int =
         connection.prepareStatement(
             """
             SELECT COALESCE(SUM(tl.minutes), 0)::integer AS monthly_minutes
             FROM time_logs tl
             JOIN tasks t ON t.id = tl.task_id
             WHERE tl.client_id::text = ?
-              AND (? IS NULL OR t.owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND t.organization_id::text = ?)
               AND DATE_TRUNC('month', tl.work_date) = DATE_TRUNC('month', CURRENT_DATE)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, clientId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("monthly_minutes")
@@ -3022,10 +3081,19 @@ class PostgresSupportDeskRepository(
             statement.executeQuery().use { it.next() }
         }
 
-    private fun requireClientExists(connection: Connection, clientId: String, ownerAdminId: String? = null) {
-        if (!recordExists(connection, "clients", clientId, ownerAdminId)) {
+    private fun requireClientExists(connection: Connection, clientId: String, organizationId: String) {
+        if (!recordExists(connection, "clients", clientId, organizationId)) {
             throw ServerNotFoundException("Client not found")
         }
+    }
+
+    /** Portal-only: [clientId] comes from the caller's own token, so no company scope is needed. */
+    private fun requireOwnClientExists(connection: Connection, clientId: String) {
+        val exists = connection.prepareStatement("SELECT 1 FROM clients WHERE id::text = ? LIMIT 1").use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { it.next() }
+        }
+        if (!exists) throw ServerNotFoundException("Client not found")
     }
 
     private fun requireClientContactExists(connection: Connection, clientId: String, contactId: String) {
@@ -3039,14 +3107,14 @@ class PostgresSupportDeskRepository(
         if (!exists) throw ServerNotFoundException("Client contact not found")
     }
 
-    private fun requireLabelExists(connection: Connection, labelId: String, ownerAdminId: String? = null) {
-        if (!recordExists(connection, "task_labels", labelId, ownerAdminId)) {
+    private fun requireLabelExists(connection: Connection, labelId: String, organizationId: String) {
+        if (!recordExists(connection, "task_labels", labelId, organizationId)) {
             throw ServerNotFoundException("Label not found")
         }
     }
 
-    private fun requireTaskExists(connection: Connection, taskId: String, ownerAdminId: String? = null) {
-        if (!recordExists(connection, "tasks", taskId, ownerAdminId)) {
+    private fun requireTaskExists(connection: Connection, taskId: String, organizationId: String) {
+        if (!recordExists(connection, "tasks", taskId, organizationId)) {
             throw ServerNotFoundException("Task not found")
         }
     }
@@ -3054,42 +3122,43 @@ class PostgresSupportDeskRepository(
     private fun requireTaskCreatorBelongsToOwner(
         connection: Connection,
         createdByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ) {
         val belongsToOwner = connection.prepareStatement(
             """
             SELECT 1
             FROM users creator
             LEFT JOIN clients client ON client.id = creator.client_id
+            LEFT JOIN organization_members member ON member.user_id = creator.id
             WHERE creator.id::text = ?
               AND (
-                  creator.id::text = ?
-                  OR client.owner_admin_id::text = ?
+                  member.organization_id::text = ?
+                  OR client.organization_id::text = ?
               )
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, createdByUserId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { it.next() }
         }
         if (!belongsToOwner) throw ServerNotFoundException("Task creator not found")
     }
 
-    private fun recordExists(connection: Connection, tableName: String, id: String, ownerAdminId: String? = null): Boolean =
+    private fun recordExists(connection: Connection, tableName: String, id: String, organizationId: String): Boolean =
         connection.prepareStatement(
             """
             SELECT 1
             FROM $tableName
             WHERE id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, id)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
@@ -3101,28 +3170,28 @@ class PostgresSupportDeskRepository(
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
-    private fun hasTasksForLabel(connection: Connection, labelId: String, ownerAdminId: String? = null): Boolean =
+    private fun hasTasksForLabel(connection: Connection, labelId: String, organizationId: String): Boolean =
         connection.prepareStatement(
-            "SELECT 1 FROM tasks WHERE label_id::text = ? AND (? IS NULL OR owner_admin_id::text = ?) LIMIT 1",
+            "SELECT 1 FROM tasks WHERE label_id::text = ? AND (? IS NOT NULL AND organization_id::text = ?) LIMIT 1",
         ).use { statement ->
             statement.setString(1, labelId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
 
-    private fun countTasksForLabel(connection: Connection, labelId: String, ownerAdminId: String? = null): Int =
+    private fun countTasksForLabel(connection: Connection, labelId: String, organizationId: String): Int =
         connection.prepareStatement(
             """
             SELECT COUNT(*)::integer AS tasks_count
             FROM tasks
             WHERE label_id::text = ?
-              AND (? IS NULL OR owner_admin_id::text = ?)
+              AND (? IS NOT NULL AND organization_id::text = ?)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, labelId)
-            statement.setString(2, ownerAdminId)
-            statement.setString(3, ownerAdminId)
+            statement.setString(2, organizationId)
+            statement.setString(3, organizationId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.getInt("tasks_count")
@@ -3207,7 +3276,8 @@ class PostgresSupportDeskRepository(
     private fun clientProgramRequests(
         connection: Connection,
         clientId: String? = null,
-        ownerAdminId: String? = null,
+        // Null only for a portal user reading its own client's requests (clientId from its token).
+        organizationId: String? = null,
         status: String? = null,
     ): List<ServerClientProgramRequestSnapshot> = connection.prepareStatement(
         """
@@ -3219,15 +3289,17 @@ class PostgresSupportDeskRepository(
         JOIN clients client ON client.id = request.client_id
         JOIN users requester ON requester.id = request.requested_by_user_id
         WHERE (? IS NULL OR request.client_id = CAST(? AS uuid))
-          AND (? IS NULL OR client.owner_admin_id = CAST(? AS uuid))
+          AND (? IS NULL OR client.organization_id = CAST(? AS uuid))
           AND (? IS NULL OR request.status = ?)
         ORDER BY request.requested_at DESC, request.id DESC
         """.trimIndent(),
-    ).use { statement ->
+    ).also {
+        require(clientId != null || organizationId != null) { "Program requests need a client or a company scope" }
+    }.use { statement ->
         statement.setString(1, clientId)
         statement.setString(2, clientId)
-        statement.setString(3, ownerAdminId)
-        statement.setString(4, ownerAdminId)
+        statement.setString(3, organizationId)
+        statement.setString(4, organizationId)
         statement.setString(5, status)
         statement.setString(6, status)
         statement.executeQuery().use { resultSet ->
@@ -3261,7 +3333,7 @@ class PostgresSupportDeskRepository(
     private fun clientProgramRequestForOwner(
         connection: Connection,
         requestId: String,
-        ownerAdminId: String,
+        organizationId: String,
         lockForUpdate: Boolean,
     ): ServerClientProgramRequestSnapshot? = connection.prepareStatement(
         """
@@ -3273,12 +3345,12 @@ class PostgresSupportDeskRepository(
         JOIN clients client ON client.id = request.client_id
         JOIN users requester ON requester.id = request.requested_by_user_id
         WHERE request.id = CAST(? AS uuid)
-          AND client.owner_admin_id = CAST(? AS uuid)
+          AND client.organization_id = CAST(? AS uuid)
         ${if (lockForUpdate) "FOR UPDATE OF request" else ""}
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, requestId)
-        statement.setString(2, ownerAdminId)
+        statement.setString(2, organizationId)
         statement.executeQuery().use { resultSet ->
             if (resultSet.next()) clientProgramRequestSnapshot(resultSet) else null
         }
@@ -3363,7 +3435,7 @@ class PostgresSupportDeskRepository(
         connection: Connection,
         clientId: String,
         isEnabled: Boolean,
-        ownerAdminId: String?,
+        organizationId: String,
     ) {
         if (isEnabled) {
             connection.prepareStatement(
@@ -3371,7 +3443,7 @@ class PostgresSupportDeskRepository(
                 INSERT INTO client_product_subscriptions (
                     client_id, product_key, status, monthly_price_cents, currency,
                     starts_on, ends_on, approved_by_user_id, approved_at
-                ) VALUES (CAST(? AS uuid), 'SERVICE_SLA', 'ACTIVE', 0, 'EUR', CURRENT_DATE, NULL, CAST(? AS uuid), NOW())
+                ) VALUES (CAST(? AS uuid), 'SERVICE_SLA', 'ACTIVE', 0, 'EUR', CURRENT_DATE, NULL, $ORGANIZATION_PRIMARY_ADMIN, NOW())
                 ON CONFLICT (client_id, product_key) DO UPDATE
                 SET status = 'ACTIVE', ends_on = NULL,
                     approved_by_user_id = COALESCE(EXCLUDED.approved_by_user_id, client_product_subscriptions.approved_by_user_id),
@@ -3379,7 +3451,7 @@ class PostgresSupportDeskRepository(
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, clientId)
-                statement.setString(2, ownerAdminId)
+                statement.setString(2, organizationId)
                 statement.executeUpdate()
             }
         } else {

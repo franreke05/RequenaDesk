@@ -17,16 +17,18 @@ class PostgresDemoBootstrapper(
                     email = "admin@orykai.dev",
                     password = adminPassword,
                 )
-                ensureAdminUser(
+                val secondAdminId = ensureAdminUser(
                     connection = connection,
                     name = "Admin Sanchez",
                     email = "admin2@orykai.dev",
                     password = adminPassword,
                 )
-                val clientId = ensureClient(connection, primaryAdminId)
+                val organizationId = ensureOrganization(connection, primaryAdminId, "OryKai")
+                ensureOrganization(connection, secondAdminId, "Empresa de Admin Sanchez")
+                val clientId = ensureClient(connection, primaryAdminId, organizationId)
                 val clientUserId = ensureClientUser(connection, clientId, clientPassword)
-                val labelId = ensureTaskLabel(connection, primaryAdminId)
-                val taskId = ensureTask(connection, clientId, primaryAdminId, clientUserId, labelId)
+                val labelId = ensureTaskLabel(connection, primaryAdminId, organizationId)
+                val taskId = ensureTask(connection, clientId, primaryAdminId, organizationId, clientUserId, labelId)
                 ensureTimeLog(connection, taskId, clientId, primaryAdminId)
                 ensureTicket(connection, clientId, clientUserId, primaryAdminId)
                 connection.commit()
@@ -62,17 +64,39 @@ class PostgresDemoBootstrapper(
         setString(3, PasswordHasher.hash(password))
     }
 
-    private fun ensureClient(connection: Connection, ownerAdminId: String): String = connection.returningId(
+    /** The admin's company (created with the admin as OWNER the first time). */
+    private fun ensureOrganization(connection: Connection, adminId: String, name: String): String {
+        val existing = connection.prepareStatement(
+            "SELECT organization_id::text FROM organization_members WHERE user_id = CAST(? AS uuid) LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, adminId)
+            statement.executeQuery().use { if (it.next()) it.getString(1) else null }
+        }
+        if (existing != null) return existing
+        val organizationId = connection.returningId("INSERT INTO organizations (name) VALUES (?) RETURNING id::text") {
+            setString(1, name)
+        }
+        connection.prepareStatement(
+            "INSERT INTO organization_members (organization_id, user_id, role) VALUES (CAST(? AS uuid), CAST(? AS uuid), 'OWNER')",
+        ).use { statement ->
+            statement.setString(1, organizationId)
+            statement.setString(2, adminId)
+            statement.executeUpdate()
+        }
+        return organizationId
+    }
+
+    private fun ensureClient(connection: Connection, ownerAdminId: String, organizationId: String): String = connection.returningId(
         """
         INSERT INTO clients (
-            owner_admin_id, company_name, product_name, contact_name, email,
+            owner_admin_id, organization_id, company_name, product_name, contact_name, email,
             account_status, service_tier, preferred_contact_channel
         )
         VALUES (
-            CAST(? AS uuid), 'Requena Demo Client', 'Requena Mobile Suite', 'Demo Client',
+            CAST(? AS uuid), CAST(? AS uuid), 'Requena Demo Client', 'Requena Mobile Suite', 'Demo Client',
             'client@orykai.local', 'ACTIVE', 'PRIORITY', 'TICKET'
         )
-        ON CONFLICT (email) DO UPDATE SET
+        ON CONFLICT (organization_id, email) DO UPDATE SET
             owner_admin_id = EXCLUDED.owner_admin_id,
             company_name = EXCLUDED.company_name,
             product_name = EXCLUDED.product_name,
@@ -84,6 +108,7 @@ class PostgresDemoBootstrapper(
         """.trimIndent(),
     ) {
         setString(1, ownerAdminId)
+        setString(2, organizationId)
     }
 
     private fun ensureClientUser(
@@ -107,39 +132,42 @@ class PostgresDemoBootstrapper(
         setString(2, PasswordHasher.hash(password))
     }
 
-    private fun ensureTaskLabel(connection: Connection, ownerAdminId: String): String = connection.returningId(
+    private fun ensureTaskLabel(connection: Connection, ownerAdminId: String, organizationId: String): String = connection.returningId(
         """
-        INSERT INTO task_labels (owner_admin_id, name, color_hex)
-        VALUES (CAST(? AS uuid), 'Hoy', '#6B7A5B')
-        ON CONFLICT (owner_admin_id, name) DO UPDATE SET
+        INSERT INTO task_labels (owner_admin_id, organization_id, name, color_hex)
+        VALUES (CAST(? AS uuid), CAST(? AS uuid), 'Hoy', '#6B7A5B')
+        ON CONFLICT (organization_id, name) DO UPDATE SET
             color_hex = EXCLUDED.color_hex
         RETURNING id::text
         """.trimIndent(),
     ) {
         setString(1, ownerAdminId)
+        setString(2, organizationId)
     }
 
     private fun ensureTask(
         connection: Connection,
         clientId: String,
         ownerAdminId: String,
+        organizationId: String,
         createdByUserId: String,
         labelId: String,
     ): String = connection.returningId(
         """
         INSERT INTO tasks (
-            id, client_id, owner_admin_id, created_by_user_id, label_id, title, description,
+            id, client_id, owner_admin_id, organization_id, created_by_user_id, label_id, title, description,
             due_date, completed, logged_minutes, logged_seconds
         )
         VALUES (
             CAST('66666666-6666-6666-6666-666666666666' AS uuid),
-            CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid),
+            CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid),
             'Demo task', 'Operational task to validate dashboard, timer and client linkage.',
             CURRENT_DATE + INTERVAL '1 day', FALSE, 45, 2700
         )
         ON CONFLICT (id) DO UPDATE SET
             client_id = EXCLUDED.client_id,
             owner_admin_id = EXCLUDED.owner_admin_id,
+            organization_id = EXCLUDED.organization_id,
             created_by_user_id = EXCLUDED.created_by_user_id,
             label_id = EXCLUDED.label_id,
             title = EXCLUDED.title,
@@ -149,8 +177,9 @@ class PostgresDemoBootstrapper(
     ) {
         setString(1, clientId)
         setString(2, ownerAdminId)
-        setString(3, createdByUserId)
-        setString(4, labelId)
+        setString(3, organizationId)
+        setString(4, createdByUserId)
+        setString(5, labelId)
     }
 
     private fun ensureTimeLog(

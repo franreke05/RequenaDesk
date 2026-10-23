@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.CreateTaskLabelRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskLabelRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
@@ -10,7 +12,6 @@ import com.requena.supportdesk.server.utils.labelsJson
 import com.requena.supportdesk.server.utils.messageJson
 import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
-import com.requena.supportdesk.server.utils.ownerAdminIdFor
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -26,23 +27,23 @@ fun Route.labelRoutes(service: SupportDeskService, tokenService: SupportDeskToke
     route("/admin") {
         get("/labels") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
-            val ownerAdminId = service.ownerAdminIdFor(identity)
+            val organizationId = identity.orgId
                 ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
-            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels(ownerAdminId))))
+            call.respondJson(body = successResponse("/admin/labels", labelsJson(service.taskLabels(organizationId))))
         }
         post("/labels") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val request = call.receiveOrDefault(CreateTaskLabelRequest()).copy(ownerAdminId = ownerAdminId)
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@post
+            val request = call.receiveOrDefault(CreateTaskLabelRequest())
             if (request.name.isBlank()) {
                 return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label name is required"))
             }
             call.respondJson(
                 HttpStatusCode.Created,
-                successResponse("/admin/labels", labelJson(service.createdTaskLabel(request, ownerAdminId))),
+                successResponse("/admin/labels", labelJson(service.createdTaskLabel(request, organizationId))),
             )
         }
         patch("/labels/{labelId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@patch
             val labelId = call.parameters["labelId"].orEmpty()
             if (labelId.isBlank()) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label id is required"))
@@ -51,17 +52,17 @@ fun Route.labelRoutes(service: SupportDeskService, tokenService: SupportDeskToke
             call.respondJson(
                 body = successResponse(
                     "/admin/labels/$labelId",
-                    labelJson(service.updatedTaskLabel(labelId, request, ownerAdminId)),
+                    labelJson(service.updatedTaskLabel(labelId, request, organizationId)),
                 ),
             )
         }
         delete("/labels/{labelId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
             val labelId = call.parameters["labelId"].orEmpty()
             if (labelId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Label id is required"))
             }
-            service.deletedTaskLabel(labelId, ownerAdminId)
+            service.deletedTaskLabel(labelId, organizationId)
             call.respondJson(body = successResponse("/admin/labels/$labelId", messageJson("Label deleted")))
         }
     }

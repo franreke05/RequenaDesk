@@ -51,20 +51,21 @@ class WorkSessionLifecycleIntegrationTest {
                 val repository = PostgresSupportDeskRepository(dataSource)
                 val admin = requireNotNull(repository.authenticate("admin@orykai.dev", "IntegrationAdminPassword1"))
                 val ownerAdminId = admin.userId
+                val organizationId = requireNotNull(admin.organizationId)
 
                 val label = repository.createTaskLabel(
-                    CreateTaskLabelRequest(ownerAdminId = ownerAdminId, name = "WorkSession Test", colorHex = "#334455"),
-                    ownerAdminId,
+                    CreateTaskLabelRequest(name = "WorkSession Test", colorHex = "#334455"),
+                    organizationId,
                 )
                 val taskA = repository.createTask(
                     CreateTaskRequest(title = "Tarea A", description = "", clientId = null, labelId = label.id),
                     createdByUserId = ownerAdminId,
-                    ownerAdminId = ownerAdminId,
+                    organizationId = organizationId,
                 )
                 val taskB = repository.createTask(
                     CreateTaskRequest(title = "Tarea B", description = "", clientId = null, labelId = label.id),
                     createdByUserId = ownerAdminId,
-                    ownerAdminId = ownerAdminId,
+                    organizationId = organizationId,
                 )
 
                 // No active session initially.
@@ -123,7 +124,7 @@ class WorkSessionLifecycleIntegrationTest {
                 val stopped = repository.stoppedWorkSession(session.id, ownerAdminId)
                 assertEquals("FINISHED", stopped.status)
 
-                val timeLogsForTaskA = repository.getTimeLogs(clientId = null, taskId = taskA.id, ownerAdminId = ownerAdminId)
+                val timeLogsForTaskA = repository.getTimeLogs(clientId = null, taskId = taskA.id, organizationId = organizationId)
                     .filter { it.sessionId == session.id }
                 val byDate = timeLogsForTaskA.associateBy { it.workDate }
                 assertEquals(30, byDate.getValue("2026-07-30").minutes)

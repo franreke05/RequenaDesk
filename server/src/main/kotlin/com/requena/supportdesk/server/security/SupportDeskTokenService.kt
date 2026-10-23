@@ -47,6 +47,15 @@ class SupportDeskTokenService(
         identity.clientId
             ?.takeIf(String::isNotBlank)
             ?.let { builder.withClaim(CLIENT_ID_CLAIM, it) }
+        identity.organizationId
+            ?.takeIf(String::isNotBlank)
+            ?.let { builder.withClaim(ORG_ID_CLAIM, it) }
+        identity.organizationRole
+            ?.takeIf(String::isNotBlank)
+            ?.let { builder.withClaim(ORG_ROLE_CLAIM, it) }
+        identity.organizationName
+            ?.takeIf(String::isNotBlank)
+            ?.let { builder.withClaim(ORG_NAME_CLAIM, it) }
 
         return builder.sign(algorithm)
     }
@@ -67,11 +76,17 @@ class SupportDeskTokenService(
             email = decoded.getClaim(EMAIL_CLAIM).asString().orEmpty(),
             role = decoded.getClaim(ROLE_CLAIM).asString().orEmpty(),
             clientId = decoded.getClaim(CLIENT_ID_CLAIM).asString(),
+            organizationId = decoded.getClaim(ORG_ID_CLAIM).asString(),
+            organizationRole = decoded.getClaim(ORG_ROLE_CLAIM).asString(),
+            organizationName = decoded.getClaim(ORG_NAME_CLAIM).asString(),
         ).takeIf { identity ->
             identity.userId.isNotBlank() &&
                 identity.name.isNotBlank() &&
                 identity.email.isNotBlank() &&
-                identity.role.isNotBlank()
+                identity.role.isNotBlank() &&
+                // Tokens minted before V17 carry no company: reject them so the client's
+                // automatic refresh (on 401) fetches a new token that does.
+                !identity.organizationId.isNullOrBlank()
         }
     } catch (_: JWTVerificationException) {
         null
@@ -87,6 +102,9 @@ class SupportDeskTokenService(
         private const val EMAIL_CLAIM = "email"
         private const val ROLE_CLAIM = "role"
         private const val CLIENT_ID_CLAIM = "clientId"
+        private const val ORG_ID_CLAIM = "orgId"
+        private const val ORG_ROLE_CLAIM = "orgRole"
+        private const val ORG_NAME_CLAIM = "orgName"
 
         private val secureRandom = SecureRandom()
     }

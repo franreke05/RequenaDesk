@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.ServerClientSnapshot
 import com.requena.supportdesk.server.domain.service.SupportDeskService
@@ -8,7 +10,6 @@ import com.requena.supportdesk.server.utils.clientJson
 import com.requena.supportdesk.server.utils.clientPortalOverviewJson
 import com.requena.supportdesk.server.utils.clientTicketsJson
 import com.requena.supportdesk.server.utils.errorResponse
-import com.requena.supportdesk.server.utils.ownerAdminIdFor
 import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -36,31 +37,31 @@ fun Route.clientPortalRoutes(service: SupportDeskService, tokenService: SupportD
         get("/tasks") {
             val identity = call.requireClientPortalIdentity(tokenService) ?: return@get
             val client = service.portalClient(identity) ?: return@get call.respondClientPortalNotFound()
-            val ownerAdminId = service.ownerAdminIdFor(identity) ?: return@get call.respondClientPortalNotFound()
+            val organizationId = identity.orgId ?: return@get call.respondClientPortalNotFound()
             call.respondJson(
-                body = successResponse("/client/tasks", tasksJson(service.tasks(clientId = client.id, ownerAdminId = ownerAdminId))),
+                body = successResponse("/client/tasks", tasksJson(service.tasks(clientId = client.id, organizationId = organizationId))),
             )
         }
         get("/time-logs") {
             val identity = call.requireClientPortalIdentity(tokenService) ?: return@get
             val client = service.portalClient(identity) ?: return@get call.respondClientPortalNotFound()
-            val ownerAdminId = service.ownerAdminIdFor(identity) ?: return@get call.respondClientPortalNotFound()
+            val organizationId = identity.orgId ?: return@get call.respondClientPortalNotFound()
             call.respondJson(
-                body = successResponse("/client/time-logs", timeLogsJson(service.timeLogs(clientId = client.id, ownerAdminId = ownerAdminId))),
+                body = successResponse("/client/time-logs", timeLogsJson(service.timeLogs(clientId = client.id, organizationId = organizationId))),
             )
         }
         get("/overview") {
             val identity = call.requireClientPortalIdentity(tokenService) ?: return@get
             val client = service.portalClient(identity) ?: return@get call.respondClientPortalNotFound()
-            val ownerAdminId = service.ownerAdminIdFor(identity) ?: return@get call.respondClientPortalNotFound()
+            val organizationId = identity.orgId ?: return@get call.respondClientPortalNotFound()
             call.respondJson(
                 body = successResponse(
                     "/client/overview",
                     clientPortalOverviewJson(
                         client = client,
                         tickets = service.tickets().filter { it.clientId == client.id },
-                        tasks = service.tasks(clientId = client.id, ownerAdminId = ownerAdminId),
-                        timeLogs = service.timeLogs(clientId = client.id, ownerAdminId = ownerAdminId),
+                        tasks = service.tasks(clientId = client.id, organizationId = organizationId),
+                        timeLogs = service.timeLogs(clientId = client.id, organizationId = organizationId),
                     ),
                 ),
             )
@@ -78,7 +79,7 @@ private suspend fun ApplicationCall.requireClientPortalIdentity(
 }
 
 private fun SupportDeskService.portalClient(identity: ServerAuthIdentity): ServerClientSnapshot? =
-    identity.clientId?.let { clientId -> clients().firstOrNull { it.id == clientId } }
+    identity.clientId?.let { clientId -> clients(identity.orgId).firstOrNull { it.id == clientId } }
 
 private suspend fun ApplicationCall.respondClientPortalNotFound() {
     respondJson(HttpStatusCode.NotFound, errorResponse("Client portal is not linked to an active client"))

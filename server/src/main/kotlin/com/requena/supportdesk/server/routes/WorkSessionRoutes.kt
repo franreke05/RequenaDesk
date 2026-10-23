@@ -18,8 +18,8 @@ import io.ktor.server.routing.route
 import kotlinx.serialization.json.JsonNull
 
 /**
- * The global timer for a tenant (owner_admin_id): start/pause/resume/stop/checkpoint. There can
- * only ever be one non-finished (ACTIVE/PAUSED) session per tenant - enforced here, in the
+ * The timer of each staff user (work_sessions.owner_admin_id; its tasks belong to the user's company): start/pause/resume/stop/checkpoint. There can
+ * only ever be one non-finished (ACTIVE/PAUSED) session per user - enforced here, in the
  * repository, and by a partial unique index in Postgres (see V13 migration).
  */
 fun Route.workSessionRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {

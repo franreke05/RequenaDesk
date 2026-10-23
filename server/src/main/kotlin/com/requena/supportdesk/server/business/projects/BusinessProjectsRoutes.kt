@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.business.projects
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.features.business.projects.BusinessMutationResult
 import com.requena.supportdesk.features.business.projects.BusinessProjectStatus
 import com.requena.supportdesk.features.business.projects.BusinessProjectsValidationException
@@ -167,7 +169,7 @@ fun Route.businessProjectsRoutes(
     get("/admin/clients/{clientId}/business-program-metrics") {
         val admin = call.requireAdminIdentity(tokenService) ?: return@get
         val clientId = call.uuidParameter("clientId") ?: return@get
-        if (supportDeskService.clients(admin.userId).none { it.id == clientId }) {
+        if (supportDeskService.clients(admin.orgId).none { it.id == clientId }) {
             call.respondJson(HttpStatusCode.NotFound, errorResponse("Client was not found"))
             return@get
         }

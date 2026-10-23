@@ -118,7 +118,7 @@ class SalesProgramRoutesTest {
     }
 
     private fun clientToken(identity: SalesProgramIdentity): String = tokenService.createAccessToken(
-        ServerAuthIdentity(identity.userId, "Cliente", "cliente@example.test", "CLIENT", identity.clientId),
+        ServerAuthIdentity(identity.userId, "Cliente", "cliente@example.test", "CLIENT", identity.clientId, organizationId = "org-test"),
     )
 
     private fun io.ktor.client.request.HttpRequestBuilder.bearer(token: String) {

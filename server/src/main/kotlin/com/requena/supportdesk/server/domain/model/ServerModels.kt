@@ -8,6 +8,9 @@ data class ServerSession(
     val clientId: String? = null,
     val accessToken: String,
     val refreshToken: String,
+    val organizationId: String? = null,
+    val organizationRole: String? = null,
+    val organizationName: String? = null,
 )
 
 data class ServerAuthIdentity(
@@ -16,6 +19,12 @@ data class ServerAuthIdentity(
     val email: String,
     val role: String,
     val clientId: String? = null,
+    // Tenant: staff users through organization_members, portal users through their
+    // client. Null only for access tokens minted before V17 (resolved on use).
+    val organizationId: String? = null,
+    // OWNER | ADMIN | MEMBER | ACCOUNTANT for staff; null for portal (CLIENT) users.
+    val organizationRole: String? = null,
+    val organizationName: String? = null,
 )
 
 data class ServerTicketSnapshot(

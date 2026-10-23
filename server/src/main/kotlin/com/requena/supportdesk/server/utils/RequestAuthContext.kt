@@ -59,18 +59,17 @@ suspend fun ApplicationCall.requireAdminIdentity(
 val ServerAuthIdentity.isAdmin: Boolean
     get() = role == "ADMIN"
 
-fun SupportDeskService.ownerAdminIdFor(identity: ServerAuthIdentity): String? =
-    if (identity.isAdmin) {
-        identity.userId
-    } else {
-        identity.clientId
-            ?.let { clientId -> clients().firstOrNull { it.id == clientId } }
-            ?.ownerAdminId
-    }
+/**
+ * The caller's company (tenant). Every data query is scoped by it. Verified access tokens
+ * always carry it (SupportDeskTokenService rejects tokens without one).
+ */
+val ServerAuthIdentity.orgId: String
+    get() = organizationId?.takeIf(String::isNotBlank)
+        ?: error("Access token without organization reached a route")
 
 fun SupportDeskService.visibleClientIdsFor(identity: ServerAuthIdentity): Set<String> =
     if (identity.isAdmin) {
-        clients(identity.userId).mapTo(mutableSetOf()) { it.id }
+        clients(identity.orgId).mapTo(mutableSetOf()) { it.id }
     } else {
         setOfNotNull(identity.clientId)
     }

@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.CreateTaskRequest
 import com.requena.supportdesk.server.domain.model.UpdateTaskRequest
 import com.requena.supportdesk.server.domain.service.SupportDeskService
@@ -9,7 +11,6 @@ import com.requena.supportdesk.server.utils.messageJson
 import com.requena.supportdesk.server.utils.requireAdminIdentity
 import com.requena.supportdesk.server.utils.requireAuthenticatedIdentity
 import com.requena.supportdesk.server.utils.isAdmin
-import com.requena.supportdesk.server.utils.ownerAdminIdFor
 import com.requena.supportdesk.server.utils.receiveOrDefault
 import com.requena.supportdesk.server.utils.respondJson
 import com.requena.supportdesk.server.utils.successResponse
@@ -30,17 +31,17 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
     route("/admin") {
         get("/tasks") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
-            val ownerAdminId = service.ownerAdminIdFor(identity)
+            val organizationId = identity.orgId
                 ?: return@get call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
             val clientId = if (identity.isAdmin) call.request.queryParameters["clientId"] else identity.clientId
             val labelId = call.request.queryParameters["labelId"]
             call.respondJson(
-                body = successResponse("/admin/tasks", tasksJson(service.tasks(clientId, labelId, ownerAdminId))),
+                body = successResponse("/admin/tasks", tasksJson(service.tasks(clientId, labelId, organizationId))),
             )
         }
         post("/tasks") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@post
-            val ownerAdminId = service.ownerAdminIdFor(identity)
+            val organizationId = identity.orgId
                 ?: return@post call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
             val request = call.receiveOrDefault(CreateTaskRequest()).let { received ->
                 if (identity.isAdmin) received else received.copy(clientId = identity.clientId)
@@ -50,7 +51,7 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
             }
             if (!identity.isAdmin) {
                 val today = LocalDate.now().toString()
-                val tasksCreatedToday = service.tasks(clientId = identity.clientId, ownerAdminId = ownerAdminId)
+                val tasksCreatedToday = service.tasks(clientId = identity.clientId, organizationId = organizationId)
                     .count { it.createdAt.take(10) == today }
                 if (tasksCreatedToday >= clientDailyTaskLimit) {
                     return@post call.respondJson(
@@ -63,13 +64,13 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
                 HttpStatusCode.Created,
                 successResponse(
                     "/admin/tasks",
-                    taskJson(service.createdTask(request, identity.userId, ownerAdminId)),
+                    taskJson(service.createdTask(request, identity.userId, organizationId)),
                 ),
             )
         }
         patch("/tasks/{taskId}") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@patch
-            val ownerAdminId = service.ownerAdminIdFor(identity)
+            val organizationId = identity.orgId
                 ?: return@patch call.respondJson(HttpStatusCode.Forbidden, errorResponse("No client account is linked to this user"))
             val taskId = call.parameters["taskId"].orEmpty()
             if (taskId.isBlank()) {
@@ -77,7 +78,7 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
             }
             val currentTask = service.tasks(
                 clientId = identity.clientId.takeUnless { identity.isAdmin },
-                ownerAdminId = ownerAdminId,
+                organizationId = organizationId,
             ).firstOrNull { it.id == taskId }
                 ?: return@patch call.respondJson(HttpStatusCode.NotFound, errorResponse("Task not found"))
             val received = call.receiveOrDefault(UpdateTaskRequest())
@@ -87,16 +88,16 @@ fun Route.taskRoutes(service: SupportDeskService, tokenService: SupportDeskToken
                 UpdateTaskRequest(completed = received.completed ?: currentTask.completed)
             }
             call.respondJson(
-                body = successResponse("/admin/tasks/$taskId", taskJson(service.updatedTask(taskId, request, ownerAdminId))),
+                body = successResponse("/admin/tasks/$taskId", taskJson(service.updatedTask(taskId, request, organizationId))),
             )
         }
         delete("/tasks/{taskId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
             val taskId = call.parameters["taskId"].orEmpty()
             if (taskId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Task id is required"))
             }
-            service.deletedTask(taskId, ownerAdminId)
+            service.deletedTask(taskId, organizationId)
             call.respondJson(body = successResponse("/admin/tasks/$taskId", messageJson("Task deleted")))
         }
     }
