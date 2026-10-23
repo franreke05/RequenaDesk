@@ -3,14 +3,18 @@ package com.requena.supportdesk.server.utils
 import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
+import com.requena.supportdesk.server.domain.service.OrganizationRoles
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.auth.HttpAuthHeader
 import io.ktor.http.auth.parseAuthorizationHeader
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.httpMethod
 
 private const val bearerScheme = "Bearer"
 private const val bearerRealm = "OryKai software"
+private val readOnlyMethods = setOf(HttpMethod.Get, HttpMethod.Head, HttpMethod.Options)
 
 suspend fun ApplicationCall.requireAuthenticatedIdentity(
     tokenService: SupportDeskTokenService,
@@ -30,6 +34,15 @@ suspend fun ApplicationCall.requireAuthenticatedIdentity(
         ?.takeIf(String::isNotBlank)
     val identity = resolvedToken?.let(tokenService::verifyAccessToken)
     if (identity != null) {
+        // Gestoría (ACCOUNTANT) sees everything but changes nothing. Every authenticated route
+        // goes through here, so blocking non-read methods here covers all of them at once.
+        if (OrganizationRoles.isReadOnly(identity.organizationRole) && request.httpMethod !in readOnlyMethods) {
+            respondJson(
+                status = HttpStatusCode.Forbidden,
+                body = errorResponse("Your company role is read-only"),
+            )
+            return null
+        }
         return identity
     }
 
@@ -59,18 +72,17 @@ suspend fun ApplicationCall.requireAdminIdentity(
 val ServerAuthIdentity.isAdmin: Boolean
     get() = role == "ADMIN"
 
-fun SupportDeskService.ownerAdminIdFor(identity: ServerAuthIdentity): String? =
-    if (identity.isAdmin) {
-        identity.userId
-    } else {
-        identity.clientId
-            ?.let { clientId -> clients().firstOrNull { it.id == clientId } }
-            ?.ownerAdminId
-    }
+/**
+ * The caller's company (tenant). Every data query is scoped by it. Verified access tokens
+ * always carry it (SupportDeskTokenService rejects tokens without one).
+ */
+val ServerAuthIdentity.orgId: String
+    get() = organizationId?.takeIf(String::isNotBlank)
+        ?: error("Access token without organization reached a route")
 
 fun SupportDeskService.visibleClientIdsFor(identity: ServerAuthIdentity): Set<String> =
     if (identity.isAdmin) {
-        clients(identity.userId).mapTo(mutableSetOf()) { it.id }
+        clients(identity.orgId).mapTo(mutableSetOf()) { it.id }
     } else {
         setOfNotNull(identity.clientId)
     }

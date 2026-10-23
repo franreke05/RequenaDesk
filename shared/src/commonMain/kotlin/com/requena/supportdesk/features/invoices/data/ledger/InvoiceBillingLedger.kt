@@ -11,18 +11,17 @@ package com.requena.supportdesk.features.invoices.data.ledger
  * invoices. It does not synchronize across devices or multiple installs.
  */
 interface InvoiceBillingLedger {
-    /** Ephemeral, never written anywhere but into the PDF itself and this ledger's issued entries. */
-    fun nextInvoiceNumber(issuedAt: String): String
-
     /** Every TaskLog id currently billed under a non-voided invoice. */
     suspend fun billedLogIds(): Set<String>
 
     /**
-     * Marks [logIds] as billed under [invoiceNumber]. Throws if any id is already billed under
-     * another non-voided invoice - the single enforcement point that a real unique constraint
-     * would provide in a database-backed design.
+     * Atomically assigns the next correlative number of the [issuedAt] year series
+     * (FAC-2026-0001, FAC-2026-0002...) and records it as issued with [logIds]. Spanish invoicing
+     * rules require consecutive numbers in date order, so this throws
+     * [InvoiceNumberingException] when [issuedAt] is earlier than the last invoice of the series,
+     * and [DuplicateBillingException] when any id is already billed under a non-voided invoice.
      */
-    suspend fun recordIssued(invoiceNumber: String, logIds: List<String>)
+    suspend fun issueInvoice(issuedAt: String, logIds: List<String>): String
 
     /** Releases every id billed under [invoiceNumber] back to pending. Returns the released ids. */
     suspend fun recordVoided(invoiceNumber: String, reason: String?): List<String>
@@ -35,5 +34,7 @@ interface InvoiceBillingLedger {
 }
 
 class DuplicateBillingException(message: String) : IllegalStateException(message)
+
+class InvoiceNumberingException(message: String) : IllegalStateException(message)
 
 expect fun createInvoiceBillingLedger(): InvoiceBillingLedger

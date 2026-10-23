@@ -42,4 +42,9 @@ sealed interface AppDestination {
     data class Invoices(val preselectedClientId: String? = null) : AppDestination {
         override val route: String = "invoices"
     }
+
+    /** Ajustes: company data, team (owners/admins) and appearance. */
+    object Settings : AppDestination {
+        override val route: String = "settings"
+    }
 }

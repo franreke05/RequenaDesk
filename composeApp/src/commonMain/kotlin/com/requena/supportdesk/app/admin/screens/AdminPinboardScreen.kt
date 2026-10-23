@@ -413,7 +413,7 @@ private fun DayChip(
             .width(82.dp)
             .alpha(if (enabled) 1f else 0.42f)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         color = background,
         border = BorderStroke(
             if (selected) 1.5.dp else 1.dp,
@@ -808,7 +808,7 @@ private fun InboxTaskCard(
     val pinColor = parsePinColor(category?.colorHex)
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -992,7 +992,7 @@ private fun CalendarDay(
             .height(60.dp)
             .alpha(if (enabled) 1f else 0.38f)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         color = background,
         border = BorderStroke(
             if (selected) 1.5.dp else 1.dp,
@@ -1026,7 +1026,7 @@ private fun InlineBoardError(message: String) {
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = RoundedCornerShape(10.dp),
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
         Text(message, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
     }

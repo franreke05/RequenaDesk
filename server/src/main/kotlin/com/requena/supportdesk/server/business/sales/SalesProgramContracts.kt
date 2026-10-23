@@ -7,6 +7,8 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogIte
 import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
 import com.requena.supportdesk.features.business.sales.domain.BusinessSale
@@ -19,11 +21,15 @@ import com.requena.supportdesk.features.business.sales.domain.CalculatedBusiness
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 
 data class SalesProgramIdentity(
     val userId: String,
@@ -44,8 +50,16 @@ interface SalesProgramStore {
     fun createCustomer(clientId: String, actorUserId: String, input: CreateBusinessCustomerInput): BusinessCustomer
     fun updateCustomer(clientId: String, actorUserId: String, customerId: String, input: UpdateBusinessCustomerInput): BusinessCustomer
     fun archiveCustomer(clientId: String, actorUserId: String, customerId: String, expectedVersion: Int): BusinessCustomer
+    fun restoreCustomer(clientId: String, actorUserId: String, customerId: String, expectedVersion: Int): BusinessCustomer
     fun createContact(clientId: String, actorUserId: String, customerId: String, input: CreateBusinessContactInput): BusinessContact
     fun updateContact(clientId: String, actorUserId: String, customerId: String, contactId: String, input: UpdateBusinessContactInput): BusinessContact
+    fun customerTags(clientId: String): List<BusinessCustomerTag>
+    fun createCustomerTag(clientId: String, actorUserId: String, input: CreateBusinessCustomerTagInput): BusinessCustomerTag
+    fun updateCustomerTag(clientId: String, actorUserId: String, tagId: String, input: UpdateBusinessCustomerTagInput): BusinessCustomerTag
+    fun archiveCustomerTag(clientId: String, actorUserId: String, tagId: String, expectedVersion: Int): BusinessCustomerTag
+    fun customerActivities(clientId: String, customerId: String): List<BusinessCustomerActivity>
+    fun createCustomerActivity(clientId: String, actorUserId: String, customerId: String, input: CreateBusinessCustomerActivityInput): BusinessCustomerActivity
+    fun updateCustomerActivity(clientId: String, actorUserId: String, customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput): BusinessCustomerActivity
 
     fun catalogItems(clientId: String, request: BusinessSalesPageRequest): BusinessSalesPage<BusinessCatalogItem>
     fun createCatalogItem(clientId: String, actorUserId: String, input: CreateBusinessCatalogItemInput): BusinessCatalogItem

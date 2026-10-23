@@ -3,6 +3,7 @@
 **Estado:** especificación aprobable; no implementa código, rutas ni migraciones.  
 **Ámbito:** tres programas gratuitos y solicitables desde el portal: **Clientes y contactos**, **Presupuestos y ventas**, y **Catálogo de productos, servicios y stock**.  
 **Fecha:** 2026-07-17.
+**Nota (2026-10-23):** las claves de programa se unificaron con las del código y la migración V9: `BUSINESS_CUSTOMERS`, `BUSINESS_QUOTES` y `BUSINESS_CATALOG` (antes `CUSTOMER_CONTACTS`, `QUOTES_SALES` y `CATALOG_STOCK`).
 
 ## 1. Decisión de producto
 
@@ -12,9 +13,9 @@ Los productos se identificarán por claves estables, sin `BETA` en la clave para
 
 | Clave | Nombre visible | Propósito beta | Dependencia |
 |---|---|---|---|
-| `CUSTOMER_CONTACTS` | Clientes y contactos | Agenda comercial de la empresa usuaria. | Ninguna |
-| `QUOTES_SALES` | Presupuestos y ventas | Crear presupuestos, seguir su estado y convertir un aceptado en venta interna. | Ninguna; puede enlazar clientes y catálogo si están activos. |
-| `CATALOG_STOCK` | Catálogo, servicios y stock | Productos, servicios y movimiento de stock trazable. | Ninguna |
+| `BUSINESS_CUSTOMERS` | Clientes y contactos | Agenda comercial de la empresa usuaria. | Ninguna |
+| `BUSINESS_QUOTES` | Presupuestos y ventas | Crear presupuestos, seguir su estado y convertir un aceptado en venta interna. | Ninguna; puede enlazar clientes y catálogo si están activos. |
+| `BUSINESS_CATALOG` | Catálogo, servicios y stock | Productos, servicios y movimiento de stock trazable. | Ninguna |
 
 El término **empresa usuaria** designa al `client_id` del portal de OryKai. El término **cliente comercial** designa a una persona o empresa que esa empresa usuaria gestiona dentro del programa. Esta distinción es obligatoria: la tabla actual `clients` representa los clientes de OryKai y `client_contacts` (V6) son contactos internos del CRM de OryKai; ninguno de los dos debe reutilizarse ni exponerse para esta beta.
 
@@ -68,7 +69,7 @@ Reglas:
 
 ### 3.2 Clientes y contactos
 
-1. Con `CUSTOMER_CONTACTS` activo, el usuario abre **Clientes y contactos** desde Programas.
+1. Con `BUSINESS_CUSTOMERS` activo, el usuario abre **Clientes y contactos** desde Programas.
 2. Ve búsqueda, filtros Activos/Archivados y una lista de clientes comerciales con contacto principal y última actualización.
 3. Crea un cliente comercial con nombre; los datos de contacto son opcionales y mínimos.
 4. Desde el detalle añade, edita, marca un contacto principal o archiva el cliente comercial.
@@ -76,7 +77,7 @@ Reglas:
 
 ### 3.3 Catálogo, servicios y stock
 
-1. Con `CATALOG_STOCK` activo, el usuario abre **Catálogo y stock**.
+1. Con `BUSINESS_CATALOG` activo, el usuario abre **Catálogo y stock**.
 2. Puede crear un producto con SKU opcional, o un servicio sin seguimiento de stock.
 3. Un producto con seguimiento de stock muestra existencias, mínimo y últimos movimientos; un servicio nunca muestra stock.
 4. La persona añade stock inicial o realiza un ajuste indicando motivo. El sistema crea un movimiento inmutable, no una edición silenciosa de la existencia.
@@ -84,9 +85,9 @@ Reglas:
 
 ### 3.4 Presupuestos y ventas
 
-1. Con `QUOTES_SALES` activo, el usuario abre **Presupuestos y ventas** y ve borradores, enviados, aceptados, rechazados y ventas confirmadas.
-2. Crea un borrador con cliente comercial si `CUSTOMER_CONTACTS` está activo; de lo contrario puede guardar el nombre y datos de comprador como una instantánea en el documento, sin crear una agenda paralela.
-3. Añade líneas manuales o selecciona productos/servicios si `CATALOG_STOCK` está activo. La línea guarda descripción, precio, descuento e impuesto como instantánea.
+1. Con `BUSINESS_QUOTES` activo, el usuario abre **Presupuestos y ventas** y ve borradores, enviados, aceptados, rechazados y ventas confirmadas.
+2. Crea un borrador con cliente comercial si `BUSINESS_CUSTOMERS` está activo; de lo contrario puede guardar el nombre y datos de comprador como una instantánea en el documento, sin crear una agenda paralela.
+3. Añade líneas manuales o selecciona productos/servicios si `BUSINESS_CATALOG` está activo. La línea guarda descripción, precio, descuento e impuesto como instantánea.
 4. El servidor recalcula importes; el cliente no envía subtotal, impuestos ni total autoritativos.
 5. Sólo un borrador se puede editar. El usuario lo marca como enviado, aceptado, rechazado o caducado según el flujo permitido.
 6. Un presupuesto aceptado se convierte una única vez en venta interna. Si existen líneas de stock, la conversión se bloquea con explicación si no hay unidades suficientes. Si tiene éxito, venta, líneas y movimientos de stock se guardan atómicamente.
@@ -144,40 +145,40 @@ Todos los payloads siguen el sobre de respuesta actual y serialización Kotlin e
 
 | Método y ruta | Programa requerido | Operación |
 |---|---|---|
-| `GET /client/apps/customers` | `CUSTOMER_CONTACTS` | Búsqueda, estado y paginación de clientes comerciales. |
-| `POST /client/apps/customers` | `CUSTOMER_CONTACTS` | Crea cliente comercial. |
-| `GET /client/apps/customers/{customerId}` | `CUSTOMER_CONTACTS` | Detalle sólo del tenant propio. |
-| `PATCH /client/apps/customers/{customerId}` | `CUSTOMER_CONTACTS` | Edita campos permitidos y control de versión. |
-| `POST /client/apps/customers/{customerId}/archive` | `CUSTOMER_CONTACTS` | Archivo reversible en beta, no borrado. |
-| `POST /client/apps/customers/{customerId}/contacts` | `CUSTOMER_CONTACTS` | Añade contacto. |
-| `PATCH /client/apps/customers/{customerId}/contacts/{contactId}` | `CUSTOMER_CONTACTS` | Edita, archiva o cambia principal. |
+| `GET /client/apps/customers` | `BUSINESS_CUSTOMERS` | Búsqueda, estado y paginación de clientes comerciales. |
+| `POST /client/apps/customers` | `BUSINESS_CUSTOMERS` | Crea cliente comercial. |
+| `GET /client/apps/customers/{customerId}` | `BUSINESS_CUSTOMERS` | Detalle sólo del tenant propio. |
+| `PATCH /client/apps/customers/{customerId}` | `BUSINESS_CUSTOMERS` | Edita campos permitidos y control de versión. |
+| `POST /client/apps/customers/{customerId}/archive` | `BUSINESS_CUSTOMERS` | Archivo reversible en beta, no borrado. |
+| `POST /client/apps/customers/{customerId}/contacts` | `BUSINESS_CUSTOMERS` | Añade contacto. |
+| `PATCH /client/apps/customers/{customerId}/contacts/{contactId}` | `BUSINESS_CUSTOMERS` | Edita, archiva o cambia principal. |
 
 ### 5.3 Catálogo y stock
 
 | Método y ruta | Programa requerido | Operación |
 |---|---|---|
-| `GET /client/apps/catalog/items` | `CATALOG_STOCK` | Lista productos/servicios con filtros y cursor. |
-| `POST /client/apps/catalog/items` | `CATALOG_STOCK` | Crea producto o servicio. |
-| `PATCH /client/apps/catalog/items/{itemId}` | `CATALOG_STOCK` | Edita datos de catálogo, nunca movimientos históricos. |
-| `POST /client/apps/catalog/items/{itemId}/archive` | `CATALOG_STOCK` | Archiva el ítem; no modifica documentos previos. |
-| `GET /client/apps/catalog/stock` | `CATALOG_STOCK` | Resumen de existencias y bajo mínimo. |
-| `GET /client/apps/catalog/items/{itemId}/movements` | `CATALOG_STOCK` | Libro paginado de movimientos. |
-| `POST /client/apps/catalog/items/{itemId}/adjustments` | `CATALOG_STOCK` | Crea ajuste con clave de idempotencia, delta y motivo. |
+| `GET /client/apps/catalog/items` | `BUSINESS_CATALOG` | Lista productos/servicios con filtros y cursor. |
+| `POST /client/apps/catalog/items` | `BUSINESS_CATALOG` | Crea producto o servicio. |
+| `PATCH /client/apps/catalog/items/{itemId}` | `BUSINESS_CATALOG` | Edita datos de catálogo, nunca movimientos históricos. |
+| `POST /client/apps/catalog/items/{itemId}/archive` | `BUSINESS_CATALOG` | Archiva el ítem; no modifica documentos previos. |
+| `GET /client/apps/catalog/stock` | `BUSINESS_CATALOG` | Resumen de existencias y bajo mínimo. |
+| `GET /client/apps/catalog/items/{itemId}/movements` | `BUSINESS_CATALOG` | Libro paginado de movimientos. |
+| `POST /client/apps/catalog/items/{itemId}/adjustments` | `BUSINESS_CATALOG` | Crea ajuste con clave de idempotencia, delta y motivo. |
 
 ### 5.4 Presupuestos y ventas
 
 | Método y ruta | Programa requerido | Operación |
 |---|---|---|
-| `GET /client/apps/sales/quotes` | `QUOTES_SALES` | Lista de presupuestos por estado, búsqueda y cursor. |
-| `POST /client/apps/sales/quotes` | `QUOTES_SALES` | Crea borrador y líneas; el servidor calcula totales. |
-| `GET /client/apps/sales/quotes/{quoteId}` | `QUOTES_SALES` | Detalle propio. |
-| `PATCH /client/apps/sales/quotes/{quoteId}` | `QUOTES_SALES` | Sólo borrrador y con versión esperada. |
-| `POST /client/apps/sales/quotes/{quoteId}/mark-sent` | `QUOTES_SALES` | Transición a enviado. |
-| `POST /client/apps/sales/quotes/{quoteId}/mark-accepted` | `QUOTES_SALES` | Transición confirmada por la empresa usuaria; no es firma externa. |
-| `POST /client/apps/sales/quotes/{quoteId}/mark-rejected` | `QUOTES_SALES` | Rechaza con motivo opcional. |
-| `POST /client/apps/sales/quotes/{quoteId}/convert-to-sale` | `QUOTES_SALES` | Conversión idempotente y, si procede, salida de stock transaccional. |
-| `GET /client/apps/sales/sales` | `QUOTES_SALES` | Lista ventas internas confirmadas/canceladas. |
-| `GET /client/apps/sales/sales/{saleId}` | `QUOTES_SALES` | Detalle propio y referencia al presupuesto. |
+| `GET /client/apps/sales/quotes` | `BUSINESS_QUOTES` | Lista de presupuestos por estado, búsqueda y cursor. |
+| `POST /client/apps/sales/quotes` | `BUSINESS_QUOTES` | Crea borrador y líneas; el servidor calcula totales. |
+| `GET /client/apps/sales/quotes/{quoteId}` | `BUSINESS_QUOTES` | Detalle propio. |
+| `PATCH /client/apps/sales/quotes/{quoteId}` | `BUSINESS_QUOTES` | Sólo borrrador y con versión esperada. |
+| `POST /client/apps/sales/quotes/{quoteId}/mark-sent` | `BUSINESS_QUOTES` | Transición a enviado. |
+| `POST /client/apps/sales/quotes/{quoteId}/mark-accepted` | `BUSINESS_QUOTES` | Transición confirmada por la empresa usuaria; no es firma externa. |
+| `POST /client/apps/sales/quotes/{quoteId}/mark-rejected` | `BUSINESS_QUOTES` | Rechaza con motivo opcional. |
+| `POST /client/apps/sales/quotes/{quoteId}/convert-to-sale` | `BUSINESS_QUOTES` | Conversión idempotente y, si procede, salida de stock transaccional. |
+| `GET /client/apps/sales/sales` | `BUSINESS_QUOTES` | Lista ventas internas confirmadas/canceladas. |
+| `GET /client/apps/sales/sales/{saleId}` | `BUSINESS_QUOTES` | Detalle propio y referencia al presupuesto. |
 
 Los identificadores de ruta se validan como UUID. Un error de pertenencia devuelve `404` o `403` según la convención ya usada, sin revelar que el identificador exista en otro tenant.
 
@@ -327,19 +328,19 @@ Las pruebas KMP compartidas usan `kotlin.test`; los dobles de repositorio son fa
 
 ### Prompt A — Entitlements beta y seguridad
 
-> Implementa sólo el vertical de autorización beta para `CUSTOMER_CONTACTS`, `QUOTES_SALES` y `CATALOG_STOCK`. Conserva el catálogo/suscripción/solicitud V8 como fuente de verdad, añade un modo comercial `BETA_FREE` sin precio ni facturación y no modifiques facturas locales ni previews de pago. El cliente solicita; el admin propietario aprueba o rechaza; sólo una aprobación beta activa una suscripción a 0 €. Introduce un guard Ktor reutilizable que derive `clientId` del JWT y exija suscripción `ACTIVE` en cada ruta futura. Mantén RLS/revokes de V7/V8 para todas las tablas nuevas. Añade pruebas de tenant cruzado, admin no propietario, payload que intenta fijar precio, reintento duplicado y acceso tras suspensión. Sigue la arquitectura existente de Ktor, repositorio PostgreSQL y tests de migración; no uses Supabase Auth ni políticas `auth.uid()`.
+> Implementa sólo el vertical de autorización beta para `BUSINESS_CUSTOMERS`, `BUSINESS_QUOTES` y `BUSINESS_CATALOG`. Conserva el catálogo/suscripción/solicitud V8 como fuente de verdad, añade un modo comercial `BETA_FREE` sin precio ni facturación y no modifiques facturas locales ni previews de pago. El cliente solicita; el admin propietario aprueba o rechaza; sólo una aprobación beta activa una suscripción a 0 €. Introduce un guard Ktor reutilizable que derive `clientId` del JWT y exija suscripción `ACTIVE` en cada ruta futura. Mantén RLS/revokes de V7/V8 para todas las tablas nuevas. Añade pruebas de tenant cruzado, admin no propietario, payload que intenta fijar precio, reintento duplicado y acceso tras suspensión. Sigue la arquitectura existente de Ktor, repositorio PostgreSQL y tests de migración; no uses Supabase Auth ni políticas `auth.uid()`.
 
 ### Prompt B — Clientes y contactos
 
-> Implementa el programa `CUSTOMER_CONTACTS` como vertical completo, sin tocar `clients` ni `client_contacts` existentes: esos modelos pertenecen a OryKai y su CRM interno. Crea modelos de dominio/DTO/mappers/repositorio/ViewModel en el patrón `features/programs` o una feature cohesionada, rutas Ktor con guard de entitlement y datos aislados por `clientId` del token. La empresa usuaria puede crear, buscar, editar y archivar sus clientes comerciales y contactos; el administrador sólo aprueba acceso y ve métricas agregadas, no contenido por defecto. Usa estado inmutable, efectos de una sola vez y Compose responsive lista-detalle. Incluye validación, límite de entradas, archivo en lugar de borrado, contacto principal único, RLS/revokes y pruebas KMP, Ktor y PostgreSQL. No añadas IA, exportación, ficheros, email ni cobro.
+> Implementa el programa `BUSINESS_CUSTOMERS` como vertical completo, sin tocar `clients` ni `client_contacts` existentes: esos modelos pertenecen a OryKai y su CRM interno. Crea modelos de dominio/DTO/mappers/repositorio/ViewModel en el patrón `features/programs` o una feature cohesionada, rutas Ktor con guard de entitlement y datos aislados por `clientId` del token. La empresa usuaria puede crear, buscar, editar y archivar sus clientes comerciales y contactos; el administrador sólo aprueba acceso y ve métricas agregadas, no contenido por defecto. Usa estado inmutable, efectos de una sola vez y Compose responsive lista-detalle. Incluye validación, límite de entradas, archivo en lugar de borrado, contacto principal único, RLS/revokes y pruebas KMP, Ktor y PostgreSQL. No añadas IA, exportación, ficheros, email ni cobro.
 
 ### Prompt C — Catálogo, servicios y stock
 
-> Implementa `CATALOG_STOCK` después de que el guard de beta esté probado. Modela productos y servicios por tenant; sólo los productos con `tracksStock` admiten movimientos. Representa inventario como libro inmutable de movimientos `INITIAL`, `ADJUSTMENT`, `SALE`, `RETURN`, usando cantidades decimales precisas y dinero en céntimos EUR, nunca `Double`. Un ajuste exige motivo e idempotencia; el servidor bloquea/consolida de forma transaccional y no permite stock negativo. Construye Compose KMP con pestañas Productos/Servicios/Stock, lista/card responsive, detalle, ajuste confirmado y estados vacío/error/conflicto. Reutiliza tokens y componentes existentes. Añade pruebas de operaciones concurrentes, tenant cruzado, servicios sin stock, SKU por tenant y RLS. No implementes compras, proveedores, multi-almacén, lotes, reservas ni facturación.
+> Implementa `BUSINESS_CATALOG` después de que el guard de beta esté probado. Modela productos y servicios por tenant; sólo los productos con `tracksStock` admiten movimientos. Representa inventario como libro inmutable de movimientos `INITIAL`, `ADJUSTMENT`, `SALE`, `RETURN`, usando cantidades decimales precisas y dinero en céntimos EUR, nunca `Double`. Un ajuste exige motivo e idempotencia; el servidor bloquea/consolida de forma transaccional y no permite stock negativo. Construye Compose KMP con pestañas Productos/Servicios/Stock, lista/card responsive, detalle, ajuste confirmado y estados vacío/error/conflicto. Reutiliza tokens y componentes existentes. Añade pruebas de operaciones concurrentes, tenant cruzado, servicios sin stock, SKU por tenant y RLS. No implementes compras, proveedores, multi-almacén, lotes, reservas ni facturación.
 
 ### Prompt D — Presupuestos y ventas
 
-> Implementa `QUOTES_SALES` como vertical independiente y enlázalo opcionalmente con los programas de contactos y catálogo cuando estén activos. Un presupuesto guarda comprador y líneas como instantáneas, usa dinero en céntimos EUR, cantidades decimales precisas y totales recalculados exclusivamente por Ktor. Sólo `DRAFT` se edita; transiciones enviadas/aceptadas/rechazadas se validan en servidor. Convertir un presupuesto aceptado a venta debe ser idempotente y, si hay productos de stock, crear movimientos de salida en la misma transacción sin permitir saldo negativo. Diseña Compose móvil por pasos y escritorio lista-detalle, con estados de conflicto de versión y stock insuficiente. Añade tests de cálculo, snapshots, rutas, doble conversión, concurrencia, aislamiento tenant y accesibilidad. No produzcas factura, PDF fiscal, pago, firma, email ni contabilidad.
+> Implementa `BUSINESS_QUOTES` como vertical independiente y enlázalo opcionalmente con los programas de contactos y catálogo cuando estén activos. Un presupuesto guarda comprador y líneas como instantáneas, usa dinero en céntimos EUR, cantidades decimales precisas y totales recalculados exclusivamente por Ktor. Sólo `DRAFT` se edita; transiciones enviadas/aceptadas/rechazadas se validan en servidor. Convertir un presupuesto aceptado a venta debe ser idempotente y, si hay productos de stock, crear movimientos de salida en la misma transacción sin permitir saldo negativo. Diseña Compose móvil por pasos y escritorio lista-detalle, con estados de conflicto de versión y stock insuficiente. Añade tests de cálculo, snapshots, rutas, doble conversión, concurrencia, aislamiento tenant y accesibilidad. No produzcas factura, PDF fiscal, pago, firma, email ni contabilidad.
 
 ### Prompt E — Revisión de calidad beta
 

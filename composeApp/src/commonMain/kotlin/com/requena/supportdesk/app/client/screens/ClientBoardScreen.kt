@@ -168,7 +168,7 @@ private fun KanbanColumn(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = accentColor.copy(alpha = 0.06f),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.20f)),
     ) {
         Column(
@@ -269,7 +269,7 @@ private fun KanbanTicketCard(ticket: Ticket, onClick: () -> Unit, modifier: Modi
             .fillMaxWidth()
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, if (hovered) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),
     ) {

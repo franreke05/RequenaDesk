@@ -369,7 +369,7 @@ private fun ClientListItem(
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         color = background,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Row(
             modifier = Modifier.padding(spacing.md),
@@ -618,6 +618,21 @@ private fun ClientQuickInfoRow(client: Client) {
         QuickInfoItem(label = "Empresa", value = client.productName.ifBlank { "—" }, modifier = Modifier.weight(1f))
         QuickInfoItem(label = "Contacto", value = client.contactName, modifier = Modifier.weight(1f))
     }
+    val billing = client.billing
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.xl)) {
+        QuickInfoItem(
+            label = "Razón social",
+            value = billing.legalName.ifBlank { "Sin datos fiscales" },
+            modifier = Modifier.weight(1f),
+        )
+        QuickInfoItem(label = "NIF/CIF", value = billing.taxId.ifBlank { "—" }, modifier = Modifier.weight(1f))
+        QuickInfoItem(
+            label = "Facturación",
+            value = listOf(billing.postalCode, billing.city).filter(String::isNotBlank).joinToString(" ")
+                .ifBlank { billing.email.ifBlank { "—" } },
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 @Composable
@@ -804,7 +819,7 @@ private fun ExpandableRow(
             .clickable(interactionSource = interactionSource, indication = null) { expanded = !expanded }
             .animateContentSize(),
         color = background,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.xs, horizontal = spacing.xs)) {
             summary()
@@ -905,7 +920,7 @@ private fun ClientComponentsTab(
                         val updated = if (checked) client.enabledComponents + component else client.enabledComponents - component
                         onUpdate(updated)
                     },
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
             ) {
@@ -1044,7 +1059,7 @@ private fun ClientNotesTab(
 private fun ClientNoteRow(note: ClientNote) {
     val spacing = SupportDeskThemeTokens.spacing
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
         modifier = Modifier.fillMaxWidth(),
     ) {

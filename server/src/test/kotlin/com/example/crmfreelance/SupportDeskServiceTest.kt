@@ -80,7 +80,7 @@ class SupportDeskServiceTest {
                 requestId = "missing-request",
                 request = ApproveClientProgramRequest(monthlyPriceCents = 1),
                 reviewedByUserId = "user-admin",
-                ownerAdminId = "user-admin",
+                organizationId = "org-orykai",
             )
         }
     }

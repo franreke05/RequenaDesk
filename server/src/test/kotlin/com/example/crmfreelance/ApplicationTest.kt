@@ -666,6 +666,75 @@ class ApplicationTest {
     }
 
     @Test
+    fun testClientFiscalDataIsStoredOnCreateAndReplacedOnEdit() = testApplication {
+        application { testModule() }
+        val token = client.accessToken()
+
+        // Invented test data only.
+        val createResponse = client.post("/admin/clients") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "companyName":"Fiscal Test Client",
+                  "productName":"Fiscal Product",
+                  "contactName":"Fiscal Contact",
+                  "email":"fiscal-test@example.com",
+                  "billing":{
+                    "legalName":"Ejemplo Pruebas S.L.",
+                    "taxId":" b-0000000-0 ",
+                    "addressLine":"Calle Inventada 1",
+                    "postalCode":"00000",
+                    "city":"Villa Prueba",
+                    "province":"Provincia Prueba",
+                    "country":"España",
+                    "email":"facturas@example.com"
+                  }
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createdBody = createResponse.bodyAsText()
+        assertTrue(createdBody.contains("\"legalName\":\"Ejemplo Pruebas S.L.\""), createdBody)
+        assertTrue(createdBody.contains("\"taxId\":\"B00000000\""), createdBody)
+        assertTrue(createdBody.contains("\"city\":\"Villa Prueba\""), createdBody)
+        val clientId = extractField(createdBody, "id")
+
+        val editResponse = client.patch("/admin/clients/$clientId") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "billing":{
+                    "legalName":"Ejemplo Renombrado S.L.",
+                    "taxId":"12345678Z",
+                    "addressLine":"Avenida Ficticia 2",
+                    "postalCode":"00001",
+                    "city":"Otra Villa",
+                    "email":""
+                  }
+                }
+                """.trimIndent(),
+            )
+        }
+        assertEquals(HttpStatusCode.OK, editResponse.status)
+        val listBody = client.get("/admin/clients") { bearer(token) }.bodyAsText()
+        assertTrue(listBody.contains("\"legalName\":\"Ejemplo Renombrado S.L.\""), listBody)
+        assertTrue(listBody.contains("\"taxId\":\"12345678Z\""), listBody)
+        assertTrue(!listBody.contains("facturas@example.com"), listBody)
+
+        val invalidResponse = client.patch("/admin/clients/$clientId") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody("""{"billing":{"taxId":"B-1"}}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, invalidResponse.status)
+    }
+
+    @Test
     fun testCreateTaskStoresFutureDueDate() = testApplication {
         application { testModule() }
         val futureDate = LocalDate.now().plusDays(2).toString()

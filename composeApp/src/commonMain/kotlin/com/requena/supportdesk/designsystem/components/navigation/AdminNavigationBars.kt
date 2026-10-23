@@ -24,6 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.composables.icons.lucide.EllipsisVertical
+import com.composables.icons.lucide.Lucide
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -108,14 +117,21 @@ fun <T> AdminNavigationRail(
     }
 }
 
+/**
+ * Bottom navigation for narrow windows. Shows at most [maxVisible] destinations: when there are
+ * more, the first ones stay and the rest go under "Más" (bottom-nav guideline: 5 items max).
+ */
 @Composable
 fun <T> AdminBottomBar(
     items: List<NavigationItemSpec<T>>,
     selected: T,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    maxVisible: Int = 5,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
+    val (visible, overflow) = splitBottomBarItems(items, maxVisible)
+    var moreOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -127,46 +143,86 @@ fun <T> AdminBottomBar(
                 .padding(horizontal = spacing.sm, vertical = spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
-            items.forEach { item ->
-                val isSelected = item.key == selected
-                val containerColor = animateColorAsState(
-                    targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    animationSpec = tween(SupportDeskMotion.regular),
-                    label = "bottomItemContainer",
+            visible.forEach { item ->
+                BottomBarItem(
+                    title = item.title,
+                    icon = item.icon,
+                    isSelected = item.key == selected,
+                    onClick = { onSelect(item.key) },
+                    modifier = Modifier.weight(1f),
                 )
-                val contentColor = animateColorAsState(
-                    targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = tween(SupportDeskMotion.regular),
-                    label = "bottomItemContent",
-                )
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onSelect(item.key) },
-                    color = containerColor.value,
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = spacing.xs, vertical = spacing.sm),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(spacing.xxs),
-                    ) {
-                        item.icon?.let { icon ->
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = contentColor.value,
+            }
+            if (overflow.isNotEmpty()) {
+                val selectedInOverflow = overflow.firstOrNull { it.key == selected }
+                Box(modifier = Modifier.weight(1f)) {
+                    BottomBarItem(
+                        title = selectedInOverflow?.title ?: "Más",
+                        icon = Lucide.EllipsisVertical,
+                        isSelected = selectedInOverflow != null,
+                        onClick = { moreOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                        overflow.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item.title) },
+                                leadingIcon = item.icon?.let { icon -> { Icon(icon, contentDescription = null) } },
+                                onClick = {
+                                    moreOpen = false
+                                    onSelect(item.key)
+                                },
                             )
                         }
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = contentColor.value,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        )
                     }
                 }
             }
+        }
+    }
+}
+
+/** Pure split used by [AdminBottomBar]: (shown in the bar, shown under "Más"). */
+fun <T> splitBottomBarItems(items: List<T>, maxVisible: Int = 5): Pair<List<T>, List<T>> =
+    if (items.size <= maxVisible) items to emptyList() else items.take(maxVisible - 1) to items.drop(maxVisible - 1)
+
+@Composable
+private fun BottomBarItem(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = SupportDeskThemeTokens.spacing
+    val containerColor = animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        animationSpec = tween(SupportDeskMotion.regular),
+        label = "bottomItemContainer",
+    )
+    val contentColor = animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(SupportDeskMotion.regular),
+        label = "bottomItemContent",
+    )
+    Surface(
+        modifier = modifier
+            .semantics { selected = isSelected }
+            .clickable(role = Role.Tab, onClick = onClick),
+        color = containerColor.value,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = spacing.xs, vertical = spacing.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(spacing.xxs),
+        ) {
+            icon?.let { Icon(imageVector = it, contentDescription = null, tint = contentColor.value) }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = contentColor.value,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+            )
         }
     }
 }

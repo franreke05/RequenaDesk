@@ -6,6 +6,11 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStatus
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerType
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerStage
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivityType
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteLine
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteStatus
@@ -22,11 +27,15 @@ import com.requena.supportdesk.features.business.sales.domain.CalculatedBusiness
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import com.requena.supportdesk.server.data.datasource.PostgresSupportDeskDataSource
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -42,45 +51,82 @@ class PostgresSalesProgramStore(
     override fun customers(clientId: String, request: BusinessSalesPageRequest): BusinessSalesPage<BusinessCustomer> = dataSource.withConnection { connection ->
         connection.prepareStatement(
             """
-            SELECT id, display_name, tax_id, email, phone, address, status, version, updated_at
+            SELECT id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                   customer_type, commercial_stage, commercial_source
             FROM business_sales_customers
             WHERE client_id = ?
               AND (? IS NULL OR status = ?)
               AND (? IS NULL OR display_name ILIKE '%' || ? || '%')
-              AND (? IS NULL OR id > ?)
+              AND (CAST(? AS uuid) IS NULL OR id > CAST(? AS uuid))
+              AND (? IS NULL OR commercial_stage = ?)
+              AND (? IS NULL OR EXISTS (
+                    SELECT 1
+                    FROM business_sales_customer_tag_links link
+                    WHERE link.client_id=business_sales_customers.client_id
+                      AND link.customer_id=business_sales_customers.id
+                      AND link.tag_id=CAST(? AS uuid)
+              ))
             ORDER BY id
             LIMIT ?
             """.trimIndent(),
         ).use { statement ->
             statement.uuid(1, clientId); statement.string(2, request.status); statement.string(3, request.status)
             statement.string(4, request.query); statement.string(5, request.query); statement.uuid(6, request.cursor); statement.uuid(7, request.cursor)
-            statement.setInt(8, request.limit + 1)
-            statement.executeQuery().use { page(it.map(::customer), request.limit) { it.id } }
+            statement.string(8, request.stage?.name); statement.string(9, request.stage?.name)
+            statement.string(10, request.tagId); statement.uuid(11, request.tagId)
+            statement.setInt(12, request.limit + 1)
+            val values = statement.executeQuery().use { it.map(::customer) }
+                .map { hydrateCustomer(connection, clientId, it) }
+            page(values, request.limit) { it.id }
         }
     }
 
     override fun customer(clientId: String, customerId: String): BusinessCustomerDetail? = dataSource.withConnection { connection ->
         val customer = connection.prepareStatement(
-            "SELECT id, display_name, tax_id, email, phone, address, status, version, updated_at FROM business_sales_customers WHERE client_id=? AND id=?",
+            """
+            SELECT id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                   customer_type, commercial_stage, commercial_source
+            FROM business_sales_customers WHERE client_id=? AND id=?
+            """.trimIndent(),
         ).use { statement -> statement.uuid(1, clientId); statement.uuid(2, customerId); statement.executeQuery().use { rs -> if (rs.next()) customer(rs) else null } }
             ?: return@withConnection null
         val contacts = connection.prepareStatement(
             "SELECT id, customer_id, full_name, role, email, phone, is_primary, status, version, updated_at FROM business_sales_contacts WHERE client_id=? AND customer_id=? ORDER BY lower(full_name), id",
         ).use { statement -> statement.uuid(1, clientId); statement.uuid(2, customerId); statement.executeQuery().use { it.map(::contact) } }
-        BusinessCustomerDetail(customer, contacts)
+        val tags = customerTagsFor(connection, clientId, customerId)
+        val activities = customerActivitiesFor(connection, clientId, customerId)
+        BusinessCustomerDetail(
+            customer = customer.copy(tags = tags, nextAction = nextAction(activities)),
+            contacts = contacts,
+            tags = tags,
+            activities = activities,
+            nextAction = nextAction(activities),
+        )
     }
 
     override fun createCustomer(clientId: String, actorUserId: String, input: CreateBusinessCustomerInput): BusinessCustomer = transaction { connection ->
         connection.prepareStatement(
             """
-            INSERT INTO business_sales_customers (client_id, display_name, tax_id, email, phone, address, created_by_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at
+            INSERT INTO business_sales_customers (
+                client_id, display_name, tax_id, email, phone, address,
+                customer_type, commercial_stage, commercial_source, created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                      customer_type, commercial_stage, commercial_source
             """.trimIndent(),
         ).use { statement ->
             statement.uuid(1, clientId); statement.setString(2, input.displayName); statement.setString(3, input.taxId); statement.setString(4, input.email)
-            statement.setString(5, input.phone); statement.setString(6, input.address); statement.uuid(7, actorUserId)
-            statement.executeQuery().use { rs -> rs.next(); customer(rs).also { audit(connection, clientId, actorUserId, "CUSTOMER", it.id, "CREATED", it.version) } }
+            statement.setString(5, input.phone); statement.setString(6, input.address)
+            statement.setString(7, input.type.name); statement.setString(8, input.stage.name); statement.setString(9, input.source); statement.uuid(10, actorUserId)
+            statement.executeQuery().use { rs ->
+                rs.next()
+                val created = customer(rs)
+                requireCustomerTags(connection, clientId, input.tagIds)
+                replaceCustomerTags(connection, clientId, actorUserId, created.id, input.tagIds)
+                audit(connection, clientId, actorUserId, "CUSTOMER", created.id, "CREATED", created.version)
+                hydrateCustomer(connection, clientId, created)
+            }
         }
     }
 
@@ -88,14 +134,24 @@ class PostgresSalesProgramStore(
         connection.prepareStatement(
             """
             UPDATE business_sales_customers
-            SET display_name=?, tax_id=?, email=?, phone=?, address=?, version=version+1
+            SET display_name=?, tax_id=?, email=?, phone=?, address=?, customer_type=?,
+                commercial_stage=?, commercial_source=?, version=version+1
             WHERE client_id=? AND id=? AND version=?
-            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at
+            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                      customer_type, commercial_stage, commercial_source
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, input.displayName); statement.setString(2, input.taxId); statement.setString(3, input.email); statement.setString(4, input.phone)
-            statement.setString(5, input.address); statement.uuid(6, clientId); statement.uuid(7, customerId); statement.setInt(8, input.expectedVersion)
-            statement.executeQuery().use { rs -> if (!rs.next()) staleOrNotFound(connection, "business_sales_customers", clientId, customerId); customer(rs).also { audit(connection, clientId, actorUserId, "CUSTOMER", it.id, "UPDATED", it.version) } }
+            statement.setString(5, input.address); statement.setString(6, input.type.name); statement.setString(7, input.stage.name); statement.setString(8, input.source)
+            statement.uuid(9, clientId); statement.uuid(10, customerId); statement.setInt(11, input.expectedVersion)
+            statement.executeQuery().use { rs ->
+                if (!rs.next()) staleOrNotFound(connection, "business_sales_customers", clientId, customerId)
+                val updated = customer(rs)
+                requireCustomerTags(connection, clientId, input.tagIds)
+                replaceCustomerTags(connection, clientId, actorUserId, customerId, input.tagIds)
+                audit(connection, clientId, actorUserId, "CUSTOMER", updated.id, "UPDATED", updated.version)
+                hydrateCustomer(connection, clientId, updated)
+            }
         }
     }
 
@@ -104,11 +160,43 @@ class PostgresSalesProgramStore(
             """
             UPDATE business_sales_customers SET status='ARCHIVED', version=version+1
             WHERE client_id=? AND id=? AND version=?
-            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at
+            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                      customer_type, commercial_stage, commercial_source
             """.trimIndent(),
         ).use { statement ->
             statement.uuid(1, clientId); statement.uuid(2, customerId); statement.setInt(3, expectedVersion)
-            statement.executeQuery().use { rs -> if (!rs.next()) staleOrNotFound(connection, "business_sales_customers", clientId, customerId); customer(rs).also { audit(connection, clientId, actorUserId, "CUSTOMER", it.id, "ARCHIVED", it.version) } }
+            statement.executeQuery().use { rs ->
+                if (!rs.next()) staleOrNotFound(connection, "business_sales_customers", clientId, customerId)
+                hydrateCustomer(connection, clientId, customer(rs).also { audit(connection, clientId, actorUserId, "CUSTOMER", it.id, "ARCHIVED", it.version) })
+            }
+        }
+    }
+
+    override fun restoreCustomer(
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        expectedVersion: Int,
+    ): BusinessCustomer = transaction { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE business_sales_customers SET status='ACTIVE', version=version+1
+            WHERE client_id=? AND id=? AND version=?
+            RETURNING id, display_name, tax_id, email, phone, address, status, version, updated_at,
+                      customer_type, commercial_stage, commercial_source
+            """.trimIndent(),
+        ).use { statement ->
+            statement.uuid(1, clientId)
+            statement.uuid(2, customerId)
+            statement.setInt(3, expectedVersion)
+            statement.executeQuery().use { result ->
+                if (!result.next()) staleOrNotFound(connection, "business_sales_customers", clientId, customerId)
+                hydrateCustomer(
+                    connection,
+                    clientId,
+                    customer(result).also { audit(connection, clientId, actorUserId, "CUSTOMER", it.id, "RESTORED", it.version) },
+                )
+            }
         }
     }
 
@@ -144,6 +232,185 @@ class PostgresSalesProgramStore(
             statement.uuid(7, clientId); statement.uuid(8, customerId); statement.uuid(9, contactId); statement.setInt(10, input.expectedVersion)
             statement.executeQuery().use { rs -> if (!rs.next()) staleOrNotFound(connection, "business_sales_contacts", clientId, contactId); contact(rs).also { audit(connection, clientId, actorUserId, "CONTACT", it.id, "UPDATED", it.version) } }
         }
+    }
+
+    override fun customerTags(clientId: String): List<BusinessCustomerTag> = dataSource.withConnection { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id::text AS id, name, color_hex, is_archived, version, updated_at::text AS updated_at
+            FROM business_sales_customer_tags
+            WHERE client_id=CAST(? AS uuid)
+            ORDER BY is_archived, lower(name), id
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.executeQuery().use { it.map(::customerTag) }
+        }
+    }
+
+    override fun createCustomerTag(
+        clientId: String,
+        actorUserId: String,
+        input: CreateBusinessCustomerTagInput,
+    ): BusinessCustomerTag = transaction { connection ->
+        try {
+            val id = connection.prepareStatement(
+                """
+                INSERT INTO business_sales_customer_tags (client_id, name, color_hex, created_by_user_id)
+                VALUES (CAST(? AS uuid), ?, ?, CAST(? AS uuid))
+                RETURNING id::text
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.setString(2, input.name)
+                statement.setString(3, input.colorHex)
+                statement.setString(4, actorUserId)
+                statement.executeQuery().use { result -> result.next(); result.getString(1) }
+            }
+            requireNotNull(customerTag(connection, clientId, id))
+        } catch (error: SQLException) {
+            if (error.sqlState == "23505") throw SalesProgramConflictException("A customer tag with that name already exists")
+            throw error
+        }
+    }
+
+    override fun updateCustomerTag(
+        clientId: String,
+        actorUserId: String,
+        tagId: String,
+        input: UpdateBusinessCustomerTagInput,
+    ): BusinessCustomerTag = transaction { connection ->
+        try {
+            val id = connection.prepareStatement(
+                """
+                UPDATE business_sales_customer_tags SET name=?, color_hex=?, version=version+1
+                WHERE client_id=CAST(? AS uuid) AND id=CAST(? AS uuid) AND version=?
+                RETURNING id::text
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, input.name)
+                statement.setString(2, input.colorHex)
+                statement.setString(3, clientId)
+                statement.setString(4, tagId)
+                statement.setInt(5, input.expectedVersion)
+                statement.executeQuery().use { result ->
+                    if (!result.next()) staleOrNotFound(connection, "business_sales_customer_tags", clientId, tagId)
+                    result.getString(1)
+                }
+            }
+            audit(connection, clientId, actorUserId, "CUSTOMER_TAG", id, "UPDATED", input.expectedVersion + 1)
+            requireNotNull(customerTag(connection, clientId, id))
+        } catch (error: SQLException) {
+            if (error.sqlState == "23505") throw SalesProgramConflictException("A customer tag with that name already exists")
+            throw error
+        }
+    }
+
+    override fun archiveCustomerTag(
+        clientId: String,
+        actorUserId: String,
+        tagId: String,
+        expectedVersion: Int,
+    ): BusinessCustomerTag = transaction { connection ->
+        val id = connection.prepareStatement(
+            """
+            UPDATE business_sales_customer_tags SET is_archived=TRUE, version=version+1
+            WHERE client_id=CAST(? AS uuid) AND id=CAST(? AS uuid) AND version=?
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, tagId)
+            statement.setInt(3, expectedVersion)
+            statement.executeQuery().use { result ->
+                if (!result.next()) staleOrNotFound(connection, "business_sales_customer_tags", clientId, tagId)
+                result.getString(1)
+            }
+        }
+        audit(connection, clientId, actorUserId, "CUSTOMER_TAG", id, "ARCHIVED", expectedVersion + 1)
+        requireNotNull(customerTag(connection, clientId, id))
+    }
+
+    override fun customerActivities(clientId: String, customerId: String): List<BusinessCustomerActivity> =
+        dataSource.withConnection { connection ->
+            requireCustomer(connection, clientId, customerId)
+            customerActivitiesFor(connection, clientId, customerId)
+        }
+
+    override fun createCustomerActivity(
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        input: CreateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity = transaction { connection ->
+        requireActiveCustomer(connection, clientId, customerId)
+        requireContact(connection, clientId, customerId, input.contactId)
+        val id = connection.prepareStatement(
+            """
+            INSERT INTO business_sales_customer_activities (
+                client_id, customer_id, contact_id, activity_type, subject, details,
+                occurred_at, due_at, created_by_user_id
+            ) VALUES (
+                CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), ?, ?, ?,
+                CAST(? AS timestamptz), CAST(? AS timestamptz), CAST(? AS uuid)
+            )
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, customerId)
+            statement.nullableUuid(3, input.contactId)
+            statement.setString(4, input.type.name)
+            statement.setString(5, input.subject)
+            statement.setString(6, input.details)
+            statement.string(7, input.occurredAt)
+            statement.string(8, input.dueAt)
+            statement.setString(9, actorUserId)
+            statement.executeQuery().use { result -> result.next(); result.getString(1) }
+        }
+        audit(connection, clientId, actorUserId, "CUSTOMER_ACTIVITY", id, "CREATED", 1)
+        requireNotNull(customerActivity(connection, clientId, customerId, id))
+    }
+
+    override fun updateCustomerActivity(
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        activityId: String,
+        input: UpdateBusinessCustomerActivityInput,
+    ): BusinessCustomerActivity = transaction { connection ->
+        requireCustomer(connection, clientId, customerId)
+        requireContact(connection, clientId, customerId, input.contactId)
+        val id = connection.prepareStatement(
+            """
+            UPDATE business_sales_customer_activities
+            SET contact_id=CAST(? AS uuid), activity_type=?, subject=?, details=?,
+                occurred_at=CAST(? AS timestamptz), due_at=CAST(? AS timestamptz),
+                completed_at=CASE WHEN ? THEN COALESCE(completed_at, NOW()) ELSE NULL END,
+                version=version+1
+            WHERE client_id=CAST(? AS uuid) AND customer_id=CAST(? AS uuid)
+              AND id=CAST(? AS uuid) AND version=?
+            RETURNING id::text
+            """.trimIndent(),
+        ).use { statement ->
+            statement.nullableUuid(1, input.contactId)
+            statement.setString(2, input.type.name)
+            statement.setString(3, input.subject)
+            statement.setString(4, input.details)
+            statement.string(5, input.occurredAt)
+            statement.string(6, input.dueAt)
+            statement.setBoolean(7, input.completed)
+            statement.setString(8, clientId)
+            statement.setString(9, customerId)
+            statement.setString(10, activityId)
+            statement.setInt(11, input.expectedVersion)
+            statement.executeQuery().use { result ->
+                if (!result.next()) staleOrNotFound(connection, "business_sales_customer_activities", clientId, activityId)
+                result.getString(1)
+            }
+        }
+        audit(connection, clientId, actorUserId, "CUSTOMER_ACTIVITY", id, "UPDATED", input.expectedVersion + 1)
+        requireNotNull(customerActivity(connection, clientId, customerId, id))
     }
 
     override fun catalogItems(clientId: String, request: BusinessSalesPageRequest): BusinessSalesPage<BusinessCatalogItem> = dataSource.withConnection { connection ->
@@ -468,6 +735,134 @@ class PostgresSalesProgramStore(
         "SELECT id, position, source_catalog_item_id, description, quantity_milli, unit_price_cents, discount_basis_points, tax_basis_points, subtotal_cents, tax_cents, total_cents FROM business_sales_sale_lines WHERE client_id=? AND sale_id=? ORDER BY position",
     ).use { statement -> statement.uuid(1, clientId); statement.uuid(2, saleId); statement.executeQuery().use { it.map(::quoteLine) } }
 
+    private fun hydrateCustomer(connection: Connection, clientId: String, value: BusinessCustomer): BusinessCustomer {
+        val activities = customerActivitiesFor(connection, clientId, value.id)
+        return value.copy(
+            tags = customerTagsFor(connection, clientId, value.id),
+            nextAction = nextAction(activities),
+        )
+    }
+
+    private fun customerTagsFor(connection: Connection, clientId: String, customerId: String): List<BusinessCustomerTag> =
+        connection.prepareStatement(
+            """
+            SELECT tag.id::text AS id, tag.name, tag.color_hex, tag.is_archived,
+                   tag.version, tag.updated_at::text AS updated_at
+            FROM business_sales_customer_tag_links link
+            JOIN business_sales_customer_tags tag
+              ON tag.id=link.tag_id AND tag.client_id=link.client_id
+            WHERE link.client_id=CAST(? AS uuid) AND link.customer_id=CAST(? AS uuid)
+            ORDER BY lower(tag.name), tag.id
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, customerId)
+            statement.executeQuery().use { it.map(::customerTag) }
+        }
+
+    private fun customerTag(connection: Connection, clientId: String, tagId: String): BusinessCustomerTag? =
+        connection.prepareStatement(
+            """
+            SELECT id::text AS id, name, color_hex, is_archived, version, updated_at::text AS updated_at
+            FROM business_sales_customer_tags
+            WHERE client_id=CAST(? AS uuid) AND id=CAST(? AS uuid)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, tagId)
+            statement.executeQuery().use { result -> if (result.next()) customerTag(result) else null }
+        }
+
+    private fun customerActivitiesFor(
+        connection: Connection,
+        clientId: String,
+        customerId: String,
+    ): List<BusinessCustomerActivity> = connection.prepareStatement(
+        """
+        SELECT activity.id::text AS id, activity.customer_id::text AS customer_id,
+               activity.contact_id::text AS contact_id, contact.full_name AS contact_name,
+               activity.activity_type, activity.subject, activity.details,
+               activity.occurred_at::text AS occurred_at, activity.due_at::text AS due_at,
+               activity.completed_at::text AS completed_at, activity.version,
+               activity.created_at::text AS created_at, activity.updated_at::text AS updated_at
+        FROM business_sales_customer_activities activity
+        LEFT JOIN business_sales_contacts contact
+          ON contact.id=activity.contact_id AND contact.client_id=activity.client_id
+        WHERE activity.client_id=CAST(? AS uuid) AND activity.customer_id=CAST(? AS uuid)
+        ORDER BY activity.created_at DESC, activity.id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, clientId)
+        statement.setString(2, customerId)
+        statement.executeQuery().use { it.map(::customerActivity) }
+    }
+
+    private fun customerActivity(
+        connection: Connection,
+        clientId: String,
+        customerId: String,
+        activityId: String,
+    ): BusinessCustomerActivity? = connection.prepareStatement(
+        """
+        SELECT activity.id::text AS id, activity.customer_id::text AS customer_id,
+               activity.contact_id::text AS contact_id, contact.full_name AS contact_name,
+               activity.activity_type, activity.subject, activity.details,
+               activity.occurred_at::text AS occurred_at, activity.due_at::text AS due_at,
+               activity.completed_at::text AS completed_at, activity.version,
+               activity.created_at::text AS created_at, activity.updated_at::text AS updated_at
+        FROM business_sales_customer_activities activity
+        LEFT JOIN business_sales_contacts contact
+          ON contact.id=activity.contact_id AND contact.client_id=activity.client_id
+        WHERE activity.client_id=CAST(? AS uuid) AND activity.customer_id=CAST(? AS uuid)
+          AND activity.id=CAST(? AS uuid)
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, clientId)
+        statement.setString(2, customerId)
+        statement.setString(3, activityId)
+        statement.executeQuery().use { result -> if (result.next()) customerActivity(result) else null }
+    }
+
+    private fun nextAction(activities: List<BusinessCustomerActivity>): BusinessCustomerActivity? =
+        activities.filter { it.completedAt == null && it.dueAt != null }.minByOrNull { requireNotNull(it.dueAt) }
+
+    private fun requireCustomerTags(connection: Connection, clientId: String, tagIds: List<String>) {
+        tagIds.forEach { tagId ->
+            val tag = customerTag(connection, clientId, tagId) ?: throw SalesProgramNotFoundException()
+            if (tag.archived) throw SalesProgramConflictException("Archived tags cannot be assigned")
+        }
+    }
+
+    private fun replaceCustomerTags(
+        connection: Connection,
+        clientId: String,
+        actorUserId: String,
+        customerId: String,
+        tagIds: List<String>,
+    ) {
+        connection.prepareStatement(
+            "DELETE FROM business_sales_customer_tag_links WHERE client_id=CAST(? AS uuid) AND customer_id=CAST(? AS uuid)",
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, customerId)
+            statement.executeUpdate()
+        }
+        tagIds.forEach { tagId ->
+            connection.prepareStatement(
+                """
+                INSERT INTO business_sales_customer_tag_links (client_id, customer_id, tag_id, created_by_user_id)
+                VALUES (CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid), CAST(? AS uuid))
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, clientId)
+                statement.setString(2, customerId)
+                statement.setString(3, tagId)
+                statement.setString(4, actorUserId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
     private fun requireCustomer(connection: Connection, clientId: String, customerId: String) {
         val exists = connection.prepareStatement("SELECT 1 FROM business_sales_customers WHERE client_id=? AND id=?").use { statement -> statement.uuid(1, clientId); statement.uuid(2, customerId); statement.executeQuery().use { it.next() } }
         if (!exists) throw SalesProgramNotFoundException()
@@ -476,6 +871,22 @@ class PostgresSalesProgramStore(
     private fun requireActiveCustomer(connection: Connection, clientId: String, customerId: String) {
         val active = connection.prepareStatement("SELECT 1 FROM business_sales_customers WHERE client_id=? AND id=? AND status='ACTIVE'").use { statement -> statement.uuid(1, clientId); statement.uuid(2, customerId); statement.executeQuery().use { it.next() } }
         if (!active) throw SalesProgramConflictException("Customer is archived or not found")
+    }
+
+    private fun requireContact(connection: Connection, clientId: String, customerId: String, contactId: String?) {
+        if (contactId == null) return
+        val exists = connection.prepareStatement(
+            """
+            SELECT 1 FROM business_sales_contacts
+            WHERE client_id=CAST(? AS uuid) AND customer_id=CAST(? AS uuid) AND id=CAST(? AS uuid)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, clientId)
+            statement.setString(2, customerId)
+            statement.setString(3, contactId)
+            statement.executeQuery().use { it.next() }
+        }
+        if (!exists) throw SalesProgramNotFoundException()
     }
 
     private fun requireCatalogItem(connection: Connection, clientId: String, itemId: String, lock: Boolean): BusinessCatalogItem = catalogItemFor(connection, clientId, itemId, lock) ?: throw SalesProgramNotFoundException()
@@ -536,7 +947,39 @@ class PostgresSalesProgramStore(
         }
     }
 
-    private fun customer(rs: ResultSet) = BusinessCustomer(rs.id("id"), rs.getString("display_name"), rs.getString("tax_id"), rs.getString("email"), rs.getString("phone"), rs.getString("address"), BusinessCustomerStatus.valueOf(rs.getString("status")), rs.getInt("version"), rs.time("updated_at"))
+    private fun customer(rs: ResultSet) = BusinessCustomer(
+        id = rs.id("id"),
+        displayName = rs.getString("display_name"),
+        taxId = rs.getString("tax_id"),
+        email = rs.getString("email"),
+        phone = rs.getString("phone"),
+        address = rs.getString("address"),
+        status = BusinessCustomerStatus.valueOf(rs.getString("status")),
+        version = rs.getInt("version"),
+        updatedAt = rs.time("updated_at"),
+        type = BusinessCustomerType.valueOf(rs.getString("customer_type")),
+        stage = BusinessCustomerStage.valueOf(rs.getString("commercial_stage")),
+        source = rs.getString("commercial_source"),
+    )
+    private fun customerTag(rs: ResultSet) = BusinessCustomerTag(
+        rs.getString("id"), rs.getString("name"), rs.getString("color_hex"),
+        rs.getBoolean("is_archived"), rs.getInt("version"), rs.getString("updated_at"),
+    )
+    private fun customerActivity(rs: ResultSet) = BusinessCustomerActivity(
+        id = rs.getString("id"),
+        customerId = rs.getString("customer_id"),
+        contactId = rs.getString("contact_id"),
+        contactName = rs.getString("contact_name"),
+        type = BusinessCustomerActivityType.valueOf(rs.getString("activity_type")),
+        subject = rs.getString("subject"),
+        details = rs.getString("details"),
+        occurredAt = rs.getString("occurred_at"),
+        dueAt = rs.getString("due_at"),
+        completedAt = rs.getString("completed_at"),
+        version = rs.getInt("version"),
+        createdAt = rs.getString("created_at"),
+        updatedAt = rs.getString("updated_at"),
+    )
     private fun contact(rs: ResultSet) = BusinessContact(rs.id("id"), rs.id("customer_id"), rs.getString("full_name"), rs.getString("role"), rs.getString("email"), rs.getString("phone"), rs.getBoolean("is_primary"), BusinessCustomerStatus.valueOf(rs.getString("status")), rs.getInt("version"), rs.time("updated_at"))
     private fun catalogItem(rs: ResultSet) = BusinessCatalogItem(rs.id("id"), BusinessCatalogItemType.valueOf(rs.getString("item_type")), rs.getString("name"), rs.getString("sku"), rs.getString("description"), rs.getString("unit"), rs.getLong("reference_price_cents"), rs.getString("currency"), rs.getBoolean("tracks_stock"), rs.getLong("stock_minimum_milli").takeUnless { rs.wasNull() }, rs.getBoolean("is_archived"), rs.getInt("version"), rs.time("updated_at"))
     private fun stockSummary(rs: ResultSet): BusinessStockSummary { val item = catalogItem(rs); val available = rs.getLong("available_milli"); return BusinessStockSummary(item, available, item.stockMinimumMilli?.let { available < it } == true) }
@@ -557,6 +1000,7 @@ class PostgresSalesProgramStore(
     }
 
     private fun PreparedStatement.uuid(index: Int, value: String?) { if (value == null) setNull(index, Types.OTHER) else setObject(index, UUID.fromString(value)) }
+    private fun PreparedStatement.nullableUuid(index: Int, value: String?) = uuid(index, value)
     private fun PreparedStatement.string(index: Int, value: String?) { if (value == null) setNull(index, Types.VARCHAR) else setString(index, value) }
     private fun PreparedStatement.longOrNull(index: Int, value: Long?) { if (value == null) setNull(index, Types.BIGINT) else setLong(index, value) }
     private fun ResultSet.id(column: String): String = getObject(column).toString()

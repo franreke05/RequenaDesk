@@ -7,6 +7,8 @@ import com.requena.supportdesk.features.business.sales.data.dto.BusinessCatalogI
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessContactDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerDetailDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerDto
+import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerTagDto
+import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerActivityDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessQuoteDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessSaleDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessSalesPageDto
@@ -18,6 +20,8 @@ import com.requena.supportdesk.features.business.sales.domain.ConvertBusinessQuo
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.CreateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.CreateBusinessQuoteInput
 import com.requena.supportdesk.features.business.sales.domain.ExpectedVersionInput
 import com.requena.supportdesk.features.business.sales.domain.QuoteTransitionInput
@@ -25,6 +29,8 @@ import com.requena.supportdesk.features.business.sales.domain.StockAdjustmentInp
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCatalogItemInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessContactInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerTagInput
+import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessCustomerActivityInput
 import com.requena.supportdesk.features.business.sales.domain.UpdateBusinessQuoteInput
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -39,8 +45,16 @@ interface BusinessSalesDataSource {
     suspend fun createCustomer(input: CreateBusinessCustomerInput): BusinessCustomerDto
     suspend fun updateCustomer(customerId: String, input: UpdateBusinessCustomerInput): BusinessCustomerDto
     suspend fun archiveCustomer(customerId: String, expectedVersion: Int): BusinessCustomerDto
+    suspend fun restoreCustomer(customerId: String, expectedVersion: Int): BusinessCustomerDto
     suspend fun createContact(customerId: String, input: CreateBusinessContactInput): BusinessContactDto
     suspend fun updateContact(customerId: String, contactId: String, input: UpdateBusinessContactInput): BusinessContactDto
+    suspend fun customerTags(): List<BusinessCustomerTagDto>
+    suspend fun createCustomerTag(input: CreateBusinessCustomerTagInput): BusinessCustomerTagDto
+    suspend fun updateCustomerTag(tagId: String, input: UpdateBusinessCustomerTagInput): BusinessCustomerTagDto
+    suspend fun archiveCustomerTag(tagId: String, expectedVersion: Int): BusinessCustomerTagDto
+    suspend fun customerActivities(customerId: String): List<BusinessCustomerActivityDto>
+    suspend fun createCustomerActivity(customerId: String, input: CreateBusinessCustomerActivityInput): BusinessCustomerActivityDto
+    suspend fun updateCustomerActivity(customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput): BusinessCustomerActivityDto
 
     suspend fun catalogItems(request: BusinessSalesPageRequest): BusinessSalesPageDto<BusinessCatalogItemDto>
     suspend fun createCatalogItem(input: CreateBusinessCatalogItemInput): BusinessCatalogItemDto
@@ -80,11 +94,43 @@ class RemoteBusinessSalesDataSource(
             setBody(jsonRequestBody(ExpectedVersionInput(expectedVersion)))
         }.requireApiData<BusinessCustomerDto>()
 
+    override suspend fun restoreCustomer(customerId: String, expectedVersion: Int) =
+        httpClient.post("${supportDeskBaseUrl()}/client/apps/customers/$customerId/restore") {
+            setBody(jsonRequestBody(ExpectedVersionInput(expectedVersion)))
+        }.requireApiData<BusinessCustomerDto>()
+
     override suspend fun createContact(customerId: String, input: CreateBusinessContactInput) =
         httpClient.post("${supportDeskBaseUrl()}/client/apps/customers/$customerId/contacts") { setBody(jsonRequestBody(input)) }.requireApiData<BusinessContactDto>()
 
     override suspend fun updateContact(customerId: String, contactId: String, input: UpdateBusinessContactInput) =
         httpClient.patch("${supportDeskBaseUrl()}/client/apps/customers/$customerId/contacts/$contactId") { setBody(jsonRequestBody(input)) }.requireApiData<BusinessContactDto>()
+
+    override suspend fun customerTags() =
+        httpClient.get("${supportDeskBaseUrl()}/client/apps/customers/tags").requireApiData<List<BusinessCustomerTagDto>>()
+
+    override suspend fun createCustomerTag(input: CreateBusinessCustomerTagInput) =
+        httpClient.post("${supportDeskBaseUrl()}/client/apps/customers/tags") { setBody(jsonRequestBody(input)) }.requireApiData<BusinessCustomerTagDto>()
+
+    override suspend fun updateCustomerTag(tagId: String, input: UpdateBusinessCustomerTagInput) =
+        httpClient.patch("${supportDeskBaseUrl()}/client/apps/customers/tags/$tagId") { setBody(jsonRequestBody(input)) }.requireApiData<BusinessCustomerTagDto>()
+
+    override suspend fun archiveCustomerTag(tagId: String, expectedVersion: Int) =
+        httpClient.post("${supportDeskBaseUrl()}/client/apps/customers/tags/$tagId/archive") {
+            setBody(jsonRequestBody(ExpectedVersionInput(expectedVersion)))
+        }.requireApiData<BusinessCustomerTagDto>()
+
+    override suspend fun customerActivities(customerId: String) =
+        httpClient.get("${supportDeskBaseUrl()}/client/apps/customers/$customerId/activities").requireApiData<List<BusinessCustomerActivityDto>>()
+
+    override suspend fun createCustomerActivity(customerId: String, input: CreateBusinessCustomerActivityInput) =
+        httpClient.post("${supportDeskBaseUrl()}/client/apps/customers/$customerId/activities") {
+            setBody(jsonRequestBody(input))
+        }.requireApiData<BusinessCustomerActivityDto>()
+
+    override suspend fun updateCustomerActivity(customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput) =
+        httpClient.patch("${supportDeskBaseUrl()}/client/apps/customers/$customerId/activities/$activityId") {
+            setBody(jsonRequestBody(input))
+        }.requireApiData<BusinessCustomerActivityDto>()
 
     override suspend fun catalogItems(request: BusinessSalesPageRequest) =
         httpClient.get(pageUrl("/client/apps/catalog/items", request)).requireApiData<BusinessSalesPageDto<BusinessCatalogItemDto>>()
@@ -142,6 +188,8 @@ class RemoteBusinessSalesDataSource(
             request.query?.takeIf(String::isNotBlank)?.let { "query=${it.encodeURLParameter()}" },
             request.status?.takeIf(String::isNotBlank)?.let { "status=${it.encodeURLParameter()}" },
             request.cursor?.takeIf(String::isNotBlank)?.let { "cursor=${it.encodeURLParameter()}" },
+            request.stage?.let { "stage=${it.name}" },
+            request.tagId?.takeIf(String::isNotBlank)?.let { "tagId=${it.encodeURLParameter()}" },
             "limit=${request.limit}",
         )
         return "${supportDeskBaseUrl()}$path?${parameters.joinToString("&")}" 

@@ -35,6 +35,7 @@ class ClientsRepositoryImpl(
                 accountStatus = input.accountStatus.name,
                 serviceTier = input.serviceTier.name,
                 preferredContactChannel = input.preferredContactChannel.name,
+                billing = ClientsMapper.toDto(input.billing),
             ),
         ).let { clientDto ->
             val accessCode = requireNotNull(clientDto.generatedAccessCode) { "El servidor no devolvió la clave de acceso." }
@@ -59,6 +60,7 @@ class ClientsRepositoryImpl(
                 accountStatus = input.accountStatus.name,
                 serviceTier = input.serviceTier.name,
                 preferredContactChannel = input.preferredContactChannel.name,
+                billing = ClientsMapper.toDto(input.billing),
             ),
         ).let(ClientsMapper::fromDto)
     }.fold(

@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.ApproveClientProgramRequest
 import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.RejectClientProgramRequest
@@ -81,7 +83,7 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
             call.respondJson(
                 body = successResponse(
                     "/admin/program-requests",
-                    clientProgramRequestsJson(service.clientProgramRequests(identity.userId, status), includeAdminContext = true),
+                    clientProgramRequestsJson(service.clientProgramRequests(identity.orgId, status), includeAdminContext = true),
                 ),
             )
         }
@@ -98,7 +100,7 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/billing-preview",
-                    clientBillingPreviewJson(service.clientBillingPreview(clientId, period, identity.userId)),
+                    clientBillingPreviewJson(service.clientBillingPreview(clientId, period, identity.orgId)),
                 ),
             )
         }
@@ -118,7 +120,7 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
                     requestId = requestId,
                     request = request,
                     reviewedByUserId = identity.userId,
-                    ownerAdminId = identity.userId,
+                    organizationId = identity.orgId,
                 )
                 call.respondJson(
                     body = successResponse(
@@ -138,7 +140,7 @@ fun Route.programRoutes(service: SupportDeskService, tokenService: SupportDeskTo
                     requestId = requestId,
                     request = request,
                     reviewedByUserId = identity.userId,
-                    ownerAdminId = identity.userId,
+                    organizationId = identity.orgId,
                 )
                 call.respondJson(
                     body = successResponse(

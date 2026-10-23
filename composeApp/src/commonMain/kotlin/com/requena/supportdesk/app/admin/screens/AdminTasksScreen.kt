@@ -1654,7 +1654,7 @@ private fun TaskCalendarDayCell(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         color = backgroundColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -1662,7 +1662,7 @@ private fun TaskCalendarDayCell(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+                .border(1.dp, borderColor, MaterialTheme.shapes.medium)
                 .clickable(enabled = !day.isPast, onClick = onClick)
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center,

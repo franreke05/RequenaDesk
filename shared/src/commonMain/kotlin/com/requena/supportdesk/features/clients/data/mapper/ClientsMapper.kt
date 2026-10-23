@@ -5,6 +5,8 @@ import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.model.ClientPortalComponent
 import com.requena.supportdesk.core.model.ClientServiceTier
 import com.requena.supportdesk.core.model.PreferredContactChannel
+import com.requena.supportdesk.core.model.ClientBillingProfile
+import com.requena.supportdesk.features.clients.data.dto.ClientBillingDto
 import com.requena.supportdesk.features.clients.data.dto.ClientDto
 
 object ClientsMapper {
@@ -21,5 +23,28 @@ object ClientsMapper {
         }.toSet(),
         preferredContactChannel = PreferredContactChannel.valueOf(dto.preferredContactChannel),
         activeTicketCount = dto.activeTicketCount,
+        billing = fromDto(dto.billing),
+    )
+
+    fun fromDto(dto: ClientBillingDto): ClientBillingProfile = ClientBillingProfile(
+        legalName = dto.legalName,
+        taxId = dto.taxId,
+        addressLine = dto.addressLine,
+        postalCode = dto.postalCode,
+        city = dto.city,
+        province = dto.province,
+        country = dto.country,
+        email = dto.email,
+    )
+
+    fun toDto(billing: ClientBillingProfile): ClientBillingDto = ClientBillingDto(
+        legalName = billing.legalName,
+        taxId = billing.taxId,
+        addressLine = billing.addressLine,
+        postalCode = billing.postalCode,
+        city = billing.city,
+        province = billing.province,
+        country = billing.country,
+        email = billing.email,
     )
 }

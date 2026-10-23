@@ -9,8 +9,16 @@ interface BusinessSalesRepository {
     suspend fun createCustomer(input: CreateBusinessCustomerInput): AppResult<BusinessCustomer>
     suspend fun updateCustomer(customerId: String, input: UpdateBusinessCustomerInput): AppResult<BusinessCustomer>
     suspend fun archiveCustomer(customerId: String, expectedVersion: Int): AppResult<BusinessCustomer>
+    suspend fun restoreCustomer(customerId: String, expectedVersion: Int): AppResult<BusinessCustomer>
     suspend fun createContact(customerId: String, input: CreateBusinessContactInput): AppResult<BusinessContact>
     suspend fun updateContact(customerId: String, contactId: String, input: UpdateBusinessContactInput): AppResult<BusinessContact>
+    suspend fun customerTags(): AppResult<List<BusinessCustomerTag>>
+    suspend fun createCustomerTag(input: CreateBusinessCustomerTagInput): AppResult<BusinessCustomerTag>
+    suspend fun updateCustomerTag(tagId: String, input: UpdateBusinessCustomerTagInput): AppResult<BusinessCustomerTag>
+    suspend fun archiveCustomerTag(tagId: String, expectedVersion: Int): AppResult<BusinessCustomerTag>
+    suspend fun customerActivities(customerId: String): AppResult<List<BusinessCustomerActivity>>
+    suspend fun createCustomerActivity(customerId: String, input: CreateBusinessCustomerActivityInput): AppResult<BusinessCustomerActivity>
+    suspend fun updateCustomerActivity(customerId: String, activityId: String, input: UpdateBusinessCustomerActivityInput): AppResult<BusinessCustomerActivity>
 
     suspend fun catalogItems(request: BusinessSalesPageRequest = BusinessSalesPageRequest()): AppResult<BusinessSalesPage<BusinessCatalogItem>>
     suspend fun createCatalogItem(input: CreateBusinessCatalogItemInput): AppResult<BusinessCatalogItem>

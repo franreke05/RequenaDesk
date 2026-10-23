@@ -357,7 +357,7 @@ private fun DashboardActiveTagChip(
 ) {
     Row(
         modifier = Modifier
-            .background(parseColor(category.colorHex).copy(alpha = 0.16f), RoundedCornerShape(8.dp))
+            .background(parseColor(category.colorHex).copy(alpha = 0.16f), MaterialTheme.shapes.medium)
             .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1031,8 +1031,8 @@ private fun CompactCalendarDayCell(
     Box(
         modifier = modifier
             .aspectRatio(1.1f)
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .background(animatedBackgroundColor, RoundedCornerShape(8.dp))
+            .border(1.dp, borderColor, MaterialTheme.shapes.medium)
+            .background(animatedBackgroundColor, MaterialTheme.shapes.medium)
             .hoverable(interactionSource, enabled = !day.isPast)
             .clickable(
                 interactionSource = interactionSource,

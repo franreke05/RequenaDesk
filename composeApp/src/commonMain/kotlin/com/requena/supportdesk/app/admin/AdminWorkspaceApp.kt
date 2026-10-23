@@ -45,7 +45,7 @@ import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
-import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.buttons.AppearanceButton
 import com.requena.supportdesk.designsystem.components.navigation.AdminBottomBar
 import com.requena.supportdesk.designsystem.components.navigation.AdminNavigationRail
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
@@ -56,6 +56,7 @@ import com.requena.supportdesk.features.auth.presentation.effect.AuthUiEffect
 import com.requena.supportdesk.features.auth.presentation.event.AuthUiEvent
 import com.requena.supportdesk.features.business.finance.presentation.BusinessFinanceUiEffect
 import com.requena.supportdesk.features.business.operations.OperationsUiEffect
+import com.requena.supportdesk.features.business.projects.BusinessProjectsEffect
 import com.requena.supportdesk.features.business.sales.presentation.BusinessSalesUiEffect
 import com.requena.supportdesk.features.clients.presentation.effect.ClientsUiEffect
 import com.requena.supportdesk.features.clients.presentation.event.ClientsUiEvent
@@ -82,6 +83,19 @@ import com.composables.icons.lucide.Tags
 import com.composables.icons.lucide.Ticket
 import com.composables.icons.lucide.Users
 import kotlinx.coroutines.launch
+import com.composables.icons.lucide.Settings
+import com.requena.supportdesk.app.admin.screens.AdminSettingsScreen
+import com.requena.supportdesk.app.admin.screens.FirstStepsCard
+import com.requena.supportdesk.app.admin.screens.firstSteps
+import com.requena.supportdesk.app.admin.screens.ReadOnlyRoleBanner
+import com.requena.supportdesk.app.onboarding.OnboardingFlow
+import com.requena.supportdesk.core.model.Organization
+import com.requena.supportdesk.core.model.OrganizationRole
+import com.requena.supportdesk.core.model.User
+import com.requena.supportdesk.core.model.canManageCompany
+import com.requena.supportdesk.core.model.isStaff
+import com.requena.supportdesk.core.network.AdminSessionContext
+import com.requena.supportdesk.features.organization.presentation.OrganizationUiEvent
 
 @Composable
 fun AdminWorkspaceApp() {
@@ -95,6 +109,8 @@ fun AdminWorkspaceApp() {
 
     val authState by module.authViewModel.state.collectAsState()
     val currentUser = authState.authenticatedUser
+    val organizationState by module.organizationViewModel.state.collectAsState()
+    var onboardingFinished by remember(currentUser?.id) { mutableStateOf(false) }
     val clientsState = if (currentUser != null) {
         module.clientsViewModel.state.collectAsState().value
     } else {
@@ -288,6 +304,30 @@ fun AdminWorkspaceApp() {
         }
     }
 
+    LaunchedEffect(module, currentUser) {
+        if (currentUser?.role == UserRole.CLIENT) {
+            module.businessProjectsViewModel.effects.collect { effect ->
+                when (effect) {
+                    is BusinessProjectsEffect.ShowMessage -> clientSnackbarHostState.showSnackbar(effect.message)
+                }
+            }
+        }
+    }
+
+    // Keep the screen's user in sync when the session is refreshed in the background
+    // (e.g. a session saved before companies existed, or a changed company role).
+    LaunchedEffect(module) {
+        AdminSessionContext.user.collect { refreshed ->
+            if (refreshed != null) module.authViewModel.onEvent(AuthUiEvent.SessionUserChanged(refreshed))
+        }
+    }
+
+    LaunchedEffect(currentUser?.id, currentUser?.organizationId) {
+        if (currentUser?.isStaff == true && currentUser.organizationId != null) {
+            module.organizationViewModel.onEvent(OrganizationUiEvent.Load(includeTeam = currentUser.canManageCompany))
+        }
+    }
+
     LaunchedEffect(currentUser?.id) {
         currentUser?.id ?: return@LaunchedEffect
 
@@ -317,7 +357,7 @@ fun AdminWorkspaceApp() {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(SupportDeskThemeTokens.pageBackground),
     ) {
         val layoutMode = when {
             maxWidth < SupportDeskBreakpoints.adminCompact -> AdminLayoutMode.COMPACT
@@ -348,12 +388,25 @@ fun AdminWorkspaceApp() {
                 businessCustomersViewModel = module.businessCustomersViewModel,
                 businessCatalogViewModel = module.businessCatalogViewModel,
                 businessQuotesViewModel = module.businessQuotesViewModel,
+                businessProjectsViewModel = module.businessProjectsViewModel,
                 clientId = currentUser.clientId,
                 snackbarHostState = clientSnackbarHostState,
                 modifier = Modifier.fillMaxSize(),
             )
+        } else if (needsOnboarding(currentUser, organizationState.organization) && !onboardingFinished) {
+            OnboardingFlow(
+                viewModel = module.onboardingViewModel,
+                onFinished = {
+                    onboardingFinished = true
+                    module.organizationViewModel.onEvent(OrganizationUiEvent.Load(includeTeam = currentUser.canManageCompany))
+                },
+                onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
+            )
         } else {
-            val navItems = remember {
+            // Facturas is OryKai's local PDF invoicing (CLAUDE.md lane A). Hidden for other
+            // companies once the company is known; until then (or on an older server) it stays.
+            val showLocalInvoices = organizationState.organization?.localPdfInvoices ?: true
+            val navItems = remember(showLocalInvoices) {
                 listOf<NavigationItemSpec<AppDestination>>(
                     NavigationItemSpec(
                         key = AppDestination.Dashboard,
@@ -397,7 +450,13 @@ fun AdminWorkspaceApp() {
                         supportingText = "Crear y gestionar pagos",
                         icon = Lucide.ReceiptText,
                     ),
-                )
+                    NavigationItemSpec(
+                        key = AppDestination.Settings,
+                        title = "Ajustes",
+                        supportingText = "Empresa, equipo y apariencia",
+                        icon = Lucide.Settings,
+                    ),
+                ).filter { showLocalInvoices || it.key !is AppDestination.Invoices }
             }
             val selectedNav = navDestinationFor(navigation.destination)
             val uiStatus = tasksState.statusMessage ?: statusMessage
@@ -405,8 +464,9 @@ fun AdminWorkspaceApp() {
             if (layoutMode == AdminLayoutMode.EXPANDED) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     AppSidebar(
-                        brandTitle = "OryKai software",
-                        brandSubtitle = "Agenda compartida para clientes, tareas y horas.",
+                        brandTitle = currentUser.organizationName ?: "OryKai software",
+                        brandSubtitle = currentUser.organizationRole?.let { "${currentUser.name} · ${it.label}" }
+                            ?: "Agenda compartida para clientes, tareas y horas.",
                         items = navItems,
                         selected = selectedNav,
                         onSelect = { navigation = navigation.copy(destination = it) },
@@ -503,6 +563,7 @@ private fun AdminContentArea(
             .padding(horizontal = if (layoutMode == AdminLayoutMode.COMPACT) spacing.md else spacing.xl, vertical = spacing.lg),
         verticalArrangement = Arrangement.spacedBy(spacing.lg),
     ) {
+        ReadOnlyRoleBanner()
         if (layoutMode == AdminLayoutMode.COMPACT) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -530,7 +591,7 @@ private fun AdminContentArea(
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.weight(1f),
                     )
-                    ThemeModeButton()
+                    AppearanceButton()
                 }
             }
         } else {
@@ -557,7 +618,23 @@ private fun AdminContentArea(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
-                ThemeModeButton()
+                AppearanceButton()
+            }
+        }
+
+        if (navigation.destination == AppDestination.Dashboard) {
+            val sessionUser by AdminSessionContext.user.collectAsState()
+            val organizationState by module.organizationViewModel.state.collectAsState()
+            if (sessionUser?.canManageCompany == true) {
+                FirstStepsCard(
+                    steps = firstSteps(
+                        hasClients = clientsState.clients.isNotEmpty(),
+                        hasLoggedTime = tasksState.tasks.any { it.loggedSeconds > 0 },
+                        hasTeamOrInvitations = organizationState.members.size > 1 || organizationState.invitations.isNotEmpty(),
+                        hasFiscalData = organizationState.organization?.taxId?.isNotBlank() == true,
+                    ),
+                    onNavigate = onNavigate,
+                )
             }
         }
 
@@ -643,6 +720,11 @@ private fun AdminContentArea(
                 modifier = Modifier.fillMaxSize(),
             )
 
+            AppDestination.Settings -> AdminSettingsScreen(
+                viewModel = module.organizationViewModel,
+                modifier = Modifier.fillMaxSize(),
+            )
+
             is AppDestination.Invoices -> AdminInvoicesScreen(
                 clients = clientsState.clients,
                 tasksState = tasksState,
@@ -671,6 +753,7 @@ private fun navDestinationFor(destination: AppDestination): AppDestination = whe
     AppDestination.Tickets,
     is AppDestination.TicketDetail -> AppDestination.Tickets
     AppDestination.Login -> AppDestination.Dashboard
+    AppDestination.Settings -> AppDestination.Settings
 }
 
 private fun titleFor(destination: AppDestination): String = when (destination) {
@@ -684,6 +767,7 @@ private fun titleFor(destination: AppDestination): String = when (destination) {
     AppDestination.Tickets -> "Tickets"
     is AppDestination.TicketDetail -> "Detalle del ticket"
     AppDestination.Login -> "OryKai software Admin"
+    AppDestination.Settings -> "Ajustes"
 }
 
 private fun subtitleFor(destination: AppDestination): String? = when (destination) {
@@ -697,4 +781,9 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
     AppDestination.Tickets,
     is AppDestination.TicketDetail -> "Gestiona solicitudes, conversacion, estado y prioridad."
     AppDestination.Login -> "Workspace admin para organizar trabajo compartido."
+    AppDestination.Settings -> "Datos de tu empresa, tu equipo y cómo ves la app."
 }
+
+/** Owners see the onboarding until their company is marked as onboarded. */
+private fun needsOnboarding(user: User, organization: Organization?): Boolean =
+    user.organizationRole == OrganizationRole.OWNER && organization != null && !organization.onboardingCompleted

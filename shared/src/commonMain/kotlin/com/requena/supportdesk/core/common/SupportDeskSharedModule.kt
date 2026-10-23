@@ -16,6 +16,9 @@ import com.requena.supportdesk.features.business.finance.presentation.BusinessIn
 import com.requena.supportdesk.features.business.operations.BusinessOperationsRepositoryImpl
 import com.requena.supportdesk.features.business.operations.OperationsViewModel
 import com.requena.supportdesk.features.business.operations.RemoteBusinessOperationsDataSource
+import com.requena.supportdesk.features.business.projects.BusinessProjectsRepositoryImpl
+import com.requena.supportdesk.features.business.projects.BusinessProjectsViewModel
+import com.requena.supportdesk.features.business.projects.RemoteBusinessProjectsDataSource
 import com.requena.supportdesk.features.business.sales.data.datasource.RemoteBusinessSalesDataSource
 import com.requena.supportdesk.features.business.sales.data.repository.BusinessSalesRepositoryImpl
 import com.requena.supportdesk.features.business.sales.presentation.BusinessCatalogViewModel
@@ -74,6 +77,7 @@ import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.GetTicketsUseCase
 import com.requena.supportdesk.features.tickets.domain.usecase.ReplyTicketUseCase
 import com.requena.supportdesk.features.invoices.data.ledger.createInvoiceBillingLedger
+import com.requena.supportdesk.features.invoices.data.profile.createInvoiceProfileStore
 import com.requena.supportdesk.features.invoices.data.storage.createInvoicePdfStorage
 import com.requena.supportdesk.features.invoices.presentation.viewmodel.InvoicesViewModel
 import com.requena.supportdesk.features.tasks.presentation.viewmodel.TasksViewModel
@@ -102,6 +106,7 @@ object SupportDeskSharedModule {
     private val businessFinanceRepository = BusinessFinanceRepositoryImpl(RemoteBusinessFinanceDataSource(httpClient))
     private val businessOperationsRepository = BusinessOperationsRepositoryImpl(RemoteBusinessOperationsDataSource(httpClient))
     private val businessSalesRepository = BusinessSalesRepositoryImpl(RemoteBusinessSalesDataSource(httpClient))
+    private val businessProjectsRepository = BusinessProjectsRepositoryImpl(RemoteBusinessProjectsDataSource(httpClient))
 
     private val loginUseCase = LoginUseCase(authRepository)
     private val restoreSessionUseCase = RestoreSessionUseCase(authRepository)
@@ -146,10 +151,21 @@ object SupportDeskSharedModule {
     private val rejectProgramRequestUseCase = RejectProgramRequestUseCase(programsRepository)
     private val getClientProgramBillingPreviewUseCase = GetClientProgramBillingPreviewUseCase(programsRepository)
 
+    private val organizationRepository by lazy {
+        com.requena.supportdesk.features.organization.data.RemoteOrganizationRepository(httpClient)
+    }
+
+    fun createOrganizationViewModel() =
+        com.requena.supportdesk.features.organization.presentation.OrganizationViewModel(organizationRepository)
+
+    fun createOnboardingViewModel() =
+        com.requena.supportdesk.features.onboarding.OnboardingViewModel(organizationRepository)
+
     fun createAuthViewModel(): AuthViewModel = AuthViewModel(
         loginUseCase = loginUseCase,
         restoreSessionUseCase = restoreSessionUseCase,
         clearSessionUseCase = clearSessionUseCase,
+        authRepository = authRepository,
     )
 
     fun createTicketsViewModel(): TicketsViewModel = TicketsViewModel(
@@ -201,9 +217,13 @@ object SupportDeskSharedModule {
     fun createBusinessQuotesViewModel(): BusinessQuotesViewModel =
         BusinessQuotesViewModel(businessSalesRepository)
 
+    fun createBusinessProjectsViewModel(): BusinessProjectsViewModel =
+        BusinessProjectsViewModel(businessProjectsRepository)
+
     fun createInvoicesViewModel(): InvoicesViewModel = InvoicesViewModel(
         invoicePdfStorage = createInvoicePdfStorage(),
         invoiceBillingLedger = createInvoiceBillingLedger(),
+        invoiceProfileStore = createInvoiceProfileStore(),
     )
 
     fun createTasksViewModel(): TasksViewModel = TasksViewModel(

@@ -1,5 +1,6 @@
 package com.requena.supportdesk.server.domain.service
 
+import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
@@ -39,7 +40,15 @@ class SupportDeskService(
     private val tokenService: SupportDeskTokenService,
 ) {
     fun login(email: String, password: String): ServerSession? {
-        val identity = repository.authenticate(email = email, password = password) ?: return null
+        val identity = repository.authenticate(email = email, password = password)
+            // A user without a company could never use its token (see verifyAccessToken).
+            ?.takeIf { !it.organizationId.isNullOrBlank() }
+            ?: return null
+        return sessionFor(identity)
+    }
+
+    /** Issues a new access + refresh token pair for an already authenticated identity. */
+    fun sessionFor(identity: ServerAuthIdentity): ServerSession {
         val refreshToken = tokenService.createRefreshToken()
         repository.storeRefreshToken(
             userId = identity.userId,
@@ -54,6 +63,9 @@ class SupportDeskService(
             clientId = identity.clientId,
             accessToken = tokenService.createAccessToken(identity),
             refreshToken = refreshToken,
+            organizationId = identity.organizationId,
+            organizationRole = identity.organizationRole,
+            organizationName = identity.organizationName,
         )
     }
 
@@ -64,7 +76,7 @@ class SupportDeskService(
             refreshToken = request.refreshToken,
             replacementRefreshToken = replacementToken,
             expiresAt = tokenService.refreshTokenExpiresAt(Instant.now()),
-        ) ?: return null
+        )?.takeIf { !it.organizationId.isNullOrBlank() } ?: return null
         return ServerSession(
             userId = identity.userId,
             name = identity.name,
@@ -73,6 +85,9 @@ class SupportDeskService(
             clientId = identity.clientId,
             accessToken = tokenService.createAccessToken(identity),
             refreshToken = replacementToken,
+            organizationId = identity.organizationId,
+            organizationRole = identity.organizationRole,
+            organizationName = identity.organizationName,
         )
     }
 
@@ -81,7 +96,7 @@ class SupportDeskService(
         return repository.revokeRefreshToken(request.refreshToken)
     }
 
-    fun tickets() = repository.getTickets()
+    fun tickets(clientIds: Set<String>) = repository.getTickets(clientIds)
 
     fun ticket(id: String) = repository.getTicket(id)
 
@@ -101,21 +116,21 @@ class SupportDeskService(
 
     fun attachment(id: String) = repository.getAttachment(id)
 
-    fun clients(ownerAdminId: String? = null) = repository.getClients(ownerAdminId)
+    fun clients(organizationId: String) = repository.getClients(organizationId)
 
-    fun createdClient(request: CreateClientRequest, ownerAdminId: String? = null) = repository.createClient(request, ownerAdminId)
+    fun createdClient(request: CreateClientRequest, organizationId: String) = repository.createClient(request, organizationId)
 
-    fun updatedClient(clientId: String, request: UpdateClientRequest, ownerAdminId: String? = null) =
-        repository.updateClient(clientId, request, ownerAdminId)
+    fun updatedClient(clientId: String, request: UpdateClientRequest, organizationId: String) =
+        repository.updateClient(clientId, request, organizationId)
 
-    fun updatedClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, ownerAdminId: String? = null) =
-        repository.updateClientCredentials(clientId, request, ownerAdminId)
+    fun updatedClientCredentials(clientId: String, request: UpdateClientCredentialsRequest, organizationId: String) =
+        repository.updateClientCredentials(clientId, request, organizationId)
 
-    fun regeneratedClientCredentials(clientId: String, ownerAdminId: String? = null) =
-        repository.regenerateClientCredentials(clientId, ownerAdminId)
+    fun regeneratedClientCredentials(clientId: String, organizationId: String) =
+        repository.regenerateClientCredentials(clientId, organizationId)
 
-    fun updatedClientComponents(clientId: String, request: UpdateClientComponentsRequest, ownerAdminId: String? = null) =
-        repository.updateClientComponents(clientId, request, ownerAdminId)
+    fun updatedClientComponents(clientId: String, request: UpdateClientComponentsRequest, organizationId: String) =
+        repository.updateClientComponents(clientId, request, organizationId)
 
     fun clientPrograms(clientId: String) = repository.getClientPrograms(clientId)
 
@@ -125,104 +140,104 @@ class SupportDeskService(
         request: CreateClientProgramRequestsRequest,
     ) = repository.createClientProgramRequests(clientId, requestedByUserId, request)
 
-    fun clientProgramRequests(ownerAdminId: String, status: String? = null) =
-        repository.getClientProgramRequests(ownerAdminId, status)
+    fun clientProgramRequests(organizationId: String, status: String? = null) =
+        repository.getClientProgramRequests(organizationId, status)
 
     fun approvedClientProgramRequest(
         requestId: String,
         request: ApproveClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
+        organizationId: String,
     ) : com.requena.supportdesk.server.domain.model.ServerClientProgramRequestSnapshot {
         if (request.monthlyPriceCents != 0L) {
             throw ServerValidationException("Business programs are free during the beta")
         }
-        return repository.approveClientProgramRequest(requestId, request, reviewedByUserId, ownerAdminId)
+        return repository.approveClientProgramRequest(requestId, request, reviewedByUserId, organizationId)
     }
 
     fun rejectedClientProgramRequest(
         requestId: String,
         request: RejectClientProgramRequest,
         reviewedByUserId: String,
-        ownerAdminId: String,
-    ) = repository.rejectClientProgramRequest(requestId, request, reviewedByUserId, ownerAdminId)
+        organizationId: String,
+    ) = repository.rejectClientProgramRequest(requestId, request, reviewedByUserId, organizationId)
 
-    fun clientBillingPreview(clientId: String, period: String, ownerAdminId: String) : com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot {
+    fun clientBillingPreview(clientId: String, period: String, organizationId: String) : com.requena.supportdesk.server.domain.model.ServerClientBillingPreviewSnapshot {
         runCatching { YearMonth.parse(period) }
             .getOrElse { throw ServerValidationException("Billing period must use YYYY-MM format") }
-        return repository.getClientBillingPreview(clientId, period, ownerAdminId)
+        return repository.getClientBillingPreview(clientId, period, organizationId)
     }
 
-    fun deletedClient(clientId: String, ownerAdminId: String? = null) = repository.deleteClient(clientId, ownerAdminId)
+    fun deletedClient(clientId: String, organizationId: String) = repository.deleteClient(clientId, organizationId)
 
-    fun clientContacts(clientId: String, ownerAdminId: String? = null) =
-        repository.getClientContacts(clientId, ownerAdminId)
+    fun clientContacts(clientId: String, organizationId: String) =
+        repository.getClientContacts(clientId, organizationId)
 
-    fun createdClientContact(clientId: String, request: CreateClientContactRequest, ownerAdminId: String? = null) =
-        repository.createClientContact(clientId, request, ownerAdminId)
+    fun createdClientContact(clientId: String, request: CreateClientContactRequest, organizationId: String) =
+        repository.createClientContact(clientId, request, organizationId)
 
     fun updatedClientContact(
         clientId: String,
         contactId: String,
         request: UpdateClientContactRequest,
-        ownerAdminId: String? = null,
-    ) = repository.updateClientContact(clientId, contactId, request, ownerAdminId)
+        organizationId: String,
+    ) = repository.updateClientContact(clientId, contactId, request, organizationId)
 
-    fun deletedClientContact(clientId: String, contactId: String, ownerAdminId: String? = null) =
-        repository.deleteClientContact(clientId, contactId, ownerAdminId)
+    fun deletedClientContact(clientId: String, contactId: String, organizationId: String) =
+        repository.deleteClientContact(clientId, contactId, organizationId)
 
-    fun clientActivities(clientId: String, ownerAdminId: String? = null) =
-        repository.getClientActivities(clientId, ownerAdminId)
+    fun clientActivities(clientId: String, organizationId: String) =
+        repository.getClientActivities(clientId, organizationId)
 
     fun createdClientActivity(
         clientId: String,
         request: CreateClientActivityRequest,
         createdById: String,
-        ownerAdminId: String? = null,
-    ) = repository.createClientActivity(clientId, request, createdById, ownerAdminId)
+        organizationId: String,
+    ) = repository.createClientActivity(clientId, request, createdById, organizationId)
 
     fun updatedClientActivity(
         clientId: String,
         activityId: String,
         request: UpdateClientActivityRequest,
-        ownerAdminId: String? = null,
-    ) = repository.updateClientActivity(clientId, activityId, request, ownerAdminId)
+        organizationId: String,
+    ) = repository.updateClientActivity(clientId, activityId, request, organizationId)
 
-    fun deletedClientActivity(clientId: String, activityId: String, ownerAdminId: String? = null) =
-        repository.deleteClientActivity(clientId, activityId, ownerAdminId)
+    fun deletedClientActivity(clientId: String, activityId: String, organizationId: String) =
+        repository.deleteClientActivity(clientId, activityId, organizationId)
 
-    fun taskLabels(ownerAdminId: String? = null) = repository.getTaskLabels(ownerAdminId)
+    fun taskLabels(organizationId: String) = repository.getTaskLabels(organizationId)
 
-    fun createdTaskLabel(request: CreateTaskLabelRequest, ownerAdminId: String? = null) =
-        repository.createTaskLabel(request, ownerAdminId)
+    fun createdTaskLabel(request: CreateTaskLabelRequest, organizationId: String) =
+        repository.createTaskLabel(request, organizationId)
 
-    fun updatedTaskLabel(labelId: String, request: UpdateTaskLabelRequest, ownerAdminId: String? = null) =
-        repository.updateTaskLabel(labelId, request, ownerAdminId)
+    fun updatedTaskLabel(labelId: String, request: UpdateTaskLabelRequest, organizationId: String) =
+        repository.updateTaskLabel(labelId, request, organizationId)
 
-    fun deletedTaskLabel(labelId: String, ownerAdminId: String? = null) = repository.deleteTaskLabel(labelId, ownerAdminId)
+    fun deletedTaskLabel(labelId: String, organizationId: String) = repository.deleteTaskLabel(labelId, organizationId)
 
-    fun tasks(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
-        repository.getTasks(clientId, labelId, ownerAdminId)
+    fun tasks(clientId: String? = null, labelId: String? = null, organizationId: String) =
+        repository.getTasks(clientId, labelId, organizationId)
 
     fun createdTask(
         request: CreateTaskRequest,
         createdByUserId: String,
-        ownerAdminId: String? = null,
+        organizationId: String,
     ): com.requena.supportdesk.server.domain.model.ServerTaskSnapshot {
         validateTaskDueDate(request.dueDate)
-        return repository.createTask(request, createdByUserId, ownerAdminId)
+        return repository.createTask(request, createdByUserId, organizationId)
     }
 
-    fun updatedTask(taskId: String, request: UpdateTaskRequest, ownerAdminId: String? = null) =
-        repository.updateTask(taskId, request, ownerAdminId)
+    fun updatedTask(taskId: String, request: UpdateTaskRequest, organizationId: String) =
+        repository.updateTask(taskId, request, organizationId)
 
-    fun deletedTask(taskId: String, ownerAdminId: String? = null) = repository.deleteTask(taskId, ownerAdminId)
+    fun deletedTask(taskId: String, organizationId: String) = repository.deleteTask(taskId, organizationId)
 
-    fun taskBoard(ownerAdminId: String) = repository.getTaskBoard(ownerAdminId)
+    fun taskBoard(organizationId: String) = repository.getTaskBoard(organizationId)
 
     fun placedTaskOnBoard(
         taskId: String,
-        ownerAdminId: String,
+        organizationId: String,
         boardDate: String,
         positionX: Double,
         positionY: Double,
@@ -240,36 +255,36 @@ class SupportDeskService(
         }
         return repository.upsertTaskBoardPlacement(
             taskId = taskId,
-            ownerAdminId = ownerAdminId,
+            organizationId = organizationId,
             boardDate = parsedDate.toString(),
             positionX = positionX,
             positionY = positionY,
         )
     }
 
-    fun removedTaskFromBoard(taskId: String, ownerAdminId: String) =
-        repository.deleteTaskBoardPlacement(taskId, ownerAdminId)
+    fun removedTaskFromBoard(taskId: String, organizationId: String) =
+        repository.deleteTaskBoardPlacement(taskId, organizationId)
 
-    fun timeLogs(clientId: String? = null, taskId: String? = null, ownerAdminId: String? = null) =
-        repository.getTimeLogs(clientId, taskId, ownerAdminId)
+    fun timeLogs(clientId: String? = null, taskId: String? = null, organizationId: String) =
+        repository.getTimeLogs(clientId, taskId, organizationId)
 
-    fun activeWorkSession(ownerAdminId: String) = repository.activeWorkSession(ownerAdminId)
+    fun activeWorkSession(actorUserId: String) = repository.activeWorkSession(actorUserId)
 
-    fun workSessionsForTask(taskId: String, ownerAdminId: String) = repository.workSessionsForTask(taskId, ownerAdminId)
+    fun workSessionsForTask(taskId: String, actorUserId: String) = repository.workSessionsForTask(taskId, actorUserId)
 
-    fun startedWorkSession(request: StartWorkSessionRequest, ownerAdminId: String, authorId: String) =
-        repository.startedWorkSession(request, ownerAdminId, authorId)
+    fun startedWorkSession(request: StartWorkSessionRequest, actorUserId: String, authorId: String) =
+        repository.startedWorkSession(request, actorUserId, authorId)
 
-    fun pausedWorkSession(sessionId: String, ownerAdminId: String) = repository.pausedWorkSession(sessionId, ownerAdminId)
+    fun pausedWorkSession(sessionId: String, actorUserId: String) = repository.pausedWorkSession(sessionId, actorUserId)
 
-    fun resumedWorkSession(sessionId: String, ownerAdminId: String) = repository.resumedWorkSession(sessionId, ownerAdminId)
+    fun resumedWorkSession(sessionId: String, actorUserId: String) = repository.resumedWorkSession(sessionId, actorUserId)
 
-    fun stoppedWorkSession(sessionId: String, ownerAdminId: String) = repository.stoppedWorkSession(sessionId, ownerAdminId)
+    fun stoppedWorkSession(sessionId: String, actorUserId: String) = repository.stoppedWorkSession(sessionId, actorUserId)
 
-    fun checkpointedWorkSession(sessionId: String, ownerAdminId: String) = repository.checkpointedWorkSession(sessionId, ownerAdminId)
+    fun checkpointedWorkSession(sessionId: String, actorUserId: String) = repository.checkpointedWorkSession(sessionId, actorUserId)
 
-    fun dashboard(clientId: String? = null, labelId: String? = null, ownerAdminId: String? = null) =
-        repository.getDashboard(clientId, labelId, ownerAdminId)
+    fun dashboard(clientId: String? = null, labelId: String? = null, organizationId: String) =
+        repository.getDashboard(clientId, labelId, organizationId)
 
     fun registerDevice(request: RegisterDeviceRequest) = repository.registerDevice(request)
 

@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.security.SupportDeskTokenService
 import com.requena.supportdesk.server.utils.dashboardJson
@@ -13,11 +15,11 @@ import io.ktor.server.routing.route
 fun Route.dashboardRoutes(service: SupportDeskService, tokenService: SupportDeskTokenService) {
     route("/admin") {
         get("/dashboard") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@get
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@get
             val clientId = call.request.queryParameters["clientId"]
             val labelId = call.request.queryParameters["labelId"]
             call.respondJson(
-                body = successResponse("/admin/dashboard", dashboardJson(service.dashboard(clientId, labelId, ownerAdminId))),
+                body = successResponse("/admin/dashboard", dashboardJson(service.dashboard(clientId, labelId, organizationId))),
             )
         }
     }

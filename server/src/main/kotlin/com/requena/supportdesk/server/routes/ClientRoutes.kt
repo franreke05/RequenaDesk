@@ -1,5 +1,7 @@
 package com.requena.supportdesk.server.routes
 
+import com.requena.supportdesk.server.utils.orgId
+
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientRequest
 import com.requena.supportdesk.server.domain.model.UpdateClientCredentialsRequest
@@ -34,15 +36,19 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         get("/clients") {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val clients = if (identity.isAdmin) {
-                service.clients(identity.userId)
+                service.clients(identity.orgId)
             } else {
-                service.clients().filter { it.id == identity.clientId }
+                service.clients(identity.orgId).filter { it.id == identity.clientId }
             }
             call.respondJson(body = successResponse("/admin/clients", clientsJson(clients)))
         }
         post("/clients") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
-            val request = call.receiveOrDefault(CreateClientRequest())
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@post
+            val received = call.receiveOrDefault(CreateClientRequest())
+            val request = received.copy(billing = received.billing.normalized())
+            request.billing.problem()?.let { problem ->
+                return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse(problem))
+            }
             if (
                 request.companyName.isBlank() ||
                 request.productName.isBlank() ||
@@ -56,15 +62,19 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             }
             call.respondJson(
                 HttpStatusCode.Created,
-                successResponse("/admin/clients", clientProvisioningJson(service.createdClient(request, ownerAdminId))),
+                successResponse("/admin/clients", clientProvisioningJson(service.createdClient(request, organizationId))),
             )
         }
         patch("/clients/{clientId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@patch
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@patch
             val clientId = call.parameters["clientId"].orEmpty()
-            val request = call.receiveOrDefault(UpdateClientRequest())
+            val received = call.receiveOrDefault(UpdateClientRequest())
+            val request = received.copy(billing = received.billing?.normalized())
             if (clientId.isBlank()) {
                 return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
+            }
+            request.billing?.problem()?.let { problem ->
+                return@patch call.respondJson(HttpStatusCode.BadRequest, errorResponse(problem))
             }
             if (
                 request.accountStatus?.let { it !in allowedClientStatuses } == true ||
@@ -76,13 +86,13 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId",
-                    clientJson(service.updatedClient(clientId, request, ownerAdminId)),
+                    clientJson(service.updatedClient(clientId, request, organizationId)),
                 ),
             )
         }
         rateLimit(SensitiveOperationRateLimit) {
             post("/clients/{clientId}/credentials") {
-                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+                val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@post
                 val clientId = call.parameters["clientId"].orEmpty()
                 val request = call.receiveOrDefault(UpdateClientCredentialsRequest())
                 if (
@@ -93,7 +103,7 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                 ) {
                     return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Invalid client credentials payload"))
                 }
-                service.updatedClientCredentials(clientId, request, ownerAdminId)
+                service.updatedClientCredentials(clientId, request, organizationId)
                 call.respondJson(
                     body = successResponse(
                         "/admin/clients/$clientId/credentials",
@@ -102,7 +112,7 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                 )
             }
             post("/clients/{clientId}/credentials/regenerate") {
-                val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@post
+                val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@post
                 val clientId = call.parameters["clientId"].orEmpty()
                 if (clientId.isBlank()) {
                     return@post call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
@@ -110,13 +120,13 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
                 call.respondJson(
                     body = successResponse(
                         "/admin/clients/$clientId/credentials/regenerate",
-                        clientCredentialsJson(service.regeneratedClientCredentials(clientId, ownerAdminId)),
+                        clientCredentialsJson(service.regeneratedClientCredentials(clientId, organizationId)),
                     ),
                 )
             }
         }
         put("/clients/{clientId}/components") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@put
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@put
             val clientId = call.parameters["clientId"].orEmpty()
             val request = call.receiveOrDefault(UpdateClientComponentsRequest())
             if (clientId.isBlank() || request.components.any { it !in allowedClientComponents }) {
@@ -125,17 +135,17 @@ fun Route.clientRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             call.respondJson(
                 body = successResponse(
                     "/admin/clients/$clientId/components",
-                    clientJson(service.updatedClientComponents(clientId, request, ownerAdminId)),
+                    clientJson(service.updatedClientComponents(clientId, request, organizationId)),
                 ),
             )
         }
         delete("/clients/{clientId}") {
-            val ownerAdminId = call.requireAdminIdentity(tokenService)?.userId ?: return@delete
+            val organizationId = call.requireAdminIdentity(tokenService)?.orgId ?: return@delete
             val clientId = call.parameters["clientId"].orEmpty()
             if (clientId.isBlank()) {
                 return@delete call.respondJson(HttpStatusCode.BadRequest, errorResponse("Client id is required"))
             }
-            service.deletedClient(clientId, ownerAdminId)
+            service.deletedClient(clientId, organizationId)
             call.respondJson(body = successResponse("/admin/clients/$clientId", messageJson("Client deleted")))
         }
     }

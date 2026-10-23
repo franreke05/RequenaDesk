@@ -36,7 +36,7 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
         get {
             val identity = call.requireAuthenticatedIdentity(tokenService) ?: return@get
             val visibleClientIds = service.visibleClientIdsFor(identity)
-            val tickets = service.tickets().filter { it.clientId in visibleClientIds }
+            val tickets = service.tickets(visibleClientIds)
             call.respondJson(
                 body = successResponse(
                     "/tickets",
@@ -81,10 +81,8 @@ fun Route.ticketRoutes(service: SupportDeskService, tokenService: SupportDeskTok
             }
             if (!identity.isAdmin && request.priority == "URGENT") {
                 val today = LocalDate.now().toString()
-                val urgentToday = service.tickets().count {
-                    it.clientId == identity.clientId &&
-                        it.priority == "URGENT" &&
-                        it.createdAt.take(10) == today
+                val urgentToday = service.tickets(setOfNotNull(identity.clientId)).count {
+                    it.priority == "URGENT" && it.createdAt.take(10) == today
                 }
                 if (urgentToday >= clientDailyUrgentTicketLimit) {
                     return@post call.respondJson(

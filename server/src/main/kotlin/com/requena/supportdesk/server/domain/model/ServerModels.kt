@@ -8,6 +8,9 @@ data class ServerSession(
     val clientId: String? = null,
     val accessToken: String,
     val refreshToken: String,
+    val organizationId: String? = null,
+    val organizationRole: String? = null,
+    val organizationName: String? = null,
 )
 
 data class ServerAuthIdentity(
@@ -16,6 +19,12 @@ data class ServerAuthIdentity(
     val email: String,
     val role: String,
     val clientId: String? = null,
+    // Tenant: staff users through organization_members, portal users through their
+    // client. Null only for access tokens minted before V17 (resolved on use).
+    val organizationId: String? = null,
+    // OWNER | ADMIN | MEMBER | ACCOUNTANT for staff; null for portal (CLIENT) users.
+    val organizationRole: String? = null,
+    val organizationName: String? = null,
 )
 
 data class ServerTicketSnapshot(
@@ -98,6 +107,19 @@ data class ServerClientSnapshot(
     val activeTicketCount: Int,
     val openTasksCount: Int = 0,
     val monthlyLoggedMinutes: Int = 0,
+    val billing: ServerClientBilling = ServerClientBilling(),
+)
+
+/** Fiscal data of a client, printed as the recipient of its invoices. */
+data class ServerClientBilling(
+    val legalName: String = "",
+    val taxId: String = "",
+    val addressLine: String = "",
+    val postalCode: String = "",
+    val city: String = "",
+    val province: String = "",
+    val country: String = "",
+    val email: String = "",
 )
 
 /** Plaintext code is returned only by provisioning/regeneration responses; it is never persisted. */
@@ -334,4 +356,58 @@ data class ServerTicketFieldUpdate(
 data class ServerAttachmentCreated(
     val ticketId: String,
     val attachmentId: String,
+)
+
+data class ServerOrganizationSnapshot(
+    val id: String,
+    val name: String,
+    val legalForm: String? = null,
+    val sector: String? = null,
+    val teamSize: String? = null,
+    val hasAccountant: Boolean? = null,
+    val onboardingGoals: List<String> = emptyList(),
+    val onboardingCompletedAt: String? = null,
+    val legalName: String? = null,
+    val taxId: String? = null,
+    val addressLine: String? = null,
+    val postalCode: String? = null,
+    val city: String? = null,
+    val province: String? = null,
+    val country: String? = null,
+    val createdAt: String,
+    /** Shows the desktop's local PDF invoices (CLAUDE.md lane A); only OryKai's company. */
+    val localPdfInvoices: Boolean = false,
+)
+
+data class ServerOrganizationMemberSnapshot(
+    val userId: String,
+    val name: String,
+    val email: String,
+    val role: String,
+    val isActive: Boolean,
+    val joinedAt: String,
+)
+
+data class ServerOrganizationInvitationSnapshot(
+    val id: String,
+    val role: String,
+    val createdByName: String,
+    val createdAt: String,
+    val expiresAt: String,
+    val acceptedAt: String? = null,
+    val revokedAt: String? = null,
+) {
+    /** PENDING | ACCEPTED | REVOKED | EXPIRED. */
+    fun status(now: java.time.Instant = java.time.Instant.now()): String = when {
+        acceptedAt != null -> "ACCEPTED"
+        revokedAt != null -> "REVOKED"
+        java.time.Instant.parse(expiresAt).isBefore(now) -> "EXPIRED"
+        else -> "PENDING"
+    }
+}
+
+/** The plain code is only ever returned once, right after creating the invitation. */
+data class ServerOrganizationInvitationCreated(
+    val invitation: ServerOrganizationInvitationSnapshot,
+    val code: String,
 )

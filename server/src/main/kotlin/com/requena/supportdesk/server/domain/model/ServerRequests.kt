@@ -58,7 +58,54 @@ data class CreateClientRequest(
     val accountStatus: String = "ACTIVE",
     val serviceTier: String = "STANDARD",
     val preferredContactChannel: String = "TICKET",
+    val billing: ClientBillingRequest = ClientBillingRequest(),
 )
+
+/** Fiscal data of a client (recipient of its invoices). Every field is optional. */
+@Serializable
+data class ClientBillingRequest(
+    val legalName: String = "",
+    val taxId: String = "",
+    val addressLine: String = "",
+    val postalCode: String = "",
+    val city: String = "",
+    val province: String = "",
+    val country: String = "",
+    val email: String = "",
+) {
+    fun normalized(): ClientBillingRequest = ClientBillingRequest(
+        legalName = legalName.trim(),
+        taxId = taxId.uppercase().filter { it.isLetterOrDigit() },
+        addressLine = addressLine.trim(),
+        postalCode = postalCode.trim(),
+        city = city.trim(),
+        province = province.trim(),
+        country = country.trim(),
+        email = email.trim(),
+    )
+
+    /** Why the normalized data cannot be stored, or null when it is valid. */
+    fun problem(): String? = when {
+        taxId.isNotEmpty() && !CLIENT_TAX_ID_PATTERN.matches(taxId) -> "Invalid client tax id"
+        email.isNotEmpty() && (!email.contains("@") || email.length > 254) -> "Invalid client billing email"
+        legalName.length > 200 || addressLine.length > 250 || postalCode.length > 12 ||
+            city.length > 120 || province.length > 120 || country.length > 80 -> "Client billing data is too long"
+        else -> null
+    }
+
+    fun toSnapshot(): ServerClientBilling = ServerClientBilling(
+        legalName = legalName,
+        taxId = taxId,
+        addressLine = addressLine,
+        postalCode = postalCode,
+        city = city,
+        province = province,
+        country = country,
+        email = email,
+    )
+}
+
+private val CLIENT_TAX_ID_PATTERN = Regex("^[A-Z0-9]{5,20}$")
 
 @Serializable
 data class UpdateClientRequest(
@@ -69,6 +116,8 @@ data class UpdateClientRequest(
     val accountStatus: String? = null,
     val serviceTier: String? = null,
     val preferredContactChannel: String? = null,
+    /** When present, replaces all fiscal data of the client (blank fields clear it). */
+    val billing: ClientBillingRequest? = null,
 )
 
 @Serializable
@@ -195,4 +244,55 @@ data class RegisterDeviceRequest(
     val userId: String = "user-admin",
     val token: String = "",
     val platform: String = "ANDROID",
+)
+
+/** Self-service company signup (behind SUPPORTDESK_SIGNUP_ENABLED). */
+@Serializable
+data class SignupRequest(
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val organizationName: String = "",
+    val acceptTerms: Boolean = false,
+    val acceptPrivacy: Boolean = false,
+)
+
+/** Joins an existing company with a one-time invitation code. */
+@Serializable
+data class JoinOrganizationRequest(
+    val code: String = "",
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val acceptTerms: Boolean = false,
+    val acceptPrivacy: Boolean = false,
+)
+
+/** Partial update of the company: null keeps the current value. */
+@Serializable
+data class UpdateOrganizationRequest(
+    val name: String? = null,
+    val legalForm: String? = null,
+    val sector: String? = null,
+    val teamSize: String? = null,
+    val hasAccountant: Boolean? = null,
+    val onboardingGoals: List<String>? = null,
+    val onboardingCompleted: Boolean? = null,
+    val legalName: String? = null,
+    val taxId: String? = null,
+    val addressLine: String? = null,
+    val postalCode: String? = null,
+    val city: String? = null,
+    val province: String? = null,
+    val country: String? = null,
+)
+
+@Serializable
+data class CreateOrganizationInvitationRequest(
+    val role: String = "MEMBER",
+)
+
+@Serializable
+data class UpdateOrganizationMemberRequest(
+    val role: String = "",
 )

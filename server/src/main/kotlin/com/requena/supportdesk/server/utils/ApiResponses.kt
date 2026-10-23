@@ -76,6 +76,9 @@ fun sessionJson(session: ServerSession) = buildJsonObject {
     put("clientId", session.clientId)
     put("accessToken", session.accessToken)
     put("refreshToken", session.refreshToken)
+    put("organizationId", session.organizationId)
+    put("organizationRole", session.organizationRole)
+    put("organizationName", session.organizationName)
 }
 
 fun ticketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {
@@ -174,6 +177,16 @@ fun clientJson(client: ServerClientSnapshot) = buildJsonObject {
     put("activeTicketCount", client.activeTicketCount)
     put("openTasksCount", client.openTasksCount)
     put("monthlyLoggedMinutes", client.monthlyLoggedMinutes)
+    put("billing", buildJsonObject {
+        put("legalName", client.billing.legalName)
+        put("taxId", client.billing.taxId)
+        put("addressLine", client.billing.addressLine)
+        put("postalCode", client.billing.postalCode)
+        put("city", client.billing.city)
+        put("province", client.billing.province)
+        put("country", client.billing.country)
+        put("email", client.billing.email)
+    })
 }
 
 fun clientTicketsJson(tickets: List<ServerTicketSnapshot>) = buildJsonArray {

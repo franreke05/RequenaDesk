@@ -131,7 +131,7 @@ fun ClientAccountScreen(
                 onClick = onSignOut,
                 color = SupportDeskThemeTokens.semanticColors.dangerContainer,
                 contentColor = SupportDeskThemeTokens.semanticColors.danger,
-                shape = RoundedCornerShape(10.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
                 Text(
                     text = "Cerrar sesion",

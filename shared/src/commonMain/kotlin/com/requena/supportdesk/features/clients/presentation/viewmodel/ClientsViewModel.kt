@@ -5,6 +5,8 @@ import com.requena.supportdesk.core.model.Client
 import com.requena.supportdesk.core.result.AppResult
 import com.requena.supportdesk.core.utils.matchesQuery
 import com.requena.supportdesk.features.clients.domain.model.ClientDraft
+import com.requena.supportdesk.features.clients.domain.model.normalized
+import com.requena.supportdesk.features.clients.domain.model.validationProblem
 import com.requena.supportdesk.features.clients.domain.usecase.CreateClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.DeleteClientUseCase
 import com.requena.supportdesk.features.clients.domain.usecase.GetClientsUseCase
@@ -93,6 +95,7 @@ class ClientsViewModel(
     private fun createClient(event: ClientsUiEvent.CreateClient) {
         val draft = event.toDraft()
         if (!draft.isValid()) return
+        if (rejectInvalidBilling(draft)) return
         launch {
             _state.update { it.copy(isLoading = true, errorMessage = null, lastCreatedClientId = null, generatedCredentials = null) }
             when (val result = createClientUseCase(draft)) {
@@ -119,6 +122,7 @@ class ClientsViewModel(
     private fun updateClient(event: ClientsUiEvent.UpdateClient) {
         val draft = event.toDraft()
         if (!draft.isValid()) return
+        if (rejectInvalidBilling(draft)) return
         launch {
             when (val result = updateClientUseCase(event.clientId, draft)) {
                 is AppResult.Error -> {
@@ -222,6 +226,7 @@ class ClientsViewModel(
         accountStatus = accountStatus,
         serviceTier = serviceTier,
         preferredContactChannel = preferredContactChannel,
+        billing = billing.normalized(),
     )
 
     private fun ClientsUiEvent.UpdateClient.toDraft(): ClientDraft = ClientDraft(
@@ -232,7 +237,16 @@ class ClientsViewModel(
         accountStatus = accountStatus,
         serviceTier = serviceTier,
         preferredContactChannel = preferredContactChannel,
+        billing = billing.normalized(),
     )
+
+    /** Shows why the fiscal data is invalid and returns true, so the client is not saved. */
+    private fun rejectInvalidBilling(draft: ClientDraft): Boolean {
+        val problem = draft.billing.validationProblem() ?: return false
+        _state.update { it.copy(errorMessage = problem) }
+        _effects.tryEmit(ClientsUiEffect.ShowMessage(problem))
+        return true
+    }
 
     private fun ClientDraft.isValid(): Boolean =
         companyName.isNotBlank() &&

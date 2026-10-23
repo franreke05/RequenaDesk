@@ -24,6 +24,9 @@ fun Application.configureMonitoring() {
         exception<ServerValidationException> { call, cause ->
             call.respondJson(HttpStatusCode.BadRequest, errorResponse(cause.message))
         }
+        exception<com.requena.supportdesk.server.domain.model.ServerForbiddenException> { call, cause ->
+            call.respondJson(HttpStatusCode.Forbidden, errorResponse(cause.message))
+        }
         exception<Throwable> { call, cause ->
             call.application.log.error("Unhandled server error", cause)
             call.respondJson(HttpStatusCode.InternalServerError, errorResponse("Unexpected server error"))

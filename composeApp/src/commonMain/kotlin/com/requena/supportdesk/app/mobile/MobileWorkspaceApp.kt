@@ -53,6 +53,7 @@ import com.requena.supportdesk.core.model.TaskCategory
 import com.requena.supportdesk.core.model.TaskLog
 import com.requena.supportdesk.core.model.WorkTask
 import com.requena.supportdesk.core.time.currentIsoDate
+import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.theme.displayName
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDateTime
 import com.requena.supportdesk.designsystem.theme.formatSupportDeskDuration
@@ -235,9 +236,9 @@ private fun MobileLoginScreen(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.background,
+                        SupportDeskThemeTokens.pageBackground,
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                        MaterialTheme.colorScheme.background,
+                        SupportDeskThemeTokens.pageBackground,
                     ),
                 ),
             ),
@@ -357,10 +358,10 @@ private fun MobileReadOnlyShell(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            MaterialTheme.colorScheme.background,
+                            SupportDeskThemeTokens.pageBackground,
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
                             MaterialTheme.colorScheme.secondary.copy(alpha = 0.05f),
-                            MaterialTheme.colorScheme.background,
+                            SupportDeskThemeTokens.pageBackground,
                         ),
                     ),
                 )

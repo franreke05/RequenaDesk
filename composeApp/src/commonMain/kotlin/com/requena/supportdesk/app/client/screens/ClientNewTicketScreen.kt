@@ -171,7 +171,7 @@ fun ClientNewTicketScreen(
                 label = { Text("Asunto") },
                 singleLine = true,
                 enabled = !urgentLimitReached,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = description,
@@ -180,7 +180,7 @@ fun ClientNewTicketScreen(
                 label = { Text("Detalle del problema") },
                 minLines = 5,
                 enabled = !urgentLimitReached,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
             )
             AnimatedVisibility(visible = urgentLimitReached, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
                 ClientNotice(
@@ -294,7 +294,7 @@ private fun UrgentSlotsBar(
             )
             Surface(
                 modifier = Modifier.weight(1f).height(slotHeight),
-                shape = RoundedCornerShape(5.dp),
+                shape = MaterialTheme.shapes.small,
                 color = slotColor,
             ) {}
         }
@@ -361,7 +361,7 @@ private fun TicketPreviewCard(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.medium,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)),
         ) {
             Column(

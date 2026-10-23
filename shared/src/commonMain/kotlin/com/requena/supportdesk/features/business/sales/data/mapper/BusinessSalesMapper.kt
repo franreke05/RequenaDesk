@@ -4,6 +4,8 @@ import com.requena.supportdesk.features.business.sales.data.dto.BusinessCatalogI
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessContactDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerDetailDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerDto
+import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerTagDto
+import com.requena.supportdesk.features.business.sales.data.dto.BusinessCustomerActivityDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessQuoteDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessQuoteLineDto
 import com.requena.supportdesk.features.business.sales.data.dto.BusinessSaleDto
@@ -14,6 +16,8 @@ import com.requena.supportdesk.features.business.sales.domain.BusinessCatalogIte
 import com.requena.supportdesk.features.business.sales.domain.BusinessContact
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomer
 import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerDetail
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerTag
+import com.requena.supportdesk.features.business.sales.domain.BusinessCustomerActivity
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuote
 import com.requena.supportdesk.features.business.sales.domain.BusinessQuoteLine
 import com.requena.supportdesk.features.business.sales.domain.BusinessSale
@@ -32,10 +36,16 @@ object BusinessSalesMapper {
         status = dto.status,
         version = dto.version,
         updatedAt = dto.updatedAt,
+        type = dto.type,
+        stage = dto.stage,
+        source = dto.source,
+        tags = dto.tags.map(::customerTag),
+        nextAction = dto.nextAction?.let(::customerActivity),
     )
 
     fun customerDto(model: BusinessCustomer) = BusinessCustomerDto(
         model.id, model.displayName, model.taxId, model.email, model.phone, model.address, model.status, model.version, model.updatedAt,
+        model.type, model.stage, model.source, model.tags.map(::customerTagDto), model.nextAction?.let(::customerActivityDto),
     )
 
     fun contact(dto: BusinessContactDto) = BusinessContact(
@@ -46,8 +56,38 @@ object BusinessSalesMapper {
         model.id, model.customerId, model.fullName, model.role, model.email, model.phone, model.isPrimary, model.status, model.version, model.updatedAt,
     )
 
-    fun customerDetail(dto: BusinessCustomerDetailDto) = BusinessCustomerDetail(customer(dto.customer), dto.contacts.map(::contact))
-    fun customerDetailDto(model: BusinessCustomerDetail) = BusinessCustomerDetailDto(customerDto(model.customer), model.contacts.map(::contactDto))
+    fun customerTag(dto: BusinessCustomerTagDto) = BusinessCustomerTag(
+        dto.id, dto.name, dto.colorHex, dto.archived, dto.version, dto.updatedAt,
+    )
+
+    fun customerTagDto(model: BusinessCustomerTag) = BusinessCustomerTagDto(
+        model.id, model.name, model.colorHex, model.archived, model.version, model.updatedAt,
+    )
+
+    fun customerActivity(dto: BusinessCustomerActivityDto) = BusinessCustomerActivity(
+        dto.id, dto.customerId, dto.contactId, dto.contactName, dto.type, dto.subject, dto.details,
+        dto.occurredAt, dto.dueAt, dto.completedAt, dto.version, dto.createdAt, dto.updatedAt,
+    )
+
+    fun customerActivityDto(model: BusinessCustomerActivity) = BusinessCustomerActivityDto(
+        model.id, model.customerId, model.contactId, model.contactName, model.type, model.subject, model.details,
+        model.occurredAt, model.dueAt, model.completedAt, model.version, model.createdAt, model.updatedAt,
+    )
+
+    fun customerDetail(dto: BusinessCustomerDetailDto) = BusinessCustomerDetail(
+        customer(dto.customer),
+        dto.contacts.map(::contact),
+        dto.tags.map(::customerTag),
+        dto.activities.map(::customerActivity),
+        dto.nextAction?.let(::customerActivity),
+    )
+    fun customerDetailDto(model: BusinessCustomerDetail) = BusinessCustomerDetailDto(
+        customerDto(model.customer),
+        model.contacts.map(::contactDto),
+        model.tags.map(::customerTagDto),
+        model.activities.map(::customerActivityDto),
+        model.nextAction?.let(::customerActivityDto),
+    )
 
     fun catalogItem(dto: BusinessCatalogItemDto) = BusinessCatalogItem(
         dto.id, dto.type, dto.name, dto.sku, dto.description, dto.unit, dto.referencePriceCents, dto.currency,
