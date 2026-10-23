@@ -403,7 +403,10 @@ fun AdminWorkspaceApp() {
                 onSignOut = { module.authViewModel.onEvent(AuthUiEvent.Logout) },
             )
         } else {
-            val navItems = remember {
+            // Facturas is OryKai's local PDF invoicing (CLAUDE.md lane A). Hidden for other
+            // companies once the company is known; until then (or on an older server) it stays.
+            val showLocalInvoices = organizationState.organization?.localPdfInvoices ?: true
+            val navItems = remember(showLocalInvoices) {
                 listOf<NavigationItemSpec<AppDestination>>(
                     NavigationItemSpec(
                         key = AppDestination.Dashboard,
@@ -453,7 +456,7 @@ fun AdminWorkspaceApp() {
                         supportingText = "Empresa, equipo y apariencia",
                         icon = Lucide.Settings,
                     ),
-                )
+                ).filter { showLocalInvoices || it.key !is AppDestination.Invoices }
             }
             val selectedNav = navDestinationFor(navigation.destination)
             val uiStatus = tasksState.statusMessage ?: statusMessage

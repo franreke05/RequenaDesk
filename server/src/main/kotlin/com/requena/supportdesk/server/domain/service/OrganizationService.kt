@@ -51,6 +51,8 @@ class OrganizationService(
     private val sessions: SupportDeskService,
     val signupEnabled: Boolean,
     private val clock: Clock = Clock.systemUTC(),
+    // Lets the token check drop its cached view of a member right after a change.
+    private val onMemberChanged: (userId: String) -> Unit = {},
 ) {
     // --- Public entry points (no token) -------------------------------------------------
 
@@ -118,7 +120,7 @@ class OrganizationService(
         ) {
             throw ServerForbiddenException("Only an owner can change who owns the company")
         }
-        return repository.updateOrganizationMemberRole(identity.tenant(), userId, role)
+        return repository.updateOrganizationMemberRole(identity.tenant(), userId, role).also { onMemberChanged(userId) }
     }
 
     fun deactivatedMember(identity: ServerAuthIdentity, userId: String) {
@@ -129,6 +131,7 @@ class OrganizationService(
             throw ServerForbiddenException("Only an owner can remove another owner")
         }
         repository.deactivateOrganizationMember(identity.tenant(), userId)
+        onMemberChanged(userId)
     }
 
     // --- Invitations --------------------------------------------------------------------

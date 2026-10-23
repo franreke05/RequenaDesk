@@ -57,7 +57,7 @@ class OrganizationMigrationIntegrationTest {
             }
             val countsBefore = dataSource.connection.use(::rowCounts)
 
-            assertEquals(1, flyway(dataSource, target = null).migrate().migrationsExecuted)
+            assertEquals(2, flyway(dataSource, target = null).migrate().migrationsExecuted)
 
             dataSource.connection.use { connection ->
                 assertEquals(countsBefore, rowCounts(connection), "no row may be lost")
@@ -94,6 +94,12 @@ class OrganizationMigrationIntegrationTest {
                 val perCompany = connection.single("SELECT COUNT(*) FROM admin_dashboard_summary")
                 assertEquals("2", perCompany)
                 assertTrue(connection.single("SELECT COUNT(*) FROM organizations").toInt() == 2)
+
+                // V18: only OryKai keeps the desktop's local PDF invoices (lane A).
+                assertEquals(
+                    listOf("Empresa de Bea" to "false", "OryKai" to "true"),
+                    connection.pairs("SELECT name, local_pdf_invoices::text FROM organizations ORDER BY name"),
+                )
             }
         }
     }

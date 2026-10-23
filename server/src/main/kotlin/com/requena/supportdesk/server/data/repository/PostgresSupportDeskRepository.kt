@@ -242,7 +242,8 @@ class PostgresSupportDeskRepository(
         }
     }
 
-    override fun getTickets(): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
+    override fun getTickets(clientIds: Set<String>): List<ServerTicketSnapshot> = dataSource.withConnection { connection ->
+        if (clientIds.isEmpty()) return@withConnection emptyList()
         val tickets = connection.prepareStatement(
             """
             SELECT t.id::text, t.client_id::text, t.ticket_number, t.subject, t.description, t.category,
@@ -254,9 +255,11 @@ class PostgresSupportDeskRepository(
             FROM tickets t
             JOIN users requester ON requester.id = t.requester_id
             LEFT JOIN users assignee ON assignee.id = t.assignee_id
+            WHERE t.client_id::text = ANY(?)
             ORDER BY t.updated_at DESC, t.created_at DESC
             """.trimIndent(),
         ).use { statement ->
+            statement.setArray(1, connection.createArrayOf("text", clientIds.toTypedArray()))
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {

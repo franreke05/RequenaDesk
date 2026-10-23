@@ -295,7 +295,7 @@ class PostgresOrganizationRepository(
             """
             SELECT id::text, name, legal_form, sector, team_size, has_accountant, onboarding_goals,
                    onboarding_completed_at, legal_name, tax_id, address_line, postal_code, city,
-                   province, country, created_at
+                   province, country, created_at, local_pdf_invoices
             FROM organizations WHERE id::text = ?
             """.trimIndent(),
         ).use { statement ->
@@ -320,6 +320,7 @@ class PostgresOrganizationRepository(
                     province = resultSet.getString("province"),
                     country = resultSet.getString("country"),
                     createdAt = requireNotNull(resultSet.instant("created_at")),
+                    localPdfInvoices = resultSet.getBoolean("local_pdf_invoices"),
                 )
             }
         }

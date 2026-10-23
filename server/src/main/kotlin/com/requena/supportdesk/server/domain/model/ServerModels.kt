@@ -375,6 +375,8 @@ data class ServerOrganizationSnapshot(
     val province: String? = null,
     val country: String? = null,
     val createdAt: String,
+    /** Shows the desktop's local PDF invoices (CLAUDE.md lane A); only OryKai's company. */
+    val localPdfInvoices: Boolean = false,
 )
 
 data class ServerOrganizationMemberSnapshot(

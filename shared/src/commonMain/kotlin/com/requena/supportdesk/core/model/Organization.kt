@@ -16,6 +16,8 @@ data class Organization(
     val city: String = "",
     val province: String = "",
     val country: String = "ES",
+    /** Uses the desktop's local PDF invoices (lane A, OryKai only). */
+    val localPdfInvoices: Boolean = false,
 )
 
 enum class LegalForm(val label: String) {

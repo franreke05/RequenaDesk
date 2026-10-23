@@ -144,6 +144,7 @@ private fun organizationJson(organization: ServerOrganizationSnapshot) = buildJs
     put("province", organization.province)
     put("country", organization.country)
     put("createdAt", organization.createdAt)
+    put("localPdfInvoices", organization.localPdfInvoices)
 }
 
 private fun memberJson(member: ServerOrganizationMemberSnapshot) = buildJsonObject {

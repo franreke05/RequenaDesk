@@ -286,6 +286,29 @@ class OrganizationManagementTest {
         assertEquals(HttpStatusCode.Unauthorized, refresh.status)
     }
 
+    @Test
+    fun roleChangesAndRemovalsApplyToTokensAlreadyIssued() = testApplication {
+        app()
+        val owner = client.token("admin@orykai.dev", "UnitTestAdminPassword1")
+        val joined = client.join(client.invite(owner, "MEMBER"), "cambios@orykai.dev").bodyAsText()
+        val memberToken = field(joined, "accessToken")
+        val memberId = field(joined, "userId")
+        assertEquals(HttpStatusCode.Forbidden, client.get("/org/members") { bearer(memberToken) }.status)
+
+        // Promoted to admin: the same token can now manage the team.
+        client.patch("/org/members/$memberId") { bearer(owner); json("""{"role":"ADMIN"}""") }
+        assertEquals(HttpStatusCode.OK, client.get("/org/members") { bearer(memberToken) }.status)
+
+        // Turned into gestoría: the same token becomes read-only.
+        client.patch("/org/members/$memberId") { bearer(owner); json("""{"role":"ACCOUNTANT"}""") }
+        val write = client.post("/admin/labels") { bearer(memberToken); json("""{"name":"No","colorHex":"#112233"}""") }
+        assertEquals(HttpStatusCode.Forbidden, write.status)
+
+        // Removed: the token stops working at once, not when it expires.
+        client.delete("/org/members/$memberId") { bearer(owner) }
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/admin/tasks") { bearer(memberToken) }.status)
+    }
+
     // A member of another company cannot be managed from here.
     @Test
     fun membersOfOtherCompaniesAreNotFound() = testApplication {

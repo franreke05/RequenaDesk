@@ -96,7 +96,7 @@ class SupportDeskService(
         return repository.revokeRefreshToken(request.refreshToken)
     }
 
-    fun tickets() = repository.getTickets()
+    fun tickets(clientIds: Set<String>) = repository.getTickets(clientIds)
 
     fun ticket(id: String) = repository.getTicket(id)
 

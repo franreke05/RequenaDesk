@@ -41,6 +41,7 @@ data class OrganizationDto(
     val city: String? = null,
     val province: String? = null,
     val country: String? = null,
+    val localPdfInvoices: Boolean = false,
 )
 
 @Serializable
@@ -105,6 +106,7 @@ fun OrganizationDto.toModel() = Organization(
     city = city.orEmpty(),
     province = province.orEmpty(),
     country = country ?: "ES",
+    localPdfInvoices = localPdfInvoices,
 )
 
 private fun OrganizationMemberDto.toModel() = OrganizationMember(

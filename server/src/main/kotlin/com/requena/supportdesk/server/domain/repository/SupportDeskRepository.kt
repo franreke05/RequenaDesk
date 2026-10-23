@@ -55,7 +55,8 @@ interface SupportDeskRepository : OrganizationRepository {
     fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant)
     fun rotateRefreshToken(refreshToken: String, replacementRefreshToken: String, expiresAt: Instant): ServerAuthIdentity?
     fun revokeRefreshToken(refreshToken: String): Boolean
-    fun getTickets(): List<ServerTicketSnapshot>
+    /** Tickets of the given clients only (the caller's company or the portal user's client). */
+    fun getTickets(clientIds: Set<String>): List<ServerTicketSnapshot>
     fun getTicket(id: String): ServerTicketSnapshot?
     fun createTicket(request: CreateTicketRequest): ServerTicketSnapshot
     fun createTicketMessage(ticketId: String, request: CreateTicketMessageRequest): ServerTicketMessageCreated

@@ -31,7 +31,7 @@ fun Route.clientPortalRoutes(service: SupportDeskService, tokenService: SupportD
         get("/tickets") {
             val identity = call.requireClientPortalIdentity(tokenService) ?: return@get
             val client = service.portalClient(identity) ?: return@get call.respondClientPortalNotFound()
-            val tickets = service.tickets().filter { it.clientId == client.id }
+            val tickets = service.tickets(setOf(client.id))
             call.respondJson(body = successResponse("/client/tickets", clientTicketsJson(tickets)))
         }
         get("/tasks") {
@@ -59,7 +59,7 @@ fun Route.clientPortalRoutes(service: SupportDeskService, tokenService: SupportD
                     "/client/overview",
                     clientPortalOverviewJson(
                         client = client,
-                        tickets = service.tickets().filter { it.clientId == client.id },
+                        tickets = service.tickets(setOf(client.id)),
                         tasks = service.tasks(clientId = client.id, organizationId = organizationId),
                         timeLogs = service.timeLogs(clientId = client.id, organizationId = organizationId),
                     ),

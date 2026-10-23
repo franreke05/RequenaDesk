@@ -149,7 +149,7 @@ class InMemorySupportDeskRepository(
         organizationOfUser[userId] ?: throw ServerNotFoundException("Task not found")
 
     override fun identityForUser(userId: String): ServerAuthIdentity? =
-        adminAccounts.firstOrNull { it.userId == userId }?.let(::identityOf)
+        adminAccounts.firstOrNull { it.userId == userId && it.isActive }?.let(::identityOf)
 
     private data class LocalProgramSubscription(
         val clientId: String,
@@ -320,7 +320,7 @@ class InMemorySupportDeskRepository(
     )
 
     private val organizationSnapshots = mutableMapOf(
-        ORG_ORYKAI to ServerOrganizationSnapshot(id = ORG_ORYKAI, name = "OryKai", createdAt = "2026-01-01T00:00:00Z"),
+        ORG_ORYKAI to ServerOrganizationSnapshot(id = ORG_ORYKAI, name = "OryKai", createdAt = "2026-01-01T00:00:00Z", localPdfInvoices = true),
         ORG_SECOND to ServerOrganizationSnapshot(id = ORG_SECOND, name = "Empresa de Admin Sanchez", createdAt = "2026-01-02T00:00:00Z"),
     )
     private val memberJoinedAt = mutableMapOf<String, String>()
@@ -483,7 +483,8 @@ class InMemorySupportDeskRepository(
     override fun revokeRefreshToken(refreshToken: String): Boolean =
         refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) != null
 
-    override fun getTickets(): List<ServerTicketSnapshot> = dataSource.tickets().map(SupportDeskMapper::ticket)
+    override fun getTickets(clientIds: Set<String>): List<ServerTicketSnapshot> =
+        dataSource.tickets().map(SupportDeskMapper::ticket).filter { it.clientId in clientIds }
 
     override fun getTicket(id: String): ServerTicketSnapshot? = dataSource.ticket(id)?.let(SupportDeskMapper::ticket)
 

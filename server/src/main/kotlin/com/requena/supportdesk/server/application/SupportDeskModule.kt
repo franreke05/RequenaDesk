@@ -33,6 +33,7 @@ import com.requena.supportdesk.server.config.ServerEnvironment
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.domain.service.SupportDeskService
 import com.requena.supportdesk.server.domain.service.OrganizationService
+import com.requena.supportdesk.server.security.CurrentIdentityResolver
 import com.requena.supportdesk.server.routes.organizationRoutes
 import com.requena.supportdesk.server.plugins.configureMonitoring
 import com.requena.supportdesk.server.plugins.configureRequestSecurity
@@ -74,10 +75,14 @@ fun Application.configureSupportDeskModule(
     configureMonitoring()
 
     val serverEnvironment = ServerEnvironment.load()
-    val tokenService = SupportDeskTokenService(serverEnvironment.auth)
     val runtime = repositoryOverride
         ?.let { SupportDeskRuntime(repository = it) }
         ?: supportDeskRuntime(serverEnvironment)
+    // Tokens are checked against the user's current state (active, company role).
+    val tokenService = SupportDeskTokenService(
+        settings = serverEnvironment.auth,
+        currentIdentity = CurrentIdentityResolver(runtime.repository::identityForUser),
+    )
     monitor.subscribe(ApplicationStopped) {
         runtime.close()
     }
@@ -89,6 +94,7 @@ fun Application.configureSupportDeskModule(
         repository = runtime.repository,
         sessions = service,
         signupEnabled = serverEnvironment.signupEnabled,
+        onMemberChanged = tokenService::invalidate,
     )
     val financeService = BusinessFinanceService(
         store = runtime.database?.let(::postgresBusinessFinanceStore) ?: InMemoryBusinessFinanceStore(),
