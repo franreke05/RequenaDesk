@@ -85,8 +85,10 @@ FROM subscription_plans ORDER BY sort_order;
 2. Con el alta activada en un entorno de pruebas, crea una empresa: verás "Estás probando Pro: te quedan 14 días".
 3. Para simular el fin de la prueba en ese entorno:
    `UPDATE organization_subscriptions SET trial_ends_at = NOW() - INTERVAL '1 minute' WHERE organization_id = '<id>';`
-   En menos de 30 segundos la empresa pasa a Gratis y Tareas o Tickets aparecen como "Incluido en…".
-4. Solicita Pro desde esa empresa y apruébalo como OryKai: la sección vuelve en menos de 30 segundos.
+   En menos de 30 segundos el servidor la trata como Gratis (402 en las secciones de módulos que no tiene). El
+   menú de la app muestra "Incluido en…" cuando vuelve a cargar el plan: al abrir Ajustes › Plan y pagos o al
+   volver a entrar.
+4. Solicita Pro desde esa empresa y apruébalo como OryKai: el acceso vuelve en menos de 30 segundos.
 
 ## Cuándo termine la beta
 
