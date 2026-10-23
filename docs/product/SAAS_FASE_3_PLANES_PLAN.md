@@ -1,5 +1,17 @@
 # Fase 3 — Planes y módulos por empresa
 
+> **Estado (23-oct-2026): implementada en `feat/planes` (encima de `feat/multiempresa`), sin desplegar.**
+> Commits: `dc59cf9` servidor (V19, plan efectivo, bloqueo 402, límites, solicitudes y operador, corrección
+> de aprobación de programas) · `52aa38a` app (Plan y pagos, operador, navegación por módulos, aviso de
+> prueba, recomendación en el onboarding). Despliegue: `docs/V19_PLANES_DEPLOYMENT.md`.
+>
+> Diferencias con el plan: el bloqueo por módulo se hace en un único plugin de Ktor (`plugins/ModuleGate.kt`)
+> con una tabla de prefijos de ruta, en lugar de una llamada en cada ruta; las secciones bloqueadas muestran
+> "Incluido en X" en el menú (no se atenúan visualmente).
+>
+> Pendiente: aplicar `beta_ends_on` y el 50 % de fundadores, límite de portal en Gratis (fase 5), cobro
+> automático (fase 6), y que el portal de cliente respete los módulos de su empresa.
+
 ## Contexto
 Desde la fase 2 cada empresa tiene su espacio, pero no hay nada que diga qué puede usar ni cuánto paga. El plan SaaS aprobado (`docs/product/SAAS_TODO_EN_UNO_PLAN.md` §3, §4 y §10) pide:
 - Planes Gratis / Autónomo / Pro / Equipo, cada uno con sus módulos.
