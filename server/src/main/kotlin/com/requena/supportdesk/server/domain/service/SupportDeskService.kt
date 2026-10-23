@@ -1,5 +1,6 @@
 package com.requena.supportdesk.server.domain.service
 
+import com.requena.supportdesk.server.domain.model.ServerAuthIdentity
 import com.requena.supportdesk.server.domain.model.CreateClientRequest
 import com.requena.supportdesk.server.domain.model.CreateClientProgramRequestsRequest
 import com.requena.supportdesk.server.domain.model.CreateClientActivityRequest
@@ -43,6 +44,11 @@ class SupportDeskService(
             // A user without a company could never use its token (see verifyAccessToken).
             ?.takeIf { !it.organizationId.isNullOrBlank() }
             ?: return null
+        return sessionFor(identity)
+    }
+
+    /** Issues a new access + refresh token pair for an already authenticated identity. */
+    fun sessionFor(identity: ServerAuthIdentity): ServerSession {
         val refreshToken = tokenService.createRefreshToken()
         repository.storeRefreshToken(
             userId = identity.userId,

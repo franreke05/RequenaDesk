@@ -55,6 +55,10 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
 import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
+import com.requena.supportdesk.server.domain.model.ServerOrganizationInvitationSnapshot
+import com.requena.supportdesk.server.domain.model.ServerOrganizationMemberSnapshot
+import com.requena.supportdesk.server.domain.model.ServerOrganizationSnapshot
+import com.requena.supportdesk.server.domain.model.UpdateOrganizationRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import com.requena.supportdesk.server.security.ClientAccessCodeGenerator
@@ -70,6 +74,7 @@ class InMemorySupportDeskRepository(
         val password: String,
         val role: String = "ADMIN",
         val clientId: String? = null,
+        val isActive: Boolean = true,
     )
 
     private val adminAccounts = mutableListOf(
@@ -95,11 +100,7 @@ class InMemorySupportDeskRepository(
         ),
     )
 
-    // Two companies so tests can prove one never sees the other's data.
-    private val organizationNames = mutableMapOf(
-        ORG_ORYKAI to "OryKai",
-        ORG_SECOND to "Empresa de Admin Sanchez",
-    )
+    // Two seeded companies (see organizationSnapshots) so tests can prove one never sees the other's data.
 
     // Staff user -> company, and their role inside it (organization_members).
     private val organizationOfUser = mutableMapOf(
@@ -132,7 +133,7 @@ class InMemorySupportDeskRepository(
             clientId = account.clientId,
             organizationId = organizationId,
             organizationRole = if (account.role == "CLIENT") null else organizationRoles[account.userId],
-            organizationName = organizationId?.let(organizationNames::get),
+            organizationName = organizationId?.let { organizationSnapshots[it]?.name },
         )
     }
 
@@ -291,7 +292,7 @@ class InMemorySupportDeskRepository(
 
     override fun authenticate(email: String, password: String): ServerAuthIdentity? =
         adminAccounts.firstOrNull { account ->
-            account.email.equals(email.trim(), ignoreCase = true) && account.password == password
+            account.isActive && account.email.equals(email.trim(), ignoreCase = true) && account.password == password
         }?.let(::identityOf)
 
     override fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant) {
@@ -305,7 +306,177 @@ class InMemorySupportDeskRepository(
     ): ServerAuthIdentity? {
         val userId = refreshTokens.remove(PasswordHasher.hashToken(refreshToken)) ?: return null
         refreshTokens[PasswordHasher.hashToken(replacementRefreshToken)] = userId
-        val account = adminAccounts.firstOrNull { it.userId == userId } ?: return null
+        val account = adminAccounts.firstOrNull { it.userId == userId && it.isActive } ?: return null
+        return identityOf(account)
+    }
+
+    // --- Companies, members and invitations (phase 2) -----------------------------------
+
+    private data class LocalInvitation(
+        val organizationId: String,
+        val codeHash: String,
+        val createdByUserId: String,
+        val snapshot: ServerOrganizationInvitationSnapshot,
+    )
+
+    private val organizationSnapshots = mutableMapOf(
+        ORG_ORYKAI to ServerOrganizationSnapshot(id = ORG_ORYKAI, name = "OryKai", createdAt = "2026-01-01T00:00:00Z"),
+        ORG_SECOND to ServerOrganizationSnapshot(id = ORG_SECOND, name = "Empresa de Admin Sanchez", createdAt = "2026-01-02T00:00:00Z"),
+    )
+    private val memberJoinedAt = mutableMapOf<String, String>()
+    private val invitations = mutableListOf<LocalInvitation>()
+    private val legalAcceptances = mutableListOf<Triple<String, String, String>>()
+    private var organizationCounter = 0
+
+    private fun newStaffAccount(name: String, email: String, password: String): LocalAdminAccount {
+        if (adminAccounts.any { it.email.equals(email, ignoreCase = true) }) {
+            throw ServerConflictException("Email is already used by another account")
+        }
+        return LocalAdminAccount(userId = "user-staff-${adminAccounts.size + 1}", name = name, email = email, password = password)
+            .also(adminAccounts::add)
+    }
+
+    private fun recordLegal(userId: String, version: String) {
+        listOf("TERMS", "PRIVACY").forEach { legalAcceptances += Triple(userId, it, version) }
+    }
+
+    private fun addMember(organizationId: String, userId: String, role: String) {
+        organizationOfUser[userId] = organizationId
+        organizationRoles[userId] = role
+        memberJoinedAt[userId] = Instant.now().toString()
+    }
+
+    /** Test hook: legal acceptances stored for a user (document to version). */
+    fun legalAcceptancesFor(userId: String): List<Pair<String, String>> =
+        legalAcceptances.filter { it.first == userId }.map { it.second to it.third }
+
+    override fun signupOrganization(
+        name: String,
+        email: String,
+        password: String,
+        organizationName: String,
+        legalVersion: String,
+    ): ServerAuthIdentity {
+        val account = newStaffAccount(name, email, password)
+        val organizationId = "org-created-${++organizationCounter}"
+        organizationSnapshots[organizationId] = ServerOrganizationSnapshot(
+            id = organizationId,
+            name = organizationName,
+            createdAt = Instant.now().toString(),
+        )
+        addMember(organizationId, account.userId, "OWNER")
+        recordLegal(account.userId, legalVersion)
+        return identityOf(account)
+    }
+
+    override fun organization(organizationId: String): ServerOrganizationSnapshot =
+        organizationSnapshots[organizationId] ?: throw ServerNotFoundException("Organization not found")
+
+    override fun updateOrganization(organizationId: String, request: UpdateOrganizationRequest): ServerOrganizationSnapshot {
+        val current = organization(organizationId)
+        val updated = current.copy(
+            name = request.name ?: current.name,
+            legalForm = request.legalForm ?: current.legalForm,
+            sector = request.sector ?: current.sector,
+            teamSize = request.teamSize ?: current.teamSize,
+            hasAccountant = request.hasAccountant ?: current.hasAccountant,
+            onboardingGoals = request.onboardingGoals ?: current.onboardingGoals,
+            onboardingCompletedAt = current.onboardingCompletedAt
+                ?: Instant.now().toString().takeIf { request.onboardingCompleted == true },
+            legalName = request.legalName ?: current.legalName,
+            taxId = request.taxId ?: current.taxId,
+            addressLine = request.addressLine ?: current.addressLine,
+            postalCode = request.postalCode ?: current.postalCode,
+            city = request.city ?: current.city,
+            province = request.province ?: current.province,
+            country = request.country ?: current.country,
+        )
+        organizationSnapshots[organizationId] = updated
+        return updated
+    }
+
+    override fun organizationMembers(organizationId: String): List<ServerOrganizationMemberSnapshot> =
+        organizationOfUser.filterValues { it == organizationId }.keys.mapNotNull { userId ->
+            adminAccounts.firstOrNull { it.userId == userId }?.let { account ->
+                ServerOrganizationMemberSnapshot(
+                    userId = account.userId,
+                    name = account.name,
+                    email = account.email,
+                    role = organizationRoles[userId] ?: "MEMBER",
+                    isActive = account.isActive,
+                    joinedAt = memberJoinedAt[userId] ?: "2026-01-01T00:00:00Z",
+                )
+            }
+        }.sortedByDescending { it.role == "OWNER" }
+
+    private fun requireMember(organizationId: String, userId: String): ServerOrganizationMemberSnapshot =
+        organizationMembers(organizationId).firstOrNull { it.userId == userId }
+            ?: throw ServerNotFoundException("Member not found")
+
+    private fun requireAnotherActiveOwner(organizationId: String, exceptUserId: String) {
+        val others = organizationMembers(organizationId).count { it.role == "OWNER" && it.isActive && it.userId != exceptUserId }
+        if (others == 0) throw ServerConflictException("A company always needs at least one active owner")
+    }
+
+    override fun updateOrganizationMemberRole(organizationId: String, userId: String, role: String): ServerOrganizationMemberSnapshot {
+        val current = requireMember(organizationId, userId)
+        if (current.role == "OWNER" && role != "OWNER") requireAnotherActiveOwner(organizationId, userId)
+        organizationRoles[userId] = role
+        return requireMember(organizationId, userId)
+    }
+
+    override fun deactivateOrganizationMember(organizationId: String, userId: String) {
+        val current = requireMember(organizationId, userId)
+        if (current.role == "OWNER") requireAnotherActiveOwner(organizationId, userId)
+        val index = adminAccounts.indexOfFirst { it.userId == userId }
+        adminAccounts[index] = adminAccounts[index].copy(isActive = false)
+        refreshTokens.entries.removeAll { it.value == userId }
+    }
+
+    override fun createOrganizationInvitation(
+        organizationId: String,
+        role: String,
+        createdByUserId: String,
+        codeHash: String,
+        expiresAt: Instant,
+    ): ServerOrganizationInvitationSnapshot {
+        val snapshot = ServerOrganizationInvitationSnapshot(
+            id = "invitation-${invitations.size + 1}",
+            role = role,
+            createdByName = adminAccounts.firstOrNull { it.userId == createdByUserId }?.name.orEmpty(),
+            createdAt = Instant.now().toString(),
+            expiresAt = expiresAt.toString(),
+        )
+        invitations += LocalInvitation(organizationId, codeHash, createdByUserId, snapshot)
+        return snapshot
+    }
+
+    override fun organizationInvitations(organizationId: String): List<ServerOrganizationInvitationSnapshot> =
+        invitations.filter { it.organizationId == organizationId }.map { it.snapshot }.reversed()
+
+    override fun revokeOrganizationInvitation(organizationId: String, invitationId: String) {
+        val index = invitations.indexOfFirst {
+            it.organizationId == organizationId && it.snapshot.id == invitationId &&
+                it.snapshot.acceptedAt == null && it.snapshot.revokedAt == null
+        }
+        if (index < 0) throw ServerNotFoundException("Invitation not found")
+        invitations[index] = invitations[index].copy(snapshot = invitations[index].snapshot.copy(revokedAt = Instant.now().toString()))
+    }
+
+    override fun acceptOrganizationInvitation(
+        codeHash: String,
+        name: String,
+        email: String,
+        password: String,
+        legalVersion: String,
+    ): ServerAuthIdentity {
+        val index = invitations.indexOfFirst { it.codeHash == codeHash && it.snapshot.status() == "PENDING" }
+        if (index < 0) throw ServerNotFoundException("Invitation not found or expired")
+        val invitation = invitations[index]
+        val account = newStaffAccount(name, email, password)
+        addMember(invitation.organizationId, account.userId, invitation.snapshot.role)
+        recordLegal(account.userId, legalVersion)
+        invitations[index] = invitation.copy(snapshot = invitation.snapshot.copy(acceptedAt = Instant.now().toString()))
         return identityOf(account)
     }
 

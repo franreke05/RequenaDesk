@@ -46,11 +46,12 @@ import com.requena.supportdesk.server.domain.model.UpdateTicketStatusRequest
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import java.time.Instant
 
-interface SupportDeskRepository {
+interface SupportDeskRepository : OrganizationRepository {
     fun authenticate(email: String, password: String): ServerAuthIdentity?
 
     /** Current identity (with company) of an active user; used for tokens minted before V17. */
     fun identityForUser(userId: String): ServerAuthIdentity?
+
     fun storeRefreshToken(userId: String, refreshToken: String, expiresAt: Instant)
     fun rotateRefreshToken(refreshToken: String, replacementRefreshToken: String, expiresAt: Instant): ServerAuthIdentity?
     fun revokeRefreshToken(refreshToken: String): Boolean

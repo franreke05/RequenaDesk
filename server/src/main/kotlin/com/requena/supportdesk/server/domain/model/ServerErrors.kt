@@ -11,3 +11,8 @@ class ServerConflictException(
 class ServerValidationException(
     override val message: String,
 ) : RuntimeException(message)
+
+/** The caller is authenticated but its company role does not allow the action (HTTP 403). */
+class ServerForbiddenException(
+    override val message: String,
+) : RuntimeException(message)

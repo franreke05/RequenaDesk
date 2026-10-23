@@ -62,6 +62,7 @@ import com.requena.supportdesk.server.utils.TASK_BOARD_TIME_ZONE
 import com.requena.supportdesk.server.utils.madridTaskBoardDayBoundary
 import com.requena.supportdesk.server.domain.model.UploadAttachmentRequest
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
+import com.requena.supportdesk.server.domain.repository.OrganizationRepository
 import com.requena.supportdesk.server.security.PasswordHasher
 import com.requena.supportdesk.server.security.ClientAccessCodeGenerator
 import java.sql.Connection
@@ -76,9 +77,9 @@ import java.time.format.DateTimeFormatter
 
 // Resolves a user's company: staff through organization_members, portal users through
 // the client they belong to. Used by every query that builds a ServerAuthIdentity.
-private const val ORGANIZATION_COLUMNS =
+internal const val ORGANIZATION_COLUMNS =
     "org.id::text AS organization_id, om.role AS organization_role, org.name AS organization_name"
-private const val ORGANIZATION_JOINS = """
+internal const val ORGANIZATION_JOINS = """
     LEFT JOIN organization_members om ON om.user_id = u.id
     LEFT JOIN clients user_client ON user_client.id = u.client_id
     LEFT JOIN organizations org ON org.id = COALESCE(om.organization_id, user_client.organization_id)
@@ -87,7 +88,7 @@ private const val ORGANIZATION_JOINS = """
 // owner_admin_id must reference an active ADMIN (trigger enforce_admin_owner). New rows
 // record the company's primary staff user (its OWNER) there; the tenant is organization_id.
 // Expects the organization id as its single bind parameter.
-private const val ORGANIZATION_PRIMARY_ADMIN = """(
+internal const val ORGANIZATION_PRIMARY_ADMIN = """(
     SELECT om.user_id FROM organization_members om
     JOIN users u ON u.id = om.user_id AND u.is_active = TRUE AND u.role = 'ADMIN'
     WHERE om.organization_id = CAST(? AS uuid)
@@ -95,7 +96,7 @@ private const val ORGANIZATION_PRIMARY_ADMIN = """(
     LIMIT 1
 )"""
 
-private fun ResultSet.toAuthIdentity() = ServerAuthIdentity(
+internal fun ResultSet.toAuthIdentity() = ServerAuthIdentity(
     userId = getString("user_id"),
     name = getString("name"),
     email = getString("email"),
@@ -108,7 +109,7 @@ private fun ResultSet.toAuthIdentity() = ServerAuthIdentity(
 
 class PostgresSupportDeskRepository(
     private val dataSource: PostgresSupportDeskDataSource,
-) : SupportDeskRepository {
+) : SupportDeskRepository, OrganizationRepository by PostgresOrganizationRepository(dataSource) {
 
     override fun identityForUser(userId: String): ServerAuthIdentity? = dataSource.withConnection { connection ->
         connection.prepareStatement(

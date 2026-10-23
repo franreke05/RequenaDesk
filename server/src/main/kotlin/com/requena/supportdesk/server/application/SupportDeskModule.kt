@@ -32,6 +32,8 @@ import com.requena.supportdesk.server.data.repository.PostgresSupportDeskReposit
 import com.requena.supportdesk.server.config.ServerEnvironment
 import com.requena.supportdesk.server.domain.repository.SupportDeskRepository
 import com.requena.supportdesk.server.domain.service.SupportDeskService
+import com.requena.supportdesk.server.domain.service.OrganizationService
+import com.requena.supportdesk.server.routes.organizationRoutes
 import com.requena.supportdesk.server.plugins.configureMonitoring
 import com.requena.supportdesk.server.plugins.configureRequestSecurity
 import com.requena.supportdesk.server.plugins.configureSerialization
@@ -82,6 +84,11 @@ fun Application.configureSupportDeskModule(
     val service = SupportDeskService(
         repository = runtime.repository,
         tokenService = tokenService,
+    )
+    val organizationService = OrganizationService(
+        repository = runtime.repository,
+        sessions = service,
+        signupEnabled = serverEnvironment.signupEnabled,
     )
     val financeService = BusinessFinanceService(
         store = runtime.database?.let(::postgresBusinessFinanceStore) ?: InMemoryBusinessFinanceStore(),
@@ -156,6 +163,7 @@ fun Application.configureSupportDeskModule(
             }
         }
         authRoutes(service)
+        organizationRoutes(organizationService, tokenService)
         ticketRoutes(service, tokenService)
         attachmentRoutes(service, tokenService)
         clientRoutes(service, tokenService)

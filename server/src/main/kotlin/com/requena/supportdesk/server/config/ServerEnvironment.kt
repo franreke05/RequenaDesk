@@ -17,6 +17,9 @@ data class ServerEnvironment(
     val bootstrapDemoData: Boolean,
     val bootstrapAdminPassword: String?,
     val bootstrapClientPassword: String?,
+    // Public self-service company signup. Off unless SUPPORTDESK_SIGNUP_ENABLED=true: there is
+    // no email verification provider yet and the legal texts are still drafts.
+    val signupEnabled: Boolean = false,
 ) {
     companion object {
         fun load(
@@ -46,6 +49,7 @@ data class ServerEnvironment(
                 bootstrapDemoData = bootstrapDemoData,
                 bootstrapAdminPassword = bootstrapAdminPassword,
                 bootstrapClientPassword = bootstrapClientPassword,
+                signupEnabled = value("SUPPORTDESK_SIGNUP_ENABLED", environment, properties)?.toBooleanStrictOrNull() == true,
             )
         }
 

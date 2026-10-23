@@ -245,3 +245,54 @@ data class RegisterDeviceRequest(
     val token: String = "",
     val platform: String = "ANDROID",
 )
+
+/** Self-service company signup (behind SUPPORTDESK_SIGNUP_ENABLED). */
+@Serializable
+data class SignupRequest(
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val organizationName: String = "",
+    val acceptTerms: Boolean = false,
+    val acceptPrivacy: Boolean = false,
+)
+
+/** Joins an existing company with a one-time invitation code. */
+@Serializable
+data class JoinOrganizationRequest(
+    val code: String = "",
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val acceptTerms: Boolean = false,
+    val acceptPrivacy: Boolean = false,
+)
+
+/** Partial update of the company: null keeps the current value. */
+@Serializable
+data class UpdateOrganizationRequest(
+    val name: String? = null,
+    val legalForm: String? = null,
+    val sector: String? = null,
+    val teamSize: String? = null,
+    val hasAccountant: Boolean? = null,
+    val onboardingGoals: List<String>? = null,
+    val onboardingCompleted: Boolean? = null,
+    val legalName: String? = null,
+    val taxId: String? = null,
+    val addressLine: String? = null,
+    val postalCode: String? = null,
+    val city: String? = null,
+    val province: String? = null,
+    val country: String? = null,
+)
+
+@Serializable
+data class CreateOrganizationInvitationRequest(
+    val role: String = "MEMBER",
+)
+
+@Serializable
+data class UpdateOrganizationMemberRequest(
+    val role: String = "",
+)
