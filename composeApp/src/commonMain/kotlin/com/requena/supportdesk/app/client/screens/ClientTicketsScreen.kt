@@ -200,7 +200,7 @@ private fun ClientFiltersPanel(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Buscar") },
             singleLine = true,
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         FilterBar(
             label = "Estado",
@@ -260,7 +260,7 @@ private fun BoardCounter(label: String, value: String, selected: Boolean, onClic
             .animateContentSize(),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -339,7 +339,7 @@ private fun TicketGridCard(
             .fillMaxWidth()
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected)
@@ -513,7 +513,7 @@ private fun TicketTimeDetail(ticket: Ticket) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(modifier = Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

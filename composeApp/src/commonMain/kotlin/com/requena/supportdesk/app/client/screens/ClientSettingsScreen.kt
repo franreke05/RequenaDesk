@@ -387,7 +387,7 @@ private fun SettingsEntry(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         color = if (isDestructive) SupportDeskThemeTokens.semanticColors.dangerContainer.copy(alpha = 0.38f) else MaterialTheme.colorScheme.surface,
         contentColor = contentColor,
         tonalElevation = 0.dp,
@@ -435,7 +435,7 @@ private fun SettingsStatusRow(label: String, value: String, isPositive: Boolean)
     ) {
         Surface(
             modifier = Modifier.size(20.dp),
-            shape = RoundedCornerShape(10.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             color = if (isPositive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Icon(

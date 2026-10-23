@@ -26,34 +26,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.designsystem.components.cards.supportDeskCardBorder
+import com.requena.supportdesk.designsystem.components.cards.supportDeskCardEmphasis
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 
-private val ClientPortalCardShape = RoundedCornerShape(8.dp)
-
-// Same "printed panel" trick used on the admin side (see SupportDeskCards.kt): a hard,
-// unblurred offset shadow instead of a Material elevation blur. Duplicated locally (not
-// imported) so the portal card system stays independent of the admin one.
-private fun Modifier.clientPortalHardShadow(
-    color: Color,
-    offset: Dp = 4.dp,
-    cornerRadius: Dp = 8.dp,
-): Modifier = drawBehind {
-    val offsetPx = offset.toPx()
-    val radiusPx = cornerRadius.toPx()
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(offsetPx, offsetPx),
-        size = size,
-        cornerRadius = CornerRadius(radiusPx, radiusPx),
-    )
-}
+// Follows the style's medium radius (8dp in Artesanal, 6dp Minimalista, 16dp Glass).
+private val ClientPortalCardShape
+    @Composable get() = MaterialTheme.shapes.medium
 
 /**
- * Shared visual language for the customer-facing portal: warm paper surface, hairline ink
- * border by default. Set [emphasized] on at most one hero card per screen for the "printed
- * panel" treatment: a 2dp ink outline plus a hard offset accent shadow. Full-width cards
- * only - never inside a multi-column Row/grid at any breakpoint, since the offset shadow
- * is sized against page padding, not a shared column gap.
+ * Shared visual language for the customer-facing portal: style surface with a hairline
+ * border by default. Set [emphasized] on at most one hero card per screen; the treatment
+ * follows the selected style (ink outline + hard offset shadow in Artesanal, accent outline
+ * in Minimalista, luminous edge + glow in Glass). Full-width cards only - never inside a
+ * multi-column Row/grid, since the offset shadow is sized against page padding.
  */
 @Composable
 fun ClientPortalSurfaceCard(
@@ -62,17 +48,12 @@ fun ClientPortalSurfaceCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
-        modifier = modifier.let { if (emphasized) it.clientPortalHardShadow(emphasisColor) else it },
+        modifier = modifier.supportDeskCardEmphasis(emphasized),
         shape = ClientPortalCardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = if (emphasized) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        },
+        border = supportDeskCardBorder(emphasized),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(spacing.lg),

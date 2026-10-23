@@ -433,7 +433,7 @@ private fun ActivityCard(
     isSaving: Boolean,
     onUpdate: (String, String, UpdateBusinessCustomerActivityInput) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.extraLarge) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(activity.subject, style = MaterialTheme.typography.titleSmall)
             activity.details?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

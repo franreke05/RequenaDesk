@@ -124,7 +124,7 @@ fun ClientTasksScreen(
                 label = { Text("Titulo de la tarea") },
                 singleLine = true,
                 enabled = !limitReached,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = newNote,
@@ -133,7 +133,7 @@ fun ClientTasksScreen(
                 label = { Text("Nota (opcional)") },
                 minLines = 2,
                 enabled = !limitReached,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
             )
             PrimaryButton(
                 text = "Anadir",
@@ -216,7 +216,7 @@ private fun TaskRow(task: WorkTask, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .animateContentSize(),
         color = surfaceColor,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, borderColor),
     ) {
         Row(

@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.requena.supportdesk.core.appearance.SupportDeskStyle
+import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 
 @Composable
@@ -50,9 +52,13 @@ fun PrimaryButton(
         enabled = enabled && !isLoading,
         interactionSource = interactionSource,
         shape = MaterialTheme.shapes.large,
-        // Thin ink border on the fill color gives the primary action a printed-panel
-        // edge instead of a flat Material fill, echoing the portfolio's ink-outline style.
-        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface),
+        // Artesanal: thin ink border gives the primary action a printed-panel edge, echoing
+        // the portfolio's ink-outline style. Minimalista and Glass keep a clean fill.
+        border = if (SupportDeskThemeTokens.style == SupportDeskStyle.ARTESANAL) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
+        } else {
+            null
+        },
         modifier = (if (fullWidth) modifier.fillMaxWidth() else modifier)
             .heightIn(min = 44.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale },

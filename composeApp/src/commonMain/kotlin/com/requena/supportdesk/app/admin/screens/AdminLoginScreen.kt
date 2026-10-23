@@ -41,7 +41,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
-import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.buttons.AppearanceButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
 import com.requena.supportdesk.designsystem.theme.SupportDeskThemeTokens
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
@@ -67,7 +67,7 @@ fun AdminLoginScreen(
             .padding(horizontal = spacing.lg, vertical = spacing.lg),
     ) {
         Box(modifier = Modifier.align(Alignment.TopEnd)) {
-            ThemeModeButton()
+            AppearanceButton()
         }
         Column(
             modifier = Modifier

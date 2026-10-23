@@ -34,30 +34,8 @@ import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 private val CardTextCrossfade =
     fadeIn(tween(SupportDeskMotion.regular)) togetherWith fadeOut(tween(SupportDeskMotion.quick))
 
-// Editorial "hairline" card border - a thin neutral rule, never a glassy shadow.
-// Mirrors the portfolio's --border token: cards are defined by a crisp outline,
-// not elevation. MaterialTheme.colorScheme.outlineVariant resolves per light/dark theme.
-@Composable
-private fun hairlineCardBorder(): BorderStroke = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-
-// Opt-in "printed panel" treatment for the rare card that should stand out (e.g. a
-// hero metric or the active timer card): ink-colored outline + a hard, unblurred
-// offset shadow in the accent color, borrowed from the portfolio's .comic-ink-outline
-// utility. Deliberately not the default card style - used sparingly, like the source.
-private fun Modifier.hardOffsetShadow(
-    color: Color,
-    offset: Dp = 4.dp,
-    cornerRadius: Dp = 8.dp,
-): Modifier = drawBehind {
-    val offsetPx = offset.toPx()
-    val radiusPx = cornerRadius.toPx()
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(offsetPx, offsetPx),
-        size = size,
-        cornerRadius = CornerRadius(radiusPx, radiusPx),
-    )
-}
+// Card borders and the opt-in emphasis treatment (one hero card per screen) come from
+// CardTreatment.kt and follow the selected visual style.
 
 @Composable
 fun SectionCard(
@@ -71,20 +49,15 @@ fun SectionCard(
     val spacing = SupportDeskThemeTokens.spacing
     val resolvedTitle = title?.takeIf { it.isNotBlank() }
     val resolvedSubtitle = subtitle?.takeIf { it.isNotBlank() }
-    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
         modifier = modifier
             .animateContentSize()
-            .let { if (emphasized) it.hardOffsetShadow(emphasisColor) else it },
+            .supportDeskCardEmphasis(emphasized),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = if (emphasized) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
-        } else {
-            hairlineCardBorder()
-        },
+        border = supportDeskCardBorder(emphasized),
     ) {
         Column(
             modifier = Modifier
@@ -135,21 +108,16 @@ fun MetricCard(
     emphasized: Boolean = false,
 ) {
     val spacing = SupportDeskThemeTokens.spacing
-    val emphasisColor = MaterialTheme.colorScheme.primary
     Card(
         modifier = modifier
             .heightIn(min = 132.dp)
             .animateContentSize()
-            .let { if (emphasized) it.hardOffsetShadow(emphasisColor) else it },
+            .supportDeskCardEmphasis(emphasized),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = if (emphasized) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
-        } else {
-            hairlineCardBorder()
-        },
+        border = supportDeskCardBorder(emphasized),
     ) {
         Column(
             modifier = Modifier

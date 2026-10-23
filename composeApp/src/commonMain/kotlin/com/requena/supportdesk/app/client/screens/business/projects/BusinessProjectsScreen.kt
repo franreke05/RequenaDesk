@@ -759,7 +759,7 @@ private fun MonthlyCalendar(state: BusinessProjectsUiState, onSelectDate: (Strin
                             onClick = { onSelectDate(date) },
                             enabled = date >= board.today,
                             color = if (date == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f).height(54.dp),
                         ) {
                             Column(Modifier.padding(6.dp)) {

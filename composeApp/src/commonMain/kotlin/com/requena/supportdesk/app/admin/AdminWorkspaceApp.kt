@@ -45,7 +45,7 @@ import com.requena.supportdesk.designsystem.tokens.SupportDeskBreakpoints
 import com.requena.supportdesk.designsystem.tokens.SupportDeskMotion
 import com.requena.supportdesk.designsystem.components.badges.SupportDeskBadge
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
-import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.buttons.AppearanceButton
 import com.requena.supportdesk.designsystem.components.navigation.AdminBottomBar
 import com.requena.supportdesk.designsystem.components.navigation.AdminNavigationRail
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
@@ -328,7 +328,7 @@ fun AdminWorkspaceApp() {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(SupportDeskThemeTokens.pageBackground),
     ) {
         val layoutMode = when {
             maxWidth < SupportDeskBreakpoints.adminCompact -> AdminLayoutMode.COMPACT
@@ -542,7 +542,7 @@ private fun AdminContentArea(
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.weight(1f),
                     )
-                    ThemeModeButton()
+                    AppearanceButton()
                 }
             }
         } else {
@@ -569,7 +569,7 @@ private fun AdminContentArea(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
-                ThemeModeButton()
+                AppearanceButton()
             }
         }
 

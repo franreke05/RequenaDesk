@@ -369,7 +369,7 @@ private fun ClientListItem(
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         color = background,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Row(
             modifier = Modifier.padding(spacing.md),
@@ -804,7 +804,7 @@ private fun ExpandableRow(
             .clickable(interactionSource = interactionSource, indication = null) { expanded = !expanded }
             .animateContentSize(),
         color = background,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.xs, horizontal = spacing.xs)) {
             summary()
@@ -905,7 +905,7 @@ private fun ClientComponentsTab(
                         val updated = if (checked) client.enabledComponents + component else client.enabledComponents - component
                         onUpdate(updated)
                     },
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
             ) {
@@ -1044,7 +1044,7 @@ private fun ClientNotesTab(
 private fun ClientNoteRow(note: ClientNote) {
     val spacing = SupportDeskThemeTokens.spacing
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
         modifier = Modifier.fillMaxWidth(),
     ) {

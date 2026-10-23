@@ -87,3 +87,28 @@ val SupportDeskTypography = Typography(
         letterSpacing = 0.2.sp,
     ),
 )
+
+private fun Typography.withFamily(
+    family: FontFamily,
+    headingWeight: FontWeight,
+    headingTracking: Float,
+): Typography {
+    fun TextStyle.heading() = copy(fontFamily = family, fontWeight = headingWeight, letterSpacing = headingTracking.sp)
+    return copy(
+        displaySmall = displaySmall.heading(),
+        headlineLarge = headlineLarge.heading(),
+        headlineMedium = headlineMedium.heading(),
+        headlineSmall = headlineSmall.heading(),
+        titleLarge = titleLarge.copy(fontFamily = family, fontWeight = FontWeight.SemiBold),
+    )
+}
+
+/** Minimalista: sans everywhere, bolder and tighter headings, tabular-friendly sans labels. */
+val MinimalTypography = SupportDeskTypography
+    .withFamily(FontFamily.SansSerif, FontWeight.Bold, headingTracking = -0.5f)
+    .let { it.copy(labelSmall = it.labelSmall.copy(fontFamily = FontFamily.SansSerif, letterSpacing = 0.4.sp)) }
+
+/** Glass: sans everywhere with lighter, airier headings. */
+val GlassTypography = SupportDeskTypography
+    .withFamily(FontFamily.SansSerif, FontWeight.Medium, headingTracking = -0.3f)
+    .let { it.copy(labelSmall = it.labelSmall.copy(fontFamily = FontFamily.SansSerif, letterSpacing = 0.3.sp)) }

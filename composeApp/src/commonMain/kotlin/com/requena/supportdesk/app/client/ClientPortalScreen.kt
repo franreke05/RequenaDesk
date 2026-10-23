@@ -58,7 +58,7 @@ import com.requena.supportdesk.core.time.currentIsoDate
 import com.requena.supportdesk.designsystem.components.buttons.SecondaryButton
 import com.requena.supportdesk.designsystem.components.buttons.PrimaryButton
 import com.requena.supportdesk.designsystem.components.cards.SectionCard
-import com.requena.supportdesk.designsystem.components.buttons.ThemeModeButton
+import com.requena.supportdesk.designsystem.components.buttons.AppearanceButton
 import com.requena.supportdesk.designsystem.components.feedback.ConfirmDialog
 import com.requena.supportdesk.designsystem.components.navigation.AppSidebar
 import com.requena.supportdesk.designsystem.components.navigation.NavigationItemSpec
@@ -214,7 +214,7 @@ fun ClientNotice(message: String, isError: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         color = if (isError) semantic.dangerContainer else MaterialTheme.colorScheme.secondaryContainer,
         contentColor = if (isError) semantic.danger else MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Text(
             text = message,
@@ -254,7 +254,7 @@ fun ClientPortalScreen(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(SupportDeskThemeTokens.pageBackground)
                 .padding(spacing.xl),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
@@ -461,7 +461,7 @@ fun ClientPortalScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(SupportDeskThemeTokens.pageBackground),
     ) {
         // Uses clientShellExpandedThreshold, not clientWide: this BoxWithConstraints measures
         // full WINDOW width (deciding whether to show the sidebar), while every child screen
@@ -501,7 +501,7 @@ fun ClientPortalScreen(
                     selected = destination,
                     onSelect = { destination = it },
                     footer = {
-                        ThemeModeButton(fullWidth = true)
+                        AppearanceButton(fullWidth = true)
                         // Home and Work already show their own "Solicitar ayuda" CTA in
                         // their page header, visible side-by-side with this sidebar in wide
                         // mode - showing it here too would duplicate it on screen at once.
@@ -642,7 +642,7 @@ private fun ClientCompactHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                ThemeModeButton()
+                AppearanceButton()
             }
             if (showRequestHelp) {
                 PrimaryButton(
