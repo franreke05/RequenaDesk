@@ -1,5 +1,8 @@
 package com.requena.supportdesk.app.admin
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 import com.requena.supportdesk.core.common.SupportDeskSharedModule
 import com.requena.supportdesk.features.auth.presentation.viewmodel.AuthViewModel
 import com.requena.supportdesk.features.business.finance.presentation.BusinessAccountingViewModel
@@ -17,6 +20,9 @@ import com.requena.supportdesk.features.taskboard.presentation.viewmodel.TaskBoa
 import com.requena.supportdesk.features.tickets.presentation.viewmodel.TicketsViewModel
 
 class AdminAppModule {
+    /** Ajustes tab to open next (e.g. Plan y pagos from a locked section); consumed on display. */
+    var pendingSettingsTab by androidx.compose.runtime.mutableStateOf<com.requena.supportdesk.app.admin.screens.SettingsTab?>(null)
+
     val authViewModel: AuthViewModel = SupportDeskSharedModule.createAuthViewModel()
     private val clientsViewModelDelegate = lazy { SupportDeskSharedModule.createClientsViewModel() }
     private val tasksViewModelDelegate = lazy { SupportDeskSharedModule.createTasksViewModel() }
@@ -33,6 +39,10 @@ class AdminAppModule {
     private val businessProjectsViewModelDelegate = lazy { SupportDeskSharedModule.createBusinessProjectsViewModel() }
     private val organizationViewModelDelegate = lazy { SupportDeskSharedModule.createOrganizationViewModel() }
     private val onboardingViewModelDelegate = lazy { SupportDeskSharedModule.createOnboardingViewModel() }
+    private val planViewModelDelegate = lazy { SupportDeskSharedModule.createPlanViewModel() }
+
+    val planViewModel: com.requena.supportdesk.features.plan.PlanViewModel
+        get() = planViewModelDelegate.value
 
     val organizationViewModel: com.requena.supportdesk.features.organization.presentation.OrganizationViewModel
         get() = organizationViewModelDelegate.value
@@ -96,5 +106,6 @@ class AdminAppModule {
         if (businessProjectsViewModelDelegate.isInitialized()) businessProjectsViewModelDelegate.value.clear()
         if (organizationViewModelDelegate.isInitialized()) organizationViewModelDelegate.value.clear()
         if (onboardingViewModelDelegate.isInitialized()) onboardingViewModelDelegate.value.clear()
+        if (planViewModelDelegate.isInitialized()) planViewModelDelegate.value.clear()
     }
 }

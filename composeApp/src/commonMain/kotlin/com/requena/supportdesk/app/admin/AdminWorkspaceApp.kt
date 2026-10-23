@@ -96,6 +96,12 @@ import com.requena.supportdesk.core.model.canManageCompany
 import com.requena.supportdesk.core.model.isStaff
 import com.requena.supportdesk.core.network.AdminSessionContext
 import com.requena.supportdesk.features.organization.presentation.OrganizationUiEvent
+import com.requena.supportdesk.app.admin.screens.SettingsTab
+import com.requena.supportdesk.app.admin.screens.TrialBanner
+import com.requena.supportdesk.features.plan.PlanModule
+import com.requena.supportdesk.features.plan.PlanOverview
+import com.requena.supportdesk.features.plan.PlanUiEvent
+import com.requena.supportdesk.features.plan.cheapestPlanWith
 
 @Composable
 fun AdminWorkspaceApp() {
@@ -110,6 +116,7 @@ fun AdminWorkspaceApp() {
     val authState by module.authViewModel.state.collectAsState()
     val currentUser = authState.authenticatedUser
     val organizationState by module.organizationViewModel.state.collectAsState()
+    val planState by module.planViewModel.state.collectAsState()
     var onboardingFinished by remember(currentUser?.id) { mutableStateOf(false) }
     val clientsState = if (currentUser != null) {
         module.clientsViewModel.state.collectAsState().value
@@ -325,6 +332,7 @@ fun AdminWorkspaceApp() {
     LaunchedEffect(currentUser?.id, currentUser?.organizationId) {
         if (currentUser?.isStaff == true && currentUser.organizationId != null) {
             module.organizationViewModel.onEvent(OrganizationUiEvent.Load(includeTeam = currentUser.canManageCompany))
+            module.planViewModel.onEvent(PlanUiEvent.Load)
         }
     }
 
@@ -406,7 +414,18 @@ fun AdminWorkspaceApp() {
             // Facturas is OryKai's local PDF invoicing (CLAUDE.md lane A). Hidden for other
             // companies once the company is known; until then (or on an older server) it stays.
             val showLocalInvoices = organizationState.organization?.localPdfInvoices ?: true
-            val navItems = remember(showLocalInvoices) {
+            // Sections whose module the plan lacks stay visible with a hint and open Plan y pagos.
+            val plan = planState.overview
+            val lockedDestinations = lockedDestinations(plan)
+            val navigateTo: (AppDestination) -> Unit = { destination ->
+                if (destination in lockedDestinations) {
+                    module.pendingSettingsTab = SettingsTab.PLAN
+                    navigation = navigation.copy(destination = AppDestination.Settings)
+                } else {
+                    navigation = navigation.copy(destination = destination)
+                }
+            }
+            val navItems = remember(showLocalInvoices, lockedDestinations) {
                 listOf<NavigationItemSpec<AppDestination>>(
                     NavigationItemSpec(
                         key = AppDestination.Dashboard,
@@ -457,6 +476,7 @@ fun AdminWorkspaceApp() {
                         icon = Lucide.Settings,
                     ),
                 ).filter { showLocalInvoices || it.key !is AppDestination.Invoices }
+                    .map { item -> lockedDestinations[item.key]?.let { hint -> item.copy(supportingText = hint) } ?: item }
             }
             val selectedNav = navDestinationFor(navigation.destination)
             val uiStatus = tasksState.statusMessage ?: statusMessage
@@ -469,7 +489,7 @@ fun AdminWorkspaceApp() {
                             ?: "Agenda compartida para clientes, tareas y horas.",
                         items = navItems,
                         selected = selectedNav,
-                        onSelect = { navigation = navigation.copy(destination = it) },
+                        onSelect = navigateTo,
                         footer = {
                             SecondaryButton(
                                 text = "Cerrar sesion",
@@ -499,7 +519,7 @@ fun AdminWorkspaceApp() {
                             AdminNavigationRail(
                                 items = navItems,
                                 selected = selectedNav,
-                                onSelect = { navigation = navigation.copy(destination = it) },
+                                onSelect = navigateTo,
                             )
                             AdminContentArea(
                                 layoutMode = layoutMode,
@@ -532,7 +552,7 @@ fun AdminWorkspaceApp() {
                         AdminBottomBar(
                             items = navItems,
                             selected = selectedNav,
-                            onSelect = { navigation = navigation.copy(destination = it) },
+                            onSelect = navigateTo,
                         )
                     }
                 }
@@ -625,6 +645,13 @@ private fun AdminContentArea(
         if (navigation.destination == AppDestination.Dashboard) {
             val sessionUser by AdminSessionContext.user.collectAsState()
             val organizationState by module.organizationViewModel.state.collectAsState()
+            val planOverview by module.planViewModel.state.collectAsState()
+            planOverview.overview?.plan?.let { plan ->
+                TrialBanner(plan = plan, onOpenPlans = {
+                    module.pendingSettingsTab = SettingsTab.PLAN
+                    onNavigate(AppDestination.Settings)
+                })
+            }
             if (sessionUser?.canManageCompany == true) {
                 FirstStepsCard(
                     steps = firstSteps(
@@ -722,6 +749,9 @@ private fun AdminContentArea(
 
             AppDestination.Settings -> AdminSettingsScreen(
                 viewModel = module.organizationViewModel,
+                planViewModel = module.planViewModel,
+                requestedTab = module.pendingSettingsTab,
+                onRequestedTabShown = { module.pendingSettingsTab = null },
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -787,3 +817,18 @@ private fun subtitleFor(destination: AppDestination): String? = when (destinatio
 /** Owners see the onboarding until their company is marked as onboarded. */
 private fun needsOnboarding(user: User, organization: Organization?): Boolean =
     user.organizationRole == OrganizationRole.OWNER && organization != null && !organization.onboardingCompleted
+
+/**
+ * Staff sections whose module the company plan lacks, with the hint shown in the menu.
+ * Nothing is locked while the plan is unknown (older server or still loading).
+ */
+internal fun lockedDestinations(plan: PlanOverview?): Map<AppDestination, String> {
+    plan ?: return emptyMap()
+    fun hint(module: PlanModule) = "Incluido en " + (cheapestPlanWith(module, plan.catalog)?.name ?: "otro plan")
+    return buildMap {
+        if (!plan.plan.includes(PlanModule.WORK)) {
+            listOf(AppDestination.Tasks, AppDestination.Pinboard, AppDestination.Labels).forEach { put(it, hint(PlanModule.WORK)) }
+        }
+        if (!plan.plan.includes(PlanModule.SUPPORT)) put(AppDestination.Tickets, hint(PlanModule.SUPPORT))
+    }
+}
